@@ -13,8 +13,8 @@
 
 ## 3. 备份打包
 
-- [ ] 3.1 新增 `ExportService.buildCsv()` / `buildBackup()`：返回文件名、字节、笔数、图片数；用例断言 zip 内同时含 `.csv` 与 `.tar.gz`
-- [ ] 3.2 往返用例：`buildBackup()` → `extractBeeCountExport()` → 图片字节与库里一致、共享图片只出现一份
+- [x] 3.1 新增 `ExportService.buildCsv()` / `buildBackup()`：返回文件名、字节、笔数、图片数；用例断言 zip 内同时含 `.csv` 与 `.tar.gz`
+- [x] 3.2 往返用例：`buildBackup()` → `extractBeeCountExport()` → 图片字节与库里一致、共享图片只出现一份
 
 ## 4. 导出页与保存
 
