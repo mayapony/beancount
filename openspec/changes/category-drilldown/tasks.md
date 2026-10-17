@@ -7,19 +7,28 @@
 
 ## 2. 下钻页
 
-- [ ] 2.1 新增 `CategoryLedgerPage`：标题为分类名与合计、副标题为范围/笔数/占比、列表按日分组、行可点开详情；`test/pages/category_ledger_page_test.dart` 用例：渲染合计与行、点行打开详情
-- [ ] 2.2 空状态：该期间无账目时显示「这段时间没有这一类支出」；用例一条
-- [ ] 2.3 范围随洞察页：月/年/全部三种 from-to 传递；用例：月范围只显示本月账
+- [x] 2.1 新增 `CategoryLedgerPage`：标题为分类名与合计、副标题为范围/笔数/占比、列表按日分组、行可点开详情；`test/pages/category_ledger_page_test.dart` 用例：渲染合计与行、点行打开详情
+- [x] 2.2 空状态：该期间无账目时显示「这段时间没有这一类支出」；用例一条
+- [x] 2.3 范围随洞察页：月/年/全部三种 from-to 传递；用例：月范围只显示本月账
 
 ## 3. 入口
 
-- [ ] 3.1 洞察页图例胶囊与排行行可点，push 下钻页（传入分类、期间、总计用于占比）；用例：点「餐饮」进入页面
-- [ ] 3.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 253 + 新增）
+- [x] 3.1 洞察页图例胶囊与排行行可点，push 下钻页（传入分类、期间、总计用于占比）；用例：点「餐饮」进入页面
+- [x] 3.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 253 + 新增）
 
 ## 4. 回归
 
-- [ ] 4.1 设备端回归：洞察页点分类 → 下钻页出现分类账目 → 点一笔进详情 → 返回；结果写入 tasks.md
+- [x] 4.1 设备端回归：洞察页点分类 → 下钻页出现分类账目 → 点一笔进详情 → 返回；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found；`flutter test`：**261 通过**（上一轮 253 + 本次 8）
+- 设备端 `integration_test/category_drilldown_flow_test.dart -d emulator-5554`：通过
+  - 洞察 → 点「餐饮」→ 下钻页显示 ¥63.50 / 2 笔（含二级分类「外卖」）→ 点「堂食午饭」进详情 → 返回下钻页
+- 顺带修掉一个上一轮的隐患：`gbk_codec` 的 decoder 实际按单字节查表，**解不出真实 GBK**
+  （表现是中文变 `Ö§¸¶±¦`、格式识别直接失败）。改成 `fast_gbk` 后用**真实 GBK 样本文件**
+  （`test/fixtures/alipay_sample_gbk.csv`，Python 以 gbk 编码生成）做用例，解码与识别都正确。
+  教训：上一轮"GBK 通过"用的是同一个库的 encode→decode 往返，属于自证，没测到真文件。
 ## Workflow follow-up
 
 - 归档 change：`openspec archive category-drilldown --yes`
