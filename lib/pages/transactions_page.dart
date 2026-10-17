@@ -4,7 +4,6 @@ import '../data/demo_data.dart';
 import '../theme/tokens.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
-import 'design_showcase_page.dart';
 
 class TransactionsPage extends StatelessWidget {
   const TransactionsPage({super.key});
@@ -32,17 +31,17 @@ class TransactionsPage extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 120),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(BeanSpace.page, 12, 8, 10),
+            padding: const EdgeInsets.fromLTRB(
+              BeanSpace.page,
+              12,
+              BeanSpace.page,
+              10,
+            ),
             child: Row(
               children: [
-                const Text(
-                  '金豆',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(width: 10),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     color: BeanColors.gold.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(BeanRadius.chip),
@@ -50,10 +49,16 @@ class TransactionsPage extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      const Icon(
+                        Icons.calendar_month_rounded,
+                        size: 15,
+                        color: BeanColors.goldDeep,
+                      ),
+                      const SizedBox(width: 6),
                       const Text(
                         '2026年10月',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: BeanColors.goldDeep,
                         ),
@@ -64,16 +69,6 @@ class TransactionsPage extends StatelessWidget {
                         color: BeanColors.goldDeep,
                       ),
                     ],
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '设计规范',
-                  icon: const Icon(Icons.grid_view_rounded),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const DesignShowcasePage(),
-                    ),
                   ),
                 ),
               ],

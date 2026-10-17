@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../theme/tokens.dart';
 
 /// 底部导航：4 Tab + 中间凹槽留给金豆 FAB。
+///
+/// 底栏颜色与页面背景一致 —— 否则凹槽处会露出另一种颜色，在豆子周围形成
+/// 「方块」错觉。同色后凹槽隐形，金豆像浮在页面上。
 class BeanBottomNav extends StatelessWidget {
   const BeanBottomNav({
     super.key,
@@ -18,10 +21,11 @@ class BeanBottomNav extends StatelessWidget {
     final palette = BeanPalette.of(context);
     return BottomAppBar(
       shape: const CircularNotchedRectangle(),
-      notchMargin: 8,
+      notchMargin: 6,
       height: 72,
       padding: EdgeInsets.zero,
-      color: palette.surface,
+      color: Theme.of(context).scaffoldBackgroundColor,
+      elevation: 0,
       child: Row(
         children: [
           Expanded(
@@ -40,7 +44,7 @@ class BeanBottomNav extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: _item(palette, 3, Icons.photo_camera_rounded, 'AI'),
+            child: _item(palette, 3, Icons.settings_rounded, '设置'),
           ),
         ],
       ),

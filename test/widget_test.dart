@@ -11,17 +11,18 @@ void main() {
     expect(formatMoneyCompact(12800), '12,800');
   });
 
-  testWidgets('首页渲染品牌、四 Tab 与中心金豆', (tester) async {
+  testWidgets('首页渲染四 Tab 与中心金豆', (tester) async {
     await tester.pumpWidget(const BeanApp());
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 品牌
-    expect(find.text('金豆'), findsOneWidget);
-
-    // 四个导航标签
+    // 四个导航标签：明细 / 洞察 / 资产 / 设置
     expect(find.text('明细'), findsOneWidget);
+    expect(find.text('洞察'), findsWidgets);
     expect(find.text('资产'), findsWidgets);
-    expect(find.text('AI'), findsOneWidget);
+    expect(find.text('设置'), findsOneWidget);
+
+    // 首页不再显示品牌标题，保持干净
+    expect(find.text('金豆'), findsNothing);
 
     // 中心停靠的金豆 FAB
     expect(find.byIcon(Icons.add_rounded), findsOneWidget);
