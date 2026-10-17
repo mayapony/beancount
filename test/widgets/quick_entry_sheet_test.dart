@@ -214,4 +214,113 @@ void main() {
     await tester.pump();
     expect(find.text('保存失败，请重试'), findsNothing);
   });
+
+  testWidgets('编辑模式：以现值预填金额/分类/账户/时间/备注/标签', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final categories = _categories();
+    final accounts = _accounts();
+    final draft = QuickEntryDraft(
+      amount: 38.5,
+      isIncome: false,
+      category: categories[1], // 交通
+      account: accounts[1].account, // 招商银行卡
+      time: DateTime(2026, 10, 17, 12, 30),
+      note: '地铁月卡',
+      tags: const ['出差', '报销'],
+    );
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: categories,
+                    accounts: accounts,
+                    initialDraft: draft,
+                    onSubmit: (d) async {
+                      submitted = d;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('编辑一笔'), findsOneWidget);
+    expect(find.text('记一笔'), findsNothing);
+    expect(find.text('38.5'), findsOneWidget);
+    expect(find.textContaining('地铁月卡'), findsOneWidget);
+    expect(find.text('招商银行卡'), findsOneWidget);
+    expect(find.textContaining('12:30'), findsWidgets);
+    expect(find.textContaining('#出差'), findsWidgets);
+    expect(find.textContaining('#报销'), findsWidgets);
+
+    await tester.tap(find.text('完成').last);
+    await tester.pumpAndSettle();
+
+    expect(submitted?.amount, 38.5);
+    expect(submitted?.category.id, 'cat-transport');
+    expect(submitted?.account?.id, 'acc-cmb');
+    expect(submitted?.note, '地铁月卡');
+    expect(submitted?.tags, containsAll(<String>['出差', '报销']));
+    expect(submitted?.time, DateTime(2026, 10, 17, 12, 30));
+  });
+
+  testWidgets('新增模式不受 initialDraft 影响：标题仍是「记一笔」、金额从 0 起', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    onSubmit: (_) async => null,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('记一笔'), findsOneWidget);
+    expect(find.text('编辑一笔'), findsNothing);
+    expect(find.text('0.00'), findsOneWidget);
+    expect(find.text('日常钱包'), findsOneWidget);
+  });
 }

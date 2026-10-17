@@ -55,6 +55,7 @@ class QuickEntrySheet extends StatefulWidget {
     this.initialCategoryId,
     this.initialIsIncome = false,
     this.initialAccountId,
+    this.initialDraft,
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -67,6 +68,9 @@ class QuickEntrySheet extends StatefulWidget {
   final String? initialCategoryId;
   final bool initialIsIncome;
   final String? initialAccountId;
+
+  /// 编辑模式：以这笔交易的现值预填面板。为空时是新增模式，行为不变。
+  final QuickEntryDraft? initialDraft;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -105,10 +109,11 @@ Color _onAccentFill(BuildContext context) =>
 
 class _QuickEntrySheetState extends State<QuickEntrySheet>
     with SingleTickerProviderStateMixin {
-  late bool _isIncome = widget.initialIsIncome;
+  late bool _isIncome = widget.initialDraft?.isIncome ?? widget.initialIsIncome;
 
   /// 当前选中的分类 id；为空或与当前类型不匹配时回落到第一个可见分类。
-  String? _categoryId;
+  late String? _categoryId =
+      widget.initialDraft?.category.id ?? widget.initialCategoryId;
 
   /// 面板只展示一级分类，并按当前收支类型过滤。
   List<Category> get _visibleCategories => [
@@ -120,11 +125,29 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       ];
 
   Category? get _selectedCategory {
-    final visible = _visibleCategories;
-    for (final c in visible) {
-      if (c.id == _categoryId) return c;
+    final id = _categoryId;
+    if (id != null) {
+      // 精确匹配优先：编辑一笔二级分类的账时不能把它悄悄改成一级父类
+      for (final c in widget.categories) {
+        if (c.id == id &&
+            c.type ==
+                (_isIncome ? CategoryType.income : CategoryType.expense)) {
+          return c;
+        }
+      }
     }
+    final visible = _visibleCategories;
     return visible.isEmpty ? null : visible.first;
+  }
+
+  /// 网格高亮用：二级分类高亮它所属的一级父类（网格里只有一级）。
+  Category? get _highlightCategory {
+    final selected = _selectedCategory;
+    if (selected == null || selected.parentId == null) return selected;
+    for (final c in widget.categories) {
+      if (c.id == selected.parentId) return c;
+    }
+    return selected;
   }
 
   /// 当前选中的账户；上次的账户被删了就回落到第一个。
@@ -135,18 +158,29 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     return widget.accounts.isEmpty ? null : widget.accounts.first;
   }
 
-  String _amount = '0';
+  late String _amount = _initialAmountText();
+
+  /// 编辑模式下的金额回填：38.50 → '38.5'，45.00 → '45'
+  String _initialAmountText() {
+    final draft = widget.initialDraft;
+    if (draft == null) return '0';
+    final text = draft.amount.toStringAsFixed(2);
+    if (text.endsWith('.00')) return text.substring(0, text.length - 3);
+    if (text.endsWith('0')) return text.substring(0, text.length - 1);
+    return text;
+  }
 
   /// 待计算的左操作数（支持 38.5 + 12 这类连续计算）
   double? _left;
   String? _op;
 
-  String _note = '';
-  final Set<String> _tags = <String>{};
+  late String _note = widget.initialDraft?.note ?? '';
+  late final Set<String> _tags = <String>{...?widget.initialDraft?.tags};
 
   /// 账户与时间：都继承上次值，点胶囊可改。
-  late String? _accountId = widget.initialAccountId;
-  DateTime _time = DateTime.now();
+  late String? _accountId =
+      widget.initialDraft?.account?.id ?? widget.initialAccountId;
+  late DateTime _time = widget.initialDraft?.time ?? DateTime.now();
 
   /// 保存中：按钮暂时禁用，避免重复提交
   bool _saving = false;
@@ -477,7 +511,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
               child: Row(
                 children: [
                   Text(
-                    '记一笔',
+                    widget.initialDraft == null ? '记一笔' : '编辑一笔',
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -517,7 +551,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final visible = _visibleCategories;
-                  final selected = _selectedCategory;
+                  final selected = _highlightCategory;
                   if (visible.isEmpty) {
                     return SizedBox(
                       height: 74,
