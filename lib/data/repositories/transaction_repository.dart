@@ -4,6 +4,7 @@ import '../db/app_database.dart';
 import '../db/enums.dart';
 import '../dedupe.dart';
 import 'attachment_repository.dart';
+import 'ledger_filter.dart';
 
 /// 新建一笔交易需要的全部信息（金额已是整数分）。
 class NewTransaction {
@@ -141,6 +142,21 @@ class ExportRow {
   final List<String> attachmentNames;
 }
 
+/// 搜索的结果：按日分组 + 命中数 + 是否被上限截断。
+class SearchResult {
+  const SearchResult({
+    required this.groups,
+    required this.matchedCount,
+    this.truncated = false,
+  });
+
+  final List<DayGroup> groups;
+  final int matchedCount;
+  final bool truncated;
+
+  bool get isEmpty => groups.isEmpty;
+}
+
 /// 交易仓储：写库、去重、按天读取。
 class TransactionRepository {
   TransactionRepository(this._db, {AttachmentRepository? attachments})
@@ -213,9 +229,6 @@ class TransactionRepository {
   ///
   /// 给定 `year` + `month` 时只读该自然月（半开区间，避免毫秒精度漏账），
   /// 且**不施加条数上限**——整月必须完整；不给月份时保留上限，兼容「看全部」的调用。
-  ///
-  /// 一次查交易 + 一次查分类 + 一次查账户 + 一次查附件计数，
-  /// 分组与求和都在内存里做——单月几百条的量级，比 N+1 次查询划算得多。
   Future<List<DayGroup>> dayGroups({
     int? year,
     int? month,
@@ -239,6 +252,130 @@ class TransactionRepository {
     }
     final rows = await txQuery.get();
     if (rows.isEmpty) return const [];
+    return _groupByDay(await _rowsFor(rows));
+  }
+
+  /// 搜索：结构化条件交给 SQL，关键词在内存里匹配备注与关联名称。
+  ///
+  /// 先 SQL 收敛（类型 / 时间 / 分类含子级 / 账户 / 金额），再在剩余集合上做
+  /// 关键词过滤——跨四张表做 `LIKE` 的代码量与索引成本都不划算，本地万级数据
+  /// 在内存里匹配是毫秒级。
+  Future<SearchResult> searchLedger(
+    LedgerFilter filter, {
+    int limit = 2000,
+    DateTime? now,
+  }) async {
+    final bounds = filter.bounds(now ?? DateTime.now());
+    final query = _db.select(_db.transactions)
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.happenedAt, mode: OrderingMode.desc),
+      ]);
+
+    Expression<bool> condition = const Constant(true);
+    final type = filter.type;
+    if (type != null) {
+      condition = condition & _db.transactions.type.equalsValue(type);
+    }
+    if (bounds.from != null) {
+      condition = condition &
+          _db.transactions.happenedAt
+              .isBiggerOrEqualValue(bounds.from!);
+    }
+    if (bounds.to != null) {
+      condition = condition &
+          _db.transactions.happenedAt.isSmallerThanValue(bounds.to!);
+    }
+    final accountId = filter.accountId;
+    if (accountId != null) {
+      condition = condition & _db.transactions.accountId.equals(accountId);
+    }
+    if (filter.minCents != null) {
+      condition = condition &
+          _db.transactions.amountCents.isBiggerOrEqualValue(filter.minCents!);
+    }
+    if (filter.maxCents != null) {
+      condition = condition &
+          _db.transactions.amountCents.isSmallerOrEqualValue(filter.maxCents!);
+    }
+
+    final categoryId = filter.categoryId;
+    if (categoryId != null) {
+      final children = await childrenOfCategory(categoryId);
+      condition = condition & _db.transactions.categoryId.isIn(
+        [categoryId, ...children.map((c) => c.id)],
+      );
+    }
+
+    // 多取一条用于判断是否被截断
+    query
+      ..where((t) => condition)
+      ..limit(limit + 1);
+    final raw = await query.get();
+    final truncated = raw.length > limit;
+    final transactions = truncated ? raw.sublist(0, limit) : raw;
+
+    final rows = await _rowsFor(transactions);
+    final tagByTransaction = await tagsByTransaction();
+    // 关键词要能顺着一级分类命中二级分类下的账（搜「餐饮」应包含「餐饮/外卖」）
+    final categoryNames = {
+      for (final c in await _db.select(_db.categories).get()) c.id: c.name,
+    };
+
+    final keyword = filter.keyword.trim().toLowerCase();
+    var matched = keyword.isEmpty
+        ? rows
+        : rows.where((row) {
+            final parentName =
+                categoryNames[row.category.parentId] ?? '';
+            final haystack = <String>[
+              row.transaction.note,
+              row.category.name,
+              parentName,
+              row.account?.name ?? '',
+              ...?tagByTransaction[row.transaction.id],
+            ].join('\u0000').toLowerCase();
+            return haystack.contains(keyword);
+          }).toList();
+
+    final tag = filter.tag;
+    if (tag != null) {
+      matched = matched
+          .where((row) => (tagByTransaction[row.transaction.id] ?? const [])
+              .contains(tag))
+          .toList();
+    }
+
+    return SearchResult(
+      groups: _groupByDay(matched),
+      matchedCount: matched.length,
+      truncated: truncated,
+    );
+  }
+
+  /// 某分类的子分类（搜索时「餐饮」要能带出「餐饮/外卖」）。
+  Future<List<Category>> childrenOfCategory(String parentId) {
+    return (_db.select(_db.categories)
+          ..where((t) => t.parentId.equals(parentId)))
+        .get();
+  }
+
+  /// 「交易 id → 标签名」的映射（搜索匹配与「按标签筛选」共用）。
+  Future<Map<String, List<String>>> tagsByTransaction() async {
+    final tagNames = {
+      for (final tag in await _db.select(_db.tags).get()) tag.id: tag.name,
+    };
+    final result = <String, List<String>>{};
+    for (final link in await _db.select(_db.transactionTags).get()) {
+      final name = tagNames[link.tagId];
+      if (name == null) continue;
+      result.putIfAbsent(link.transactionId, () => []).add(name);
+    }
+    return result;
+  }
+
+  /// 把交易行装配成展示行（分类/账户/附件计数一次取齐）。
+  Future<List<TransactionRow>> _rowsFor(List<Transaction> transactions) async {
+    if (transactions.isEmpty) return const [];
 
     final categories = {
       for (final c in await _db.select(_db.categories).get()) c.id: c,
@@ -256,23 +393,27 @@ class TransactionRepository {
       thumbnails.putIfAbsent(a.transactionId, () => a.fileName);
     }
 
-    final byDay = <DateTime, List<TransactionRow>>{};
-    for (final tx in rows) {
-      final category = categories[tx.categoryId];
-      if (category == null) continue; // 外键保证不会发生，防御性跳过
-      final day = DateTime(tx.happenedAt.year, tx.happenedAt.month,
-          tx.happenedAt.day);
-      byDay.putIfAbsent(day, () => []).add(
-            TransactionRow(
-              transaction: tx,
-              category: category,
-              account: tx.accountId == null ? null : accounts[tx.accountId],
-              attachmentCount: attachmentCounts[tx.id] ?? 0,
-              thumbnailFileName: thumbnails[tx.id],
-            ),
-          );
-    }
+    return [
+      for (final tx in transactions)
+        if (categories[tx.categoryId] != null)
+          TransactionRow(
+            transaction: tx,
+            category: categories[tx.categoryId]!,
+            account: tx.accountId == null ? null : accounts[tx.accountId],
+            attachmentCount: attachmentCounts[tx.id] ?? 0,
+            thumbnailFileName: thumbnails[tx.id],
+          ),
+    ];
+  }
 
+  /// 按天分组（倒序），并算好当天收支小计。
+  List<DayGroup> _groupByDay(List<TransactionRow> rows) {
+    final byDay = <DateTime, List<TransactionRow>>{};
+    for (final row in rows) {
+      final at = row.transaction.happenedAt;
+      final day = DateTime(at.year, at.month, at.day);
+      byDay.putIfAbsent(day, () => []).add(row);
+    }
     final days = byDay.keys.toList()..sort((a, b) => b.compareTo(a));
     return [
       for (final day in days)
