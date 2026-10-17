@@ -39,9 +39,26 @@ dependencies:
   fl_chart: ^0.71.0
   intl: ^0.19.0
 
+  # 本地存储（drift / SQLite）与附件落盘
+  drift: ^2.28.2
+  sqlite3_flutter_libs: ^0.5.42
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # BeeCount 导入：CSV 解析 + zip/tar.gz 解包 + 文件选择
+  csv: ^5.1.1
+  archive: ^3.6.1
+  file_picker: ^8.3.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
+
+  # drift 代码生成
+  drift_dev: ^2.28.0
+  build_runner: ^2.4.15
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

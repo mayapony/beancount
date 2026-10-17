@@ -43,3 +43,14 @@ app.*.map.json
 # Local env
 *.local
 .env
+
+# Scratch: exported archives and extracted temp data (test/fixtures 里只放脱敏样本)
+/tmp/
+
+# 真实账本数据（从 BeeCount 导出的 CSV / 图片）绝不入库；
+# git 里只保留 test/fixtures/*.csv 这类由 make_fixtures.py 生成的脱敏样本。
+/test/fixtures/local/
+
+# 暂时只提交代码：docs/ 里的文档与截图（含真实金额截图）先不入库。
+# 需要把文档纳入版本管理时，删掉下面这一行即可。
+/docs/*
