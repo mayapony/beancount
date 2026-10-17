@@ -1,44 +1,148 @@
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/demo_data.dart';
 import '../theme/tokens.dart';
+import '../utils/dates.dart';
 import '../utils/money.dart';
 import 'common.dart';
 
+/// 一笔记账的草稿：面板的产出，M1 数据层直接落库。
+@immutable
+class QuickEntryDraft {
+  const QuickEntryDraft({
+    required this.amount,
+    required this.isIncome,
+    required this.categoryIndex,
+    required this.account,
+    required this.time,
+    this.note = '',
+    this.tags = const <String>[],
+  });
+
+  final double amount;
+  final bool isIncome;
+  final int categoryIndex;
+  final String account;
+  final DateTime time;
+  final String note;
+  final List<String> tags;
+}
+
 /// 记一笔面板 —— 金豆按下直接进入，一次点击开始输入。
 ///
-/// 结构参考成熟记账 App：
-/// 支出/收入 → 分类（5 列、上下滑动、可见 3 行）→ 账户/日期 → 金额 + 图片入口
-/// → 键盘（1-9 三行 + 右列 ⌫ / + / − / 完成 + 底部「再记」）。
-/// 图片入口直接触发「上传即识别」（M0 为交互骨架，M7 接真实视觉模型）。
+/// 结构（参照成熟记账 App，见 docs/review/记账面板-设计评审.md）：
+/// 标题 + 支出/收入分段 → 分类（4 列 × 3 行，灰阶 + 金色实心选中）
+/// → 账户/时间 → 金额卡（金额 + 备注行：图片 / 相机 / 标签）→ 键盘（贴底，不随内容滚动）。
+///
+/// 三条视觉规则：
+/// 1. 同屏只有一个强调色：只有"选中分类 + 完成"用 `goldDeep`；
+/// 2. 键盘白键必须压在 `neutral.sand` 底座上，键的边界才看得见；
+/// 3. 金额是唯一的大字号，其余文字一律 ≤15px。
 class QuickEntrySheet extends StatefulWidget {
   const QuickEntrySheet({
     super.key,
     required this.onSubmit,
+    this.initialCategory = 0,
+    this.initialIsIncome = false,
+    this.initialAccount,
   });
 
-  final void Function(double amount, bool isIncome, int categoryIndex) onSubmit;
+  /// 分类/类型/账户继承上次记账的值（DESIGN.md §9.1：无需重选）。
+  final int initialCategory;
+  final bool initialIsIncome;
+  final String? initialAccount;
+
+  final void Function(QuickEntryDraft draft) onSubmit;
 
   @override
   State<QuickEntrySheet> createState() => _QuickEntrySheetState();
 }
 
-class _QuickEntrySheetState extends State<QuickEntrySheet> {
-  bool _isIncome = false;
-  int _categoryIndex = 0;
+/// 标签预设（M0 先用固定集合，等标签模型落地再改成用户自建）。
+const kQuickTagPresets = <String>[
+  '出差',
+  '报销',
+  '聚餐',
+  '礼物',
+  '家庭',
+  '旅行',
+  '工作',
+  '理财',
+];
+
+/// 键盘尺寸：4 行 × 56 + 3 道 8 的缝 + 上下 8 的内边距。
+const double _kKeyHeight = 56;
+const double _kKeyGap = 8;
+
+/// 强调色实心填充：亮色用 `goldDeep`（白字 5:1），
+/// 暗色用 `goldDark`（深字 5.4:1）；若用浅金 + 白字会掉到 2:1。
+Color _accentFill(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? BeanColors.goldDark
+        : BeanColors.goldDeep;
+
+Color _onAccentFill(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+        ? BeanColors.textLight
+        : Colors.white;
+
+class _QuickEntrySheetState extends State<QuickEntrySheet>
+    with SingleTickerProviderStateMixin {
+  late bool _isIncome = widget.initialIsIncome;
+  late int _categoryIndex = kQuickCategoryOrder.contains(widget.initialCategory)
+      ? widget.initialCategory
+      : kQuickCategoryOrder.first;
   String _amount = '0';
 
   /// 待计算的左操作数（支持 38.5 + 12 这类连续计算）
   double? _left;
   String? _op;
 
+  String _note = '';
+  final Set<String> _tags = <String>{};
+
+  /// 账户与时间：都继承上次值，点胶囊可改。
+  late String _account = widget.initialAccount ?? _defaultAccount();
+  DateTime _time = DateTime.now();
+
   /// 图片识别中
   bool _recognizing = false;
+
+  /// 「再记」后的内联反馈（SnackBar 会被 modal sheet 挡住，所以自己画）
+  late final AnimationController _toast;
+  String _toastText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _toast = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    // 播完自动归零，备注行回到「点击填写备注」
+    _toast.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(_toast.reset);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _toast.dispose();
+    super.dispose();
+  }
 
   double get _value => double.tryParse(_amount) ?? 0;
 
   double get _finalValue =>
       _op == null ? _value : _apply(_left ?? 0, _op!, _value);
+
+  bool get _canSubmit => _finalValue > 0;
 
   double _apply(double a, String op, double b) {
     if (op == '+') return a + b;
@@ -52,10 +156,12 @@ class _QuickEntrySheetState extends State<QuickEntrySheet> {
   }
 
   void _press(String key) {
+    HapticFeedback.selectionClick();
     setState(() {
       if (key == '⌫') {
-        _amount =
-            _amount.length <= 1 ? '0' : _amount.substring(0, _amount.length - 1);
+        _amount = _amount.length <= 1
+            ? '0'
+            : _amount.substring(0, _amount.length - 1);
       } else if (key == '.') {
         if (!_amount.contains('.')) _amount = '$_amount.';
       } else {
@@ -65,6 +171,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet> {
   }
 
   void _pressOperator(String op) {
+    HapticFeedback.selectionClick();
     setState(() {
       if (_op == null) {
         _left = _value;
@@ -102,142 +209,404 @@ class _QuickEntrySheetState extends State<QuickEntrySheet> {
     );
   }
 
+  /// 备注：用弹窗编辑，避免系统键盘顶掉自定义数字键盘。
+  Future<void> _editNote() async {
+    var draft = _note;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          '备注',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: TextFormField(
+          initialValue: _note,
+          autofocus: true,
+          maxLength: 40,
+          maxLines: 2,
+          minLines: 1,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            hintText: '例如：和家人吃晚饭',
+            counterText: '',
+          ),
+          onChanged: (value) => draft = value,
+          onFieldSubmitted: (value) => Navigator.of(ctx).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(draft),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _note = result.trim());
+  }
+
+  /// 标签：预设多选，选中的标签会以 # 前缀显示在备注行。
+  Future<void> _editTags() async {
+    final picked = <String>{..._tags};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text(
+            '标签',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          content: SizedBox(
+            width: 280,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final tag in kQuickTagPresets)
+                  FilterChip(
+                    label: Text(tag),
+                    selected: picked.contains(tag),
+                    showCheckmark: false,
+                    selectedColor: BeanColors.gold.withValues(alpha: 0.16),
+                    side: BorderSide(
+                      color: picked.contains(tag)
+                          ? BeanColors.gold
+                          : Theme.of(ctx).colorScheme.outline,
+                    ),
+                    labelStyle: TextStyle(
+                      fontSize: 13,
+                      fontWeight: picked.contains(tag)
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: picked.contains(tag)
+                          ? BeanColors.goldDeep
+                          : BeanPalette.of(ctx).textSecondary,
+                    ),
+                    onSelected: (selected) => setDialogState(() {
+                      if (selected) {
+                        picked.add(tag);
+                      } else {
+                        picked.remove(tag);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _tags
+        ..clear()
+        ..addAll(picked);
+    });
+  }
+
   void _submit({bool keepOpen = false}) {
-    widget.onSubmit(_finalValue, _isIncome, _categoryIndex);
+    if (!_canSubmit) return;
+    HapticFeedback.lightImpact();
+    widget.onSubmit(
+      QuickEntryDraft(
+        amount: _finalValue,
+        isIncome: _isIncome,
+        categoryIndex: _categoryIndex,
+        account: _account,
+        time: _time,
+        note: _note,
+        tags: List<String>.unmodifiable(_tags),
+      ),
+    );
     if (keepOpen) {
+      final summary =
+          '已记 ${_isIncome ? '+' : '-'}¥${formatMoney(_finalValue)} · '
+          '${BeanColors.categoryNames[_categoryIndex]}';
       setState(() {
         _amount = '0';
         _left = null;
         _op = null;
+        _note = '';
+        _tags.clear();
+        _time = DateTime.now();
+        _toastText = summary;
       });
+      _toast.forward(from: 0);
     } else {
       Navigator.of(context).pop();
     }
   }
 
+  /// 账户选择：底部小面板，选中即返回。
+  Future<void> _pickAccount() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: BeanPalette.of(context).surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _AccountSheet(selected: _account),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _account = picked);
+  }
+
+  /// 时间选择：快捷「今天/昨天/前天」+ 日期时间滚轮。
+  Future<void> _pickTime() async {
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      backgroundColor: BeanPalette.of(context).surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _TimeSheet(initial: _time),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _time = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
+    final neutral = palette.neutral;
+    final safeBottom = math.min(
+      MediaQuery.viewPaddingOf(context).bottom,
+      28.0,
+    );
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── 支出 / 收入 ───────────────────────────────
-            Row(
-              children: [
-                _TypePill(
-                  label: '支出',
-                  selected: !_isIncome,
-                  onTap: () => setState(() => _isIncome = false),
-                ),
-                const SizedBox(width: 4),
-                _TypePill(
-                  label: '收入',
-                  selected: _isIncome,
-                  onTap: () => setState(() => _isIncome = true),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  color: palette.textSecondary,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.96,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── 拖拽条 + 标题栏：一个标题、一个关闭按钮 ──────────
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: neutral.handle,
+              borderRadius: BorderRadius.circular(2),
             ),
-
-            // ── 分类：5 列，上下滑动，可见 3 行 ─────────────
-            SizedBox(
-              height: 266,
-              child: GridView.count(
-                crossAxisCount: 5,
-                padding: EdgeInsets.zero,
-                mainAxisSpacing: 4,
-                crossAxisSpacing: 2,
-                childAspectRatio: 0.80,
+          ),
+          SizedBox(
+            // 44 的触控高度 + 上下各 3 的呼吸
+            height: 50,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 3, 12, 3),
+              child: Row(
                 children: [
-                  for (final index in kQuickCategoryOrder)
-                    _CategoryCell(
-                      categoryIndex: index,
-                      selected: _categoryIndex == index,
-                      onTap: () => setState(() => _categoryIndex = index),
+                  Text(
+                    '记一笔',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _Segmented(
+                      isIncome: _isIncome,
+                      onChanged: (v) => setState(() => _isIncome = v),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: neutral.sand,
+                      foregroundColor: palette.textSecondary,
+                      minimumSize: const Size(40, 40),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 6),
 
-            const SizedBox(height: 8),
+          // ── 分类：4 列 × 3 行 = 12，正好填满（小屏时内部滚动）──
+          Flexible(
+            fit: FlexFit.loose,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 222),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final grid = SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Column(
+                      children: [
+                        for (var row = 0; row < 3; row++)
+                          Row(
+                            children: [
+                              for (var col = 0; col < 4; col++)
+                                Expanded(
+                                  child: _CategoryCell(
+                                    categoryIndex:
+                                        kQuickCategoryOrder[row * 4 + col],
+                                    selected: _categoryIndex ==
+                                        kQuickCategoryOrder[row * 4 + col],
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setState(() {
+                                        _categoryIndex =
+                                            kQuickCategoryOrder[row * 4 + col];
+                                      });
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  );
+                  // 只有放不下 3 行时才加底部淡出：提示"还能滑"，而不是像被裁掉
+                  if (constraints.maxHeight >= 222) return grid;
+                  return ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.white, Colors.white, Colors.transparent],
+                      stops: [0.0, 0.93, 1.0],
+                    ).createShader(rect),
+                    child: grid,
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
 
-            // ── 账户 / 日期 ───────────────────────────────
-            Row(
+          // ── 元信息：账户 / 时间，44px 高、正向文案、点开即改 ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
               children: [
-                _MetaChip(
-                  icon: Icons.account_balance_wallet_outlined,
-                  label: '不选账户',
-                  onTap: () => _notYet('账户选择'),
+                Flexible(
+                  child: _MetaChip(
+                    icon: Icons.account_balance_wallet_rounded,
+                    label: _account,
+                    onTap: _pickAccount,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 _MetaChip(
-                  icon: Icons.calendar_today_rounded,
-                  label: '10月17日',
-                  onTap: () => _notYet('日期选择'),
+                  icon: Icons.schedule_rounded,
+                  label: formatEntryTime(_time),
+                  onTap: _pickTime,
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 10),
 
-            const SizedBox(height: 10),
-
-            // ── 金额 + 图片识别入口 ───────────────────────
-            Container(
-              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          // ── 金额 + 备注：一个输入区，备注行安放图片/相机/标签 ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
               decoration: BoxDecoration(
                 color: palette.surface,
-                borderRadius: BorderRadius.circular(BeanRadius.card),
-                boxShadow: BeanShadow.soft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: neutral.lineStrong),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (_op != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        '${formatMoneyCompact(_left ?? 0)} $_op',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: palette.textSecondary,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
+                  // 运算过程固定占 18px：输入 + 时卡片不会突然变高
+                  SizedBox(
+                    height: 18,
+                    child: _op == null
+                        ? null
+                        : Align(
+                            alignment: Alignment.bottomLeft,
+                            child: Text(
+                              '${formatMoneyCompact(_left ?? 0)} $_op',
+                              style: TextStyle(
+                                fontSize: 13,
+                                height: 1.15,
+                                color: palette.textSecondary,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ),
+                  ),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
                         '¥',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 24,
                           fontWeight: FontWeight.w600,
-                          color: palette.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _amount,
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: const [FontFeature.tabularFigures()],
                           color: _isIncome ? palette.income : palette.expense,
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 4),
+                      Text(
+                        _amount.contains('.')
+                            ? _amount
+                            : '${_amount == '0' ? '0' : _amount}.00',
+                        style: TextStyle(
+                          fontSize: 42,
+                          height: 1.15,
+                          fontWeight: FontWeight.w700,
+                          color: _isIncome ? palette.income : palette.expense,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      // 输入光标：让人看出「这里在等我打字」
+                      Container(
+                        width: 2,
+                        height: 28,
+                        margin: const EdgeInsets.only(left: 2, bottom: 6),
+                        color: BeanColors.gold,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _editNote,
+                          child: SizedBox(
+                            height: 44,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _statusLine(palette),
+                            ),
+                          ),
+                        ),
+                      ),
                       if (_recognizing)
                         const Padding(
-                          padding: EdgeInsets.only(right: 6),
+                          padding: EdgeInsets.only(right: 4),
                           child: SizedBox(
                             width: 18,
                             height: 18,
@@ -246,135 +615,337 @@ class _QuickEntrySheetState extends State<QuickEntrySheet> {
                               color: BeanColors.goldDeep,
                             ),
                           ),
+                        )
+                      else ...[
+                        _NoteAction(
+                          icon: Icons.image_outlined,
+                          tooltip: '从相册识别',
+                          onTap: _recognizeBill,
                         ),
-                      IconButton(
-                        tooltip: '从相册识别',
-                        icon: const Icon(Icons.image_outlined),
-                        color: BeanColors.goldDeep,
-                        onPressed: _recognizing ? null : _recognizeBill,
-                      ),
-                      IconButton(
-                        tooltip: '拍照识别',
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        color: BeanColors.goldDeep,
-                        onPressed: _recognizing ? null : _recognizeBill,
-                      ),
+                        _NoteAction(
+                          icon: Icons.photo_camera_outlined,
+                          tooltip: '拍照识别',
+                          onTap: _recognizeBill,
+                        ),
+                        _NoteAction(
+                          icon: Icons.sell_outlined,
+                          tooltip: '选择标签',
+                          highlighted: _tags.isNotEmpty,
+                          onTap: _editTags,
+                        ),
+                      ],
                     ],
                   ),
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 10),
 
-            const SizedBox(height: 10),
+          // ── 键盘：砂色底座 + 白键，永远贴底 ─────────────────
+          Container(
+            color: neutral.sand,
+            padding: EdgeInsets.fromLTRB(8, 8, 8, 8 + safeBottom),
+            child: Column(
+              children: [
+                _digitRow(
+                  const ['1', '2', '3'],
+                  _functionKey(
+                    icon: Icons.backspace_outlined,
+                    onTap: () => _press('⌫'),
+                  ),
+                ),
+                _digitRow(const ['4', '5', '6'], _operatorKey('+')),
+                _digitRow(const ['7', '8', '9'], _operatorKey('−')),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SurfaceKey(
+                        onTap: () => _submit(keepOpen: true),
+                        enabled: _canSubmit,
+                        child: Text(
+                          '再记',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: _canSubmit
+                                ? BeanColors.goldDeep
+                                : neutral.disabledFg,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: _kKeyGap),
+                    Expanded(child: _digitKey('0')),
+                    const SizedBox(width: _kKeyGap),
+                    Expanded(child: _dotKey()),
+                    const SizedBox(width: _kKeyGap),
+                    Expanded(
+                      child: _SurfaceKey(
+                        filled: true,
+                        enabled: _canSubmit,
+                        onTap: _submit,
+                        child: Text(
+                          '完成',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: _canSubmit
+                                ? _onAccentFill(context)
+                                : neutral.disabledFg,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            // ── 键盘：4 列（1-9 / 右列功能 / 底部再记） ────
-            SizedBox(
-              height: 240,
-              child: Column(
-                children: [
-                  _keyRow(const ['1', '2', '3'], right: _backspaceKey()),
-                  _keyRow(
-                    const ['4', '5', '6'],
-                    right: _operatorKey('+'),
-                  ),
-                  _keyRow(
-                    const ['7', '8', '9'],
-                    right: _operatorKey('−'),
-                  ),
-                  _bottomKeyRow(),
-                ],
+  /// 备注行的状态行：平时显示备注/标签，「再记」后短暂显示记账确认。
+  Widget _statusLine(BeanPalette palette) {
+    return AnimatedBuilder(
+      animation: _toast,
+      builder: (context, _) {
+        final v = _toast.value;
+        if (v == 0) return _noteLine(palette);
+        final fade = v < 0.08 ? v / 0.08 : (v > 0.9 ? (1 - v) / 0.1 : 1.0);
+        return Opacity(
+          opacity: fade.clamp(0.0, 1.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.check_circle_rounded,
+                size: 15,
+                color: BeanColors.beanGreenDeep,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                _toastText,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: BeanColors.beanGreenDeep,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _noteLine(BeanPalette palette) {
+    final primary = Theme.of(context).colorScheme.onSurface;
+    final tagText = _tags.map((t) => '#$t').join(' ');
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (tagText.isNotEmpty)
+            TextSpan(
+              text: tagText,
+              style: TextStyle(
+                color: BeanColors.goldDeep,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ],
+          if (tagText.isNotEmpty && _note.isNotEmpty)
+            const TextSpan(text: '  '),
+          TextSpan(
+            text: _note.isEmpty ? '点击填写备注' : _note,
+            style: TextStyle(
+              color: _note.isEmpty ? palette.textSecondary : primary,
+            ),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 13),
+    );
+  }
+
+  /// 默认账户：demo 阶段取第一个；M1 之后换成"上次用的账户 / 默认账户设置"。
+  static String _defaultAccount() =>
+      demoAccounts.isEmpty ? '不选账户' : demoAccounts.first.name;
+
+  Widget _digitKey(String digit) => _SurfaceKey(
+        onTap: () => _press(digit),
+        child: Text(
+          digit,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      );
+
+  Widget _dotKey() => _SurfaceKey(
+        onTap: () => _press('.'),
+        child: Text(
+          '.',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: BeanPalette.of(context).textSecondary,
+          ),
+        ),
+      );
+
+  Widget _functionKey({required IconData icon, required VoidCallback onTap}) =>
+      _SurfaceKey(
+        onTap: onTap,
+        child: Icon(
+          icon,
+          size: 21,
+          color: BeanPalette.of(context).textSecondary,
+        ),
+      );
+
+  Widget _operatorKey(String op) {
+    final active = _op == op;
+    return _SurfaceKey(
+      onTap: () => _pressOperator(op),
+      tint: active ? BeanColors.gold.withValues(alpha: 0.16) : null,
+      child: Text(
+        op,
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: active
+              ? BeanColors.goldDeep
+              : BeanPalette.of(context).textSecondary,
         ),
       ),
     );
   }
 
-  void _notYet(String name) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$name 将在 M3 实现')),
-    );
-  }
-
-  Widget _keyRow(List<String> digits, {required Widget right}) {
-    return Expanded(
+  Widget _digitRow(List<String> digits, Widget right) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _kKeyGap),
       child: Row(
         children: [
-          for (final d in digits)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: _KeyButton(label: d, onTap: () => _press(d)),
-              ),
-            ),
-          Expanded(child: Padding(padding: const EdgeInsets.all(3), child: right)),
+          for (final digit in digits) ...[
+            Expanded(child: _digitKey(digit)),
+            const SizedBox(width: _kKeyGap),
+          ],
+          Expanded(child: right),
         ],
       ),
-    );
-  }
-
-  Widget _bottomKeyRow() {
-    return Expanded(
-      child: Row(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: _TextButton(
-                label: '再记',
-                color: BeanPalette.of(context).surface,
-                textColor: BeanPalette.of(context).textSecondary,
-                onTap: _finalValue > 0 ? () => _submit(keepOpen: true) : null,
-              ),
-            ),
-          ),
-          for (final d in const ['0', '.'])
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: _KeyButton(label: d, onTap: () => _press(d)),
-              ),
-            ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: _TextButton(
-                label: '完成',
-                color: _finalValue > 0
-                    ? BeanColors.goldDeep
-                    : BeanColors.gold.withValues(alpha: 0.30),
-                textColor: Colors.white,
-                onTap: _finalValue > 0 ? _submit : null,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _backspaceKey() {
-    return _KeyButton(
-      icon: Icons.backspace_outlined,
-      onTap: () => _press('⌫'),
-    );
-  }
-
-  Widget _operatorKey(String op) {
-    final active = _op == op;
-    return _TextButton(
-      label: op,
-      color: active
-          ? BeanColors.gold.withValues(alpha: 0.22)
-          : BeanPalette.of(context).surface,
-      textColor: active ? BeanColors.goldDeep : BeanPalette.of(context).expense,
-      fontSize: 22,
-      onTap: () => _pressOperator(op),
     );
   }
 }
 
+/// 分段控件：类型是"背景状态"，用轻量胶囊，不抢主按钮的语法。
+/// 视觉 34 高、热区 44 高：胶囊够轻，手指够得着，语义（button/selected）也保留在可点层上。
+class _Segmented extends StatelessWidget {
+  const _Segmented({required this.isIncome, required this.onChanged});
+
+  final bool isIncome;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final neutral = BeanPalette.of(context).neutral;
+    return SizedBox(
+      height: 44,
+      child: Stack(
+        children: [
+          // 轨道（不可点）
+          Positioned.fill(
+            top: 5,
+            bottom: 5,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: neutral.track,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: Row(
+              // stretch：让两个分段拿到 44 的紧凑高度，胶囊才能正确内缩
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _segment(context, '支出', !isIncome, () => onChanged(false)),
+                _segment(context, '收入', isIncome, () => onChanged(true)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(
+    BuildContext context,
+    String label,
+    bool selected,
+    VoidCallback onTap,
+  ) {
+    final neutral = BeanPalette.of(context).neutral;
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned(
+                top: 8,
+                bottom: 8,
+                left: 3,
+                right: 3,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: selected ? neutral.raised : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: selected
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x0F1C1917),
+                              blurRadius: 4,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: selected
+                      ? BeanColors.goldDeep
+                      : BeanPalette.of(context).textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 分类格：未选中 = 砂色圆 + 暖灰图标；选中 = 金色实心圆 + 白图标。
+/// 12 个分类同屏时，颜色是噪声，选中项才是信息。
 class _CategoryCell extends StatelessWidget {
   const _CategoryCell({
     required this.categoryIndex,
@@ -389,29 +960,35 @@ class _CategoryCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
+    final neutral = palette.neutral;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          color: selected
-              ? BeanColors.gold.withValues(alpha: 0.10)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? BeanColors.gold : Colors.transparent,
-          ),
-        ),
+      child: SizedBox(
+        height: 74,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CategoryAvatar(categoryIndex: categoryIndex, size: 38),
-            const SizedBox(height: 3),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? _accentFill(context) : neutral.sand,
+              ),
+              child: Icon(
+                kCategoryIcons[categoryIndex % kCategoryIcons.length],
+                size: 22,
+                color: selected ? _onAccentFill(context) : neutral.iconNeutral,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               BeanColors.categoryNames[categoryIndex],
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: selected ? BeanColors.goldDeep : palette.textSecondary,
               ),
             ),
@@ -422,6 +999,7 @@ class _CategoryCell extends StatelessWidget {
   }
 }
 
+/// 元信息胶囊：40px 高、实底、正向文案。
 class _MetaChip extends StatelessWidget {
   const _MetaChip({
     required this.icon,
@@ -436,94 +1014,30 @@ class _MetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(BeanRadius.chip),
-          border: Border.all(color: palette.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: palette.textSecondary),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, color: palette.textSecondary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _KeyButton extends StatelessWidget {
-  const _KeyButton({this.label, this.icon, required this.onTap});
-
-  final String? label;
-  final IconData? icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = BeanPalette.of(context);
     return Material(
-      color: palette.surface,
-      borderRadius: BorderRadius.circular(14),
+      color: palette.neutral.sand,
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
-        child: Center(
-          child: icon != null
-              ? Icon(icon, size: 19, color: palette.textSecondary)
-              : Text(
-                  label!,
+        child: SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: palette.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  label,
                   style: TextStyle(
-                    fontSize: label == '.' ? 17 : 22,
-                    fontWeight: FontWeight.w600,
-                    color: label == '.' ? palette.textSecondary : null,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textSecondary,
                   ),
                 ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextButton extends StatelessWidget {
-  const _TextButton({
-    required this.label,
-    required this.color,
-    required this.textColor,
-    this.fontSize = 15,
-    this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final Color textColor;
-  final double fontSize;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: color,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w700,
-              color: textColor,
+              ],
             ),
           ),
         ),
@@ -532,8 +1046,349 @@ class _TextButton extends StatelessWidget {
   }
 }
 
-class _TypePill extends StatelessWidget {
-  const _TypePill({
+/// 备注行右侧的小动作（图片 / 相机 / 标签），44×44 热区。
+class _NoteAction extends StatelessWidget {
+  const _NoteAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final color = highlighted ? BeanColors.goldDeep : palette.textSecondary;
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onTap,
+        icon: Icon(icon, size: 20),
+        color: color,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+        splashRadius: 22,
+      ),
+    );
+  }
+}
+
+/// 键帽：白键压在砂色底座上；`filled` 用于主按钮，禁用态有独立配色。
+class _SurfaceKey extends StatelessWidget {
+  const _SurfaceKey({
+    required this.child,
+    this.onTap,
+    this.filled = false,
+    this.enabled = true,
+    this.tint,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool filled;
+  final bool enabled;
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final neutral = palette.neutral;
+    // 键帽用"抬升面"：亮色白、暗色比砂色底座更亮；半透明 tint 先混到底色上
+    final keyColor =
+        tint == null ? neutral.raised : Color.alphaBlend(tint!, neutral.raised);
+    return Material(
+      color: filled
+          ? (enabled ? _accentFill(context) : neutral.disabledBg)
+          : (enabled ? keyColor : neutral.disabledBg),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          height: _kKeyHeight,
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// 面板内二级小面板的外框：暖灰拖拽条 + 标题 + 关闭键。
+class _MiniSheet extends StatelessWidget {
+  const _MiniSheet({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final safeBottom = math.min(MediaQuery.viewPaddingOf(context).bottom, 28.0);
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(bottom: 16 + safeBottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: palette.neutral.handle,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: palette.neutral.sand,
+                    foregroundColor: palette.textSecondary,
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// 选择账户：一行一个，选中打钩；金额带符号（信用卡欠款用警示色）。
+class _AccountSheet extends StatelessWidget {
+  const _AccountSheet({required this.selected});
+
+  final String selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    return _MiniSheet(
+      title: '选择账户',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          children: [
+            for (final account in demoAccounts)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.of(context).pop(account.name),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        CategoryAvatar(
+                          categoryIndex: account.categoryIndex,
+                          size: 36,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                account.name,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                account.isCredit && account.dueDay != null
+                                    ? '${account.type} · ${account.dueDay} 日还款'
+                                    : account.type,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: palette.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          // 金额统一两位小数；负号放在 ¥ 前面，读作"欠 ¥3,280.40"
+                          '${account.balance < 0 ? '-' : ''}'
+                          '¥${formatMoney(account.balance.abs())}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: account.balance < 0
+                                ? palette.alert
+                                : palette.expense,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          width: 20,
+                          child: account.name == selected
+                              ? const Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 20,
+                                  color: BeanColors.goldDeep,
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 选择记账时间：快捷「今天 / 昨天 / 前天」+ 日期时间滚轮。
+class _TimeSheet extends StatefulWidget {
+  const _TimeSheet({required this.initial});
+
+  final DateTime initial;
+
+  @override
+  State<_TimeSheet> createState() => _TimeSheetState();
+}
+
+class _TimeSheetState extends State<_TimeSheet> {
+  late DateTime _value = widget.initial;
+
+  /// 快捷按钮改了日期时，用新的 key 重建滚轮；滚轮自己滚动不改变它。
+  int _wheelEpoch = 0;
+
+  void _jumpTo(int daysAgo) {
+    final now = DateTime.now();
+    final day = now.subtract(Duration(days: daysAgo));
+    setState(() {
+      _value = DateTime(
+        day.year,
+        day.month,
+        day.day,
+        _value.hour,
+        _value.minute,
+      );
+      _wheelEpoch++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final today = DateTime.now();
+    final selectedDay = DateTime(_value.year, _value.month, _value.day);
+    int daysAgoOf(DateTime d) =>
+        DateTime(today.year, today.month, today.day).difference(d).inDays;
+
+    return _MiniSheet(
+      title: '记账时间',
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                for (var i = 0; i < 3; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  _DayChip(
+                    label: const ['今天', '昨天', '前天'][i],
+                    selected: daysAgoOf(selectedDay) == i,
+                    onTap: () => _jumpTo(i),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 192,
+            // Cupertino 滚轮默认跟随系统亮度；这里强制跟随 App 主题，暗色下才不会黑字黑底。
+            // 文字样式走主题的 titleLarge，字体族才跟全局一致（不在组件里另起一套）。
+            child: CupertinoTheme(
+              data: CupertinoThemeData(
+                brightness: Theme.of(context).brightness,
+                textTheme: CupertinoTextThemeData(
+                  dateTimePickerTextStyle:
+                      Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontSize: 19,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                ),
+              ),
+              child: CupertinoDatePicker(
+                key: ValueKey(_wheelEpoch),
+                mode: CupertinoDatePickerMode.dateAndTime,
+                initialDateTime: _value,
+                use24hFormat: true,
+                minuteInterval: 1,
+                onDateTimeChanged: (value) => _value = value,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: _SurfaceKey(
+              filled: true,
+              onTap: () => Navigator.of(context).pop(_value),
+              child: Text(
+                '完成',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _onAccentFill(context),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '选中的时间会显示在面板和明细里',
+            style: TextStyle(fontSize: 12, color: palette.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayChip extends StatelessWidget {
+  const _DayChip({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -546,21 +1401,29 @@ class _TypePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? BeanColors.goldDeep : Colors.transparent,
-          borderRadius: BorderRadius.circular(BeanRadius.chip),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? Colors.white : palette.textSecondary,
+    return Material(
+      color: selected ? palette.neutral.raised : palette.neutral.sand,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          height: 36,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? BeanColors.gold : Colors.transparent,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? BeanColors.goldDeep : palette.textSecondary,
+            ),
           ),
         ),
       ),
