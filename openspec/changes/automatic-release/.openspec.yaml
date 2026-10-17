@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-10-18
+goal: M10 发布：把「一条命令出包」升级为「打 tag 就发布」
