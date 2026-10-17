@@ -2,12 +2,16 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../data/db/app_database.dart';
+import '../data/db/enums.dart';
+import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
+import '../widgets/quick_entry_sheet.dart';
 import 'attachment_viewer_page.dart';
 
 /// 一笔账的详情：金额、分类/账户/时间/备注、标签与图片。
@@ -19,11 +23,17 @@ class TransactionDetailPage extends StatefulWidget {
     required this.row,
     required this.repository,
     this.attachments,
+    this.categories = const <Category>[],
+    this.accounts = const <AccountBalance>[],
   });
 
   final TransactionRow row;
   final TransactionRepository repository;
   final AttachmentRepository? attachments;
+
+  /// 编辑面板要用的分类与账户；为空时只读展示（不提供编辑）。
+  final List<Category> categories;
+  final List<AccountBalance> accounts;
 
   @override
   State<TransactionDetailPage> createState() => _TransactionDetailPageState();
@@ -68,6 +78,56 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         builder: (_) => AttachmentViewerPage(files: _images, initialIndex: index),
       ),
     );
+  }
+
+  /// 打开预填面板改这一笔；保存成功后刷新本页与明细（明细靠数据流自动刷新）。
+  Future<void> _edit() async {
+    final transaction = _row.transaction;
+    final draft = QuickEntryDraft(
+      amount: transaction.amountCents / 100,
+      isIncome: _row.isIncome,
+      category: _row.category,
+      account: _row.account,
+      time: transaction.happenedAt,
+      note: transaction.note,
+      tags: _tags,
+    );
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => QuickEntrySheet(
+        categories: widget.categories,
+        accounts: widget.accounts,
+        initialDraft: draft,
+        onSubmit: (input) async {
+          try {
+            await widget.repository.update(
+              transaction.id,
+              TransactionEdit(
+                type: input.isIncome ? EntryType.income : EntryType.expense,
+                amountCents: (input.amount * 100).round(),
+                categoryId: input.category.id,
+                happenedAt: input.time,
+                accountId: input.account?.id,
+                note: input.note,
+                tags: input.tags,
+              ),
+            );
+            return null;
+          } on DuplicateTransactionException {
+            return '已存在相同时间、金额与备注的记录';
+          }
+        },
+      ),
+    );
+
+    if (!mounted) return;
+    final fresh = await widget.repository.byId(_row.transaction.id);
+    if (fresh == null || !mounted) return;
+    setState(() => _row = fresh);
+    await _loadExtras();
   }
 
   @override
@@ -202,6 +262,17 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     ),
                   ),
               ],
+            ),
+          ],
+          if (widget.categories.isNotEmpty) ...[
+            const SizedBox(height: BeanSpace.section),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton(
+                onPressed: _edit,
+                child: const Text('编辑'),
+              ),
             ),
           ],
         ],

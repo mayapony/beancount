@@ -11,6 +11,7 @@ import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/transaction_detail_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/widgets/common.dart';
+import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,6 +39,12 @@ void main() {
   });
 
   Future<void> pumpDetail(WidgetTester tester, String id) async {
+    // 详情页与记账面板都按手机尺寸设计，默认的 800×600 会把按钮挤出屏幕
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final row = await repo.byId(id);
     expect(row, isNotNull, reason: '前置：交易要存在');
     await tester.pumpWidget(
@@ -47,6 +54,8 @@ void main() {
           row: row!,
           repository: repo,
           attachments: attachments,
+          categories: await categories.allCategories(),
+          accounts: await accounts.withBalances(),
         ),
       ),
     );
@@ -79,6 +88,86 @@ void main() {
     expect(find.text('#出差'), findsOneWidget);
     expect(find.text('#报销'), findsOneWidget);
     expect(find.textContaining('12:30'), findsOneWidget);
+  });
+
+  testWidgets('编辑：改分类后保存，详情与库里的数据一起变', (tester) async {
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: (await categories.findByName('餐饮', CategoryType.expense))!
+            .id,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '牛肉面',
+      ),
+    );
+
+    await pumpDetail(tester, created.transactionId);
+    expect(find.text('餐饮'), findsWidgets);
+
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑一笔'), findsOneWidget);
+
+    // 换个分类：点网格里的「交通」
+    await tester.tap(find.text('交通'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成').last);
+    await tester.pumpAndSettle();
+
+    // 详情页已刷新
+    expect(find.text('交通'), findsWidgets);
+    expect(find.text('餐饮'), findsNothing);
+
+    // 库里也是新值
+    final stored = await repo.byId(created.transactionId);
+    expect(stored!.category.name, '交通');
+    expect(stored.amountCents, 3850);
+  });
+
+  testWidgets('编辑撞去重键：面板保持打开并提示，数据不变', (tester) async {
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!.id;
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '聚餐',
+      ),
+    );
+    final second = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '加班餐',
+      ),
+    );
+
+    await pumpDetail(tester, second.transactionId);
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+
+    // 把备注改成和第一笔一样 → 时间/金额/备注全同 → 撞键
+    await tester.tap(find.descendant(
+      of: find.byType(QuickEntrySheet),
+      matching: find.textContaining('加班餐'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '聚餐');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('已存在相同时间、金额与备注的记录'), findsOneWidget);
+    expect(find.text('编辑一笔'), findsOneWidget, reason: '面板保持打开');
+
+    final stored = await repo.byId(second.transactionId);
+    expect(stored!.transaction.note, '加班餐');
+    expect(await repo.count(), 2);
   });
 
   testWidgets('无图不出现图片区，无账户不显示账户一行', (tester) async {
