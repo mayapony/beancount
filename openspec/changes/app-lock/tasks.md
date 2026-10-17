@@ -2,8 +2,8 @@
 
 ## 1. PIN 摘要与仓储
 
-- [ ] 1.1 新增 `pinHasher.hash(pin, {salt, iterations})` 与 `verify(pin, salt, digest)`：随机盐、SHA-256 迭代 10000 次、常量时间比较；`test/services/pin_hasher_test.dart` 覆盖「同一 PIN 不同盐摘要不同」「正确/错误校验」「长度校验」
-- [ ] 1.2 新增 `LockRepository`（`app_state` 存 `lock_enabled / lock_pin_salt / lock_pin_digest / lock_pin_length`）：`isEnabled / setPin / verify / disable`；用例：设置后可校验、关闭后不可校验、库里没有明文 PIN
+- [x] 1.1 新增 `pinHasher.hash(pin, {salt, iterations})` 与 `verify(pin, salt, digest)`：随机盐、SHA-256 迭代 10000 次、常量时间比较；`test/services/pin_hasher_test.dart` 覆盖「同一 PIN 不同盐摘要不同」「正确/错误校验」「长度校验」
+- [x] 1.2 新增 `LockRepository`（`app_state` 存 `lock_enabled / lock_pin_salt / lock_pin_digest / lock_pin_length`）：`isEnabled / setPin / verify / disable`；用例：设置后可校验、关闭后不可校验、库里没有明文 PIN
 
 ## 2. 锁定页
 
