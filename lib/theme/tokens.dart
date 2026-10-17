@@ -20,12 +20,12 @@ abstract final class BeanColors {
     colors: [goldLight, goldDark],
   );
 
-  // ── 中性 · 亮（暖米白） ────────────────────────────────
-  static const bgLight = Color(0xFFFAF7F2);
+  // ── 中性 · 亮（分组列表底色：白卡片压在暖灰上，靠 0.5px 发丝线分隔） ──
+  static const bgLight = Color(0xFFF5F1EA);
   static const surfaceLight = Color(0xFFFFFFFF);
   static const textLight = Color(0xFF1C1917);
   static const textSecondaryLight = Color(0xFF78716C);
-  static const borderLight = Color(0xFFE7E5E4);
+  static const borderLight = Color(0xFFE4DED3);
 
   // ── 中性 · 暗（暖黑） ─────────────────────────────────
   static const bgDark = Color(0xFF161311);
@@ -51,8 +51,18 @@ abstract final class BeanColors {
   ];
 
   static const categoryNames = <String>[
-    '餐饮', '交通', '购物', '娱乐', '居家', '医疗',
-    '教育', '旅行', '运动', '数码', '宠物', '其他',
+    '餐饮',
+    '交通',
+    '购物',
+    '娱乐',
+    '居家',
+    '医疗',
+    '教育',
+    '旅行',
+    '运动',
+    '数码',
+    '宠物',
+    '其他',
   ];
 
   /// 图表用色：把分类色向表面色混合，降低饱和度，贴近暖金基调。
@@ -62,17 +72,23 @@ abstract final class BeanColors {
 }
 
 abstract final class BeanRadius {
-  static const card = 18.0;
-  static const button = 14.0;
+  /// 分组卡片：iOS inset grouped list 的 10–12，这里取 14 兼顾大屏
+  static const card = 14.0;
+  static const button = 12.0;
   static const input = 14.0;
   static const chip = 999.0;
+  static const sheet = 24.0;
 }
 
 abstract final class BeanSpace {
-  static const page = 16.0;
+  /// 页面左右边距：20（iOS 常用 16–20，这里向大留白靠）
+  static const page = 20.0;
   static const card = 16.0;
-  static const section = 24.0;
-  static const row = 64.0;
+  static const section = 26.0;
+  static const row = 56.0;
+
+  /// 发丝线：iOS 分隔线 0.5pt
+  static const hairline = 0.5;
 }
 
 abstract final class BeanShadow {
@@ -89,6 +105,79 @@ abstract final class BeanShadow {
 }
 
 /// 语义色扩展：随明暗主题解析。
+///
+/// `neutral` 是记账面板的"表面分层"补充色：面板白底上的键盘底座、输入框描边、
+/// 未选中图标、禁用态。放在 palette 里而不是写死在组件，深色模式才能一起走。
+@immutable
+class BeanNeutral {
+  const BeanNeutral({
+    required this.sand,
+    required this.raised,
+    required this.track,
+    required this.lineStrong,
+    required this.iconNeutral,
+    required this.disabledBg,
+    required this.disabledFg,
+    required this.handle,
+  });
+
+  /// 键盘底座 / 次表面：把"可点区域"从白色面板里分出来
+  final Color sand;
+
+  /// 分段控件轨道 / 滑块槽：比所在表面再深一档，白色胶囊才立得住。
+  final Color track;
+
+  /// 抬升面：砂色底座上的键帽 / 分段控件选中块。
+  /// 亮色是白，暗色必须比底座**更亮**（暗色下"更暗 = 凹陷"）。
+  final Color raised;
+
+  /// 输入框（金额卡）描边，比 border 更实一点
+  final Color lineStrong;
+
+  /// 未选中分类图标（亮色 3.5:1，达图形元素 3:1）
+  final Color iconNeutral;
+
+  final Color disabledBg;
+  final Color disabledFg;
+
+  /// 拖拽条，暖灰，不用 Material 默认的冷灰 onSurfaceVariant
+  final Color handle;
+
+  factory BeanNeutral.light() => const BeanNeutral(
+        sand: Color(0xFFF5F1EA),
+        raised: Color(0xFFFFFFFF),
+        track: Color(0xFFE9E3DA),
+        lineStrong: Color(0xFFE2DBD0),
+        iconNeutral: Color(0xFF8A7F72),
+        disabledBg: Color(0xFFEDE7DD),
+        disabledFg: Color(0xFF857B6C),
+        handle: Color(0xFFDED7CB),
+      );
+
+  factory BeanNeutral.dark() => const BeanNeutral(
+        sand: Color(0xFF2A2521),
+        raised: Color(0xFF352F2A),
+        track: Color(0xFF332D28),
+        lineStrong: Color(0xFF45403A),
+        iconNeutral: Color(0xFFB4AA9C),
+        disabledBg: Color(0xFF2E2925),
+        disabledFg: Color(0xFF8F8579),
+        handle: Color(0xFF4A423A),
+      );
+
+  BeanNeutral lerp(BeanNeutral other, double t) => BeanNeutral(
+        sand: Color.lerp(sand, other.sand, t)!,
+        raised: Color.lerp(raised, other.raised, t)!,
+        track: Color.lerp(track, other.track, t)!,
+        lineStrong: Color.lerp(lineStrong, other.lineStrong, t)!,
+        iconNeutral: Color.lerp(iconNeutral, other.iconNeutral, t)!,
+        disabledBg: Color.lerp(disabledBg, other.disabledBg, t)!,
+        disabledFg: Color.lerp(disabledFg, other.disabledFg, t)!,
+        handle: Color.lerp(handle, other.handle, t)!,
+      );
+}
+
+/// 语义色扩展：随明暗主题解析。
 @immutable
 class BeanPalette extends ThemeExtension<BeanPalette> {
   const BeanPalette({
@@ -102,6 +191,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
     required this.border,
     required this.textSecondary,
     required this.chartColors,
+    required this.neutral,
   });
 
   final Color income;
@@ -113,6 +203,9 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
   final Color surface;
   final Color border;
   final Color textSecondary;
+
+  /// 记账面板的表面分层色（键盘底座 / 描边 / 禁用态）
+  final BeanNeutral neutral;
 
   /// 图表专用的柔和分类色（不再直接使用高饱和品牌分类色）
   final List<Color> chartColors;
@@ -128,8 +221,8 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
         surface: BeanColors.surfaceLight,
         border: BeanColors.borderLight,
         textSecondary: BeanColors.textSecondaryLight,
-        chartColors:
-            BeanColors.softenedChartColors(BeanColors.surfaceLight),
+        chartColors: BeanColors.softenedChartColors(BeanColors.surfaceLight),
+        neutral: BeanNeutral.light(),
       );
 
   factory BeanPalette.dark(Color onSurface) => BeanPalette(
@@ -143,6 +236,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
         border: BeanColors.borderDark,
         textSecondary: BeanColors.textSecondaryDark,
         chartColors: BeanColors.softenedChartColors(BeanColors.surfaceDark),
+        neutral: BeanNeutral.dark(),
       );
 
   static BeanPalette of(BuildContext context) =>
@@ -160,6 +254,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
     Color? border,
     Color? textSecondary,
     List<Color>? chartColors,
+    BeanNeutral? neutral,
   }) {
     return BeanPalette(
       income: income ?? this.income,
@@ -172,6 +267,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
       border: border ?? this.border,
       textSecondary: textSecondary ?? this.textSecondary,
       chartColors: chartColors ?? this.chartColors,
+      neutral: neutral ?? this.neutral,
     );
   }
 
@@ -196,6 +292,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
             t,
           )!,
       ],
+      neutral: neutral.lerp(other.neutral, t),
     );
   }
 }
