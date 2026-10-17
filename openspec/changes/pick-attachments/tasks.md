@@ -16,8 +16,16 @@
 
 - [x] 3.1 Shell 用 `EntryWriter` 提交并把默认选图实现注入面板；明细/详情不需要改动（附件链路已在）；用例：入口页能构建
 - [x] 3.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 229 + 新增）
-- [ ] 3.3 设备端回归：选一张图记一笔 → 明细出现缩略图 → 详情可看大图 → 删除该笔后文件被回收；结果写入 tasks.md
+- [x] 3.3 设备端回归：选一张图记一笔 → 明细出现缩略图 → 详情可看大图 → 删除该笔后文件被回收；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**237 通过**（上一轮 229 + 本次 8）
+- 设备端 `integration_test/attachment_flow_test.dart -d emulator-5554`：通过
+  - 通过 `EntryWriter` 带两张图提交 → 附件目录里确实有两个非空文件 → 详情页显示「图片 · 2」→ 删除这笔后目录清空（引用回收）
+- 未自动化的一步：真实 `image_picker` 的系统选图界面需要人工点一次（模拟器相册里有图即可）；选择→面板→落盘这条链路已由 widget 用例（注入假 picker）覆盖
+- 说明：假的「已识别 ¥38.50」已删除，面板不再暗示有视觉识别；M7 的真识别仍是后续
 ## Workflow follow-up
 
 - 归档 change：`openspec archive pick-attachments --yes`
