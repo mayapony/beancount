@@ -7,15 +7,19 @@ import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/money.dart';
+import '../utils/month.dart';
 import '../widgets/common.dart';
 import 'attachment_viewer_page.dart';
 
 /// 明细页：按天分组的交易列表，数据来自本地库（写入后自动刷新）。
+///
+/// 浏览范围是「一个自然月」：默认当月，切月后重新订阅该月数据。
 class TransactionsPage extends StatefulWidget {
   const TransactionsPage({
     super.key,
     required this.repository,
     this.attachments,
+    this.initialMonth,
   });
 
   final TransactionRepository repository;
@@ -23,18 +27,35 @@ class TransactionsPage extends StatefulWidget {
   /// 附件仓储：用来把库里的文件名还原成磁盘路径，画 32×32 缩略图。
   final AttachmentRepository? attachments;
 
+  /// 初始浏览月份（测试与深链用）；为空时落在当前自然月。
+  final LedgerMonth? initialMonth;
+
   @override
   State<TransactionsPage> createState() => _TransactionsPageState();
 }
 
 class _TransactionsPageState extends State<TransactionsPage> {
-  late final Stream<List<DayGroup>> _stream = widget.repository.watchDayGroups();
+  late LedgerMonth _month = widget.initialMonth ?? LedgerMonth.current();
+  late Stream<List<DayGroup>> _stream = _watch();
 
   @override
   void initState() {
     super.initState();
     // 先把附件目录解析好：列表里的缩略图需要同步拿路径
     widget.attachments?.ensureReady();
+  }
+
+  Stream<List<DayGroup>> _watch() => widget.repository.watchDayGroups(
+        year: _month.year,
+        month: _month.month,
+      );
+
+  void _showMonth(LedgerMonth month) {
+    if (month == _month) return;
+    setState(() {
+      _month = month;
+      _stream = _watch();
+    });
   }
 
   @override
@@ -57,25 +78,39 @@ class _TransactionsPageState extends State<TransactionsPage> {
           return const SizedBox.shrink();
         }
         if (groups.isEmpty) {
-          return const SafeArea(
+          return SafeArea(
             bottom: false,
             child: BeanEmptyState(
-              title: '还没有记账',
-              subtitle: '点下方的金豆，记下第一笔',
+              title: _month.isCurrent ? '还没有记账' : '这个月还没有记账',
+              subtitle: _month.isCurrent
+                  ? '点下方的金豆，记下第一笔'
+                  : '${_month.year}年${_month.month}月没有记录',
             ),
           );
         }
-        return _Ledger(groups: groups, attachments: widget.attachments);
+        return _Ledger(
+          month: _month,
+          groups: groups,
+          attachments: widget.attachments,
+          onPickMonth: _showMonth,
+        );
       },
     );
   }
 }
 
 class _Ledger extends StatelessWidget {
-  const _Ledger({required this.groups, this.attachments});
+  const _Ledger({
+    required this.month,
+    required this.groups,
+    this.attachments,
+    required this.onPickMonth,
+  });
 
+  final LedgerMonth month;
   final List<DayGroup> groups;
   final AttachmentRepository? attachments;
+  final ValueChanged<LedgerMonth> onPickMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -94,9 +129,6 @@ class _Ledger extends StatelessWidget {
     final activeDays = groups.length;
     final dailyAvg = activeDays == 0 ? 0 : totalExpense / activeDays / 100;
 
-    final newest = groups.first.date;
-    final title = '${newest.month}月';
-
     return SafeArea(
       bottom: false,
       child: ListView(
@@ -104,8 +136,8 @@ class _Ledger extends StatelessWidget {
         children: [
           // 没有「明细」标题：月份就是标题，底部 tab 已经说明这是哪一页
           BeanLargeTitle(
-            title: title,
-            subtitle: '${newest.year}年 · ${expenseCount + incomeCount} 笔收支',
+            title: month.title,
+            subtitle: '${month.year}年 · ${expenseCount + incomeCount} 笔收支',
             actions: [
               BeanCircleAction(
                 icon: Icons.calendar_month_rounded,

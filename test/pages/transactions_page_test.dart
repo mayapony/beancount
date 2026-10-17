@@ -6,6 +6,7 @@ import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/transactions_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
+import 'package:bean_count/utils/month.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,7 +34,7 @@ void main() {
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 
-  Future<void> pumpPage(WidgetTester tester) async {
+  Future<void> pumpPage(WidgetTester tester, {LedgerMonth? month}) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildBeanTheme(Brightness.light),
@@ -41,6 +42,7 @@ void main() {
           body: TransactionsPage(
             repository: repo,
             attachments: attachments,
+            initialMonth: month,
           ),
         ),
       ),
@@ -113,6 +115,72 @@ void main() {
     final todayY = tester.getTopLeft(find.text('今天那笔')).dy;
     final yesterdayY = tester.getTopLeft(find.text('昨天那笔')).dy;
     expect(todayY, lessThan(yesterdayY));
+  });
+
+  testWidgets('指定月份时标题与合计只反映该月', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1000,
+        categoryId: food!.id,
+        happenedAt: DateTime(2026, 9, 10, 9),
+        note: '9月那笔',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food.id,
+        happenedAt: DateTime(2026, 10, 10, 9),
+        note: '10月那笔',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3000,
+        categoryId: food.id,
+        happenedAt: DateTime(2026, 10, 11, 9),
+        note: '10月第二笔',
+      ),
+    );
+
+    await pumpPage(tester, month: const LedgerMonth(2026, 10));
+
+    expect(find.text('10月'), findsOneWidget);
+    expect(find.text('10月那笔'), findsOneWidget);
+    expect(find.text('10月第二笔'), findsOneWidget);
+    expect(find.text('9月那笔'), findsNothing);
+    expect(find.textContaining('2 笔支出'), findsOneWidget);
+  });
+
+  testWidgets('默认落在当月，不把历史月份混进来', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1000,
+        categoryId: food!.id,
+        happenedAt: DateTime(2020, 1, 5, 9),
+        note: '很久以前',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food.id,
+        happenedAt: DateTime.now(),
+        note: '刚刚这笔',
+      ),
+    );
+
+    await pumpPage(tester);
+
+    expect(find.text('刚刚这笔'), findsOneWidget);
+    expect(find.text('很久以前'), findsNothing);
   });
 
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
