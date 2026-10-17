@@ -7,6 +7,7 @@ import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
+import '../services/attachments/image_picker_service.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/fx.dart';
@@ -26,6 +27,7 @@ class TransactionDetailPage extends StatefulWidget {
     this.attachments,
     this.categories = const <Category>[],
     this.accounts = const <AccountBalance>[],
+    this.pickImage,
   });
 
   final TransactionRow row;
@@ -35,6 +37,9 @@ class TransactionDetailPage extends StatefulWidget {
   /// 编辑面板要用的分类与账户；为空时只读展示（不提供编辑）。
   final List<Category> categories;
   final List<AccountBalance> accounts;
+
+  /// 选图实现（测试可注入）；为空时不提供「添加图片」。
+  final ImagePickFn? pickImage;
 
   @override
   State<TransactionDetailPage> createState() => _TransactionDetailPageState();
@@ -47,6 +52,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   List<File> _images = const [];
   List<String> _tags = const [];
 
+  /// 附件行与 [_images] 按下标对齐，删图时要用到 id。
+  List<Attachment> _attachments = const [];
+  bool _imagesBusy = false;
+
+  /// 能加图：既有附件仓储，也有选图实现（测试/Web 可能没有）。
+  bool get _canAddImage =>
+      widget.attachments != null && widget.pickImage != null;
+
   @override
   void initState() {
     super.initState();
@@ -57,19 +70,123 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   Future<void> _loadExtras() async {
     final repo = widget.attachments;
     final images = <File>[];
+    final kept = <Attachment>[];
     if (repo != null) {
       final rows = await repo.attachmentsOf(_row.transaction.id);
       for (final attachment in rows) {
         final file = repo.fileFor(attachment.fileName);
-        if (file != null && file.existsSync()) images.add(file);
+        if (file != null && file.existsSync()) {
+          images.add(file);
+          kept.add(attachment);
+        }
       }
     }
     final tags = await widget.repository.tagsOf(_row.transaction.id);
     if (!mounted) return;
     setState(() {
       _images = images;
+      _attachments = kept;
       _tags = tags;
     });
+  }
+
+  /// 给这笔账补一张图：落盘 + 建引用，成功后刷新缩略图。
+  Future<void> _addImage() async {
+    final repo = widget.attachments;
+    final pick = widget.pickImage;
+    if (repo == null || pick == null || _imagesBusy) return;
+
+    final picked = await showModalBottomSheet<ImagePickSource>(
+      context: context,
+      backgroundColor: BeanPalette.of(context).surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('从相册选择'),
+              onTap: () => Navigator.of(ctx).pop(ImagePickSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('拍照'),
+              onTap: () => Navigator.of(ctx).pop(ImagePickSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.close_rounded),
+              title: const Text('取消'),
+              onTap: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _imagesBusy = true);
+    try {
+      final image = await pick(picked);
+      if (image == null) return;
+      await repo.add(
+        transactionId: _row.transaction.id,
+        bytes: image.bytes,
+        fileName: image.fileName,
+      );
+      await _loadExtras();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('添加失败，请重试')),
+      );
+    } finally {
+      if (mounted) setState(() => _imagesBusy = false);
+    }
+  }
+
+  /// 删除一张图：先确认，再删记录（没有其它引用时文件一并回收）。
+  Future<void> _removeImage(int index) async {
+    final repo = widget.attachments;
+    if (repo == null || _imagesBusy) return;
+    if (index < 0 || index >= _attachments.length) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          '删除这张图片？',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: const Text('图片会从这笔账里移除，删掉后无法恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _imagesBusy = true);
+    try {
+      await repo.remove(_attachments[index].id);
+      await _loadExtras();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除失败，请重试')),
+      );
+    } finally {
+      if (mounted) setState(() => _imagesBusy = false);
+    }
   }
 
   Future<void> _openImages(int index) async {
@@ -297,7 +414,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               ],
             ),
           ],
-          if (_images.isNotEmpty) ...[
+          if (_images.isNotEmpty || _canAddImage) ...[
             const SizedBox(height: BeanSpace.section),
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -311,26 +428,86 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               runSpacing: 8,
               children: [
                 for (var i = 0; i < _images.length; i++)
-                  GestureDetector(
-                    onTap: () => _openImages(i),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.file(
-                        _images[i],
-                        width: 96,
-                        height: 96,
-                        fit: BoxFit.cover,
-                        cacheWidth: 200,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 96,
-                          height: 96,
-                          color: palette.neutral.sand,
-                          child: Icon(
-                            Icons.broken_image_rounded,
-                            size: 20,
-                            color: palette.neutral.iconNeutral,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _openImages(i),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            _images[i],
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
+                            cacheWidth: 200,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 96,
+                              height: 96,
+                              color: palette.neutral.sand,
+                              child: Icon(
+                                Icons.broken_image_rounded,
+                                size: 20,
+                                color: palette.neutral.iconNeutral,
+                              ),
+                            ),
                           ),
                         ),
+                      ),
+                      // 删除角标：点缩略图是看大图，点这个小圆是删
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: GestureDetector(
+                          onTap: () => _removeImage(i),
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: palette.alert,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: palette.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                if (_canAddImage)
+                  GestureDetector(
+                    onTap: _imagesBusy ? null : _addImage,
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: palette.neutral.sand,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_photo_alternate_outlined,
+                            size: 24,
+                            color: palette.textSecondary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '添加图片',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

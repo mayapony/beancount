@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../data/db/app_database.dart';
@@ -9,6 +10,7 @@ import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../data/repositories/ledger_filter.dart';
 import '../data/repositories/transaction_repository.dart';
+import '../services/attachments/image_picker_service.dart';
 import '../services/export/bee_count_csv_writer.dart' show formatCents;
 import '../services/import/bee_count_csv.dart' show parseAmountToCents;
 import '../theme/tokens.dart';
@@ -173,6 +175,8 @@ class _SearchPageState extends State<SearchPage> {
           attachments: widget.attachments,
           categories: _categories,
           accounts: _accounts,
+          // 详情页也能补图：与记一笔用同一个选图实现（Web 无私有目录，禁掉）
+          pickImage: kIsWeb ? null : systemImagePicker(),
         ),
       ),
     );

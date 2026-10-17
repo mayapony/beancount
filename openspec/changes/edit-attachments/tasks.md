@@ -2,10 +2,10 @@
 
 ## 1. 详情页
 
-- [ ] 1.1 `TransactionDetailPage` 新增可选 `pickImage`：图片区出现「添加图片」方块，选图后调用 `add` 并刷新；`test/pages/transaction_detail_page_test.dart` 用例：加图后计数与缩略图变化、取消选图不变
-- [ ] 1.2 每张缩略图加 ✕：确认后 `remove` 并刷新；用例：删一张后只剩一张、文件被回收、取消不删
-- [ ] 1.3 写盘失败/交易不存在时给可读提示且不留下附件记录；用例：注入失败的 picker 或坏路径
-- [ ] 1.4 明细页与搜索页把 `systemImagePicker()` 传给详情页（Web 为 null）；用例：入口页可构建
+- [x] 1.1 `TransactionDetailPage` 新增可选 `pickImage`：图片区出现「添加图片」方块，选图后调用 `add` 并刷新；`test/pages/transaction_detail_page_test.dart` 用例：加图后计数与缩略图变化、取消选图不变
+- [x] 1.2 每张缩略图加 ✕：确认后 `remove` 并刷新；用例：删一张后只剩一张、文件被回收、取消不删
+- [x] 1.3 写盘失败/交易不存在时给可读提示且不留下附件记录；用例：注入失败的 picker 或坏路径
+- [x] 1.4 明细页与搜索页把 `systemImagePicker()` 传给详情页（Web 为 null）；用例：入口页可构建
 
 ## 2. 回归
 
