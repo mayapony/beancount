@@ -20,6 +20,7 @@ import '../services/import/import_service.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
+import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/bean_bottom_nav.dart';
 import '../widgets/bean_fab.dart';
@@ -34,10 +35,14 @@ class ShellPage extends StatefulWidget {
     super.key,
     this.database,
     this.attachmentRepository,
+    this.themeController,
   });
 
   /// 单测 / 截图脚本可以注入内存库；App 正常启动时为 null，走文件库。
   final AppDatabase? database;
+
+  /// 主题控制器（main 注入）；为空时设置页的主题行不可点。
+  final ThemeController? themeController;
 
   /// 附件仓储同样可注入（截图脚本需要把图片落到临时目录）。
   final AttachmentRepository? attachmentRepository;
@@ -93,6 +98,7 @@ class _ShellPageState extends State<ShellPage> {
     ),
     AssetsPage(repository: _accountRepo, netWorth: _netWorthRepo),
     SettingsPage(
+      theme: widget.themeController,
       importer: _importService,
       exporter: _exportService,
       categories: _categoryRepo,

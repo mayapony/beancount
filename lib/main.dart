@@ -5,30 +5,61 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
 import 'data/repositories/lock_repository.dart';
+import 'data/repositories/theme_repository.dart';
 import 'pages/shell.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 import 'widgets/lock_gate.dart';
 
-void main() => runApp(const BeanApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 先把已保存的主题读出来再 runApp：首帧就是正确的亮/暗，不会闪一下
+  final controller = ThemeController(repository: ThemeRepository(_db));
+  await controller.load();
+  runApp(BeanApp(themeController: controller));
+}
 
 /// 全 App 只有这一个数据库实例：应用锁与账本共享它。
 final AppDatabase _db = AppDatabase(openDatabaseConnection());
 
-class BeanApp extends StatelessWidget {
-  const BeanApp({super.key, this.database, this.lockRepository});
+class BeanApp extends StatefulWidget {
+  const BeanApp({
+    super.key,
+    this.database,
+    this.lockRepository,
+    this.themeController,
+  });
 
   /// 测试注入用；为空时用真实的文件库。
   final AppDatabase? database;
   final LockRepository? lockRepository;
 
+  /// 主题控制器（main 注入）；测试不传时内部建一个跟随系统的。
+  final ThemeController? themeController;
+
+  @override
+  State<BeanApp> createState() => _BeanAppState();
+}
+
+class _BeanAppState extends State<BeanApp> {
+  late final ThemeController _controller = widget.themeController ??
+      ThemeController(repository: ThemeRepository(widget.database ?? _db));
+
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => _buildApp(),
+    );
+  }
+
+  Widget _buildApp() {
     return MaterialApp(
       title: '金豆',
       debugShowCheckedModeBanner: false,
       theme: buildBeanTheme(Brightness.light),
       darkTheme: buildBeanTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: _controller.mode,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -51,8 +82,12 @@ class BeanApp extends StatelessWidget {
         );
       },
       home: LockGate(
-        repository: lockRepository ?? LockRepository(database ?? _db),
-        child: ShellPage(database: database ?? _db),
+        repository:
+            widget.lockRepository ?? LockRepository(widget.database ?? _db),
+        child: ShellPage(
+          database: widget.database ?? _db,
+          themeController: _controller,
+        ),
       ),
     );
   }

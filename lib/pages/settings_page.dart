@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../data/repositories/account_repository.dart';
 import '../data/repositories/lock_repository.dart';
+import '../data/repositories/theme_repository.dart';
 import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'accounts_page.dart';
@@ -19,6 +21,7 @@ import 'import_page.dart';
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
     super.key,
+    this.theme,
     required this.importer,
     required this.exporter,
     required this.categories,
@@ -26,6 +29,9 @@ class SettingsPage extends StatelessWidget {
     required this.recurring,
     required this.lock,
   });
+
+  /// 主题控制器；为空时主题行只展示「跟随系统」且不可点。
+  final ThemeController? theme;
 
   final ImportService importer;
   final ExportService exporter;
@@ -65,12 +71,25 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ),
                   _divider(palette),
-                  _SettingTile(
-                    icon: Icons.brightness_6_rounded,
-                    color: const Color(0xFF8B5CF6),
-                    title: '主题',
-                    trailing: '跟随系统',
-                  ),
+                  // 主题控制器变化时要重建这一行，所以单独包一层
+                  if (theme == null)
+                    const _SettingTile(
+                      icon: Icons.brightness_6_rounded,
+                      color: Color(0xFF8B5CF6),
+                      title: '主题',
+                      trailing: '跟随系统',
+                    )
+                  else
+                    ListenableBuilder(
+                      listenable: theme!,
+                      builder: (context, _) => _SettingTile(
+                        icon: Icons.brightness_6_rounded,
+                        color: const Color(0xFF8B5CF6),
+                        title: '主题',
+                        trailing: theme!.label,
+                        onTap: () => _pickTheme(context, theme!),
+                      ),
+                    ),
                   _divider(palette),
                   _SettingTile(
                     icon: Icons.lock_outline_rounded,
@@ -233,6 +252,61 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 三选一：跟随系统 / 浅色 / 深色。选中即生效并关闭。
+  static Future<void> _pickTheme(
+    BuildContext context,
+    ThemeController controller,
+  ) async {
+    final picked = await showModalBottomSheet<ThemeMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final palette = BeanPalette.of(ctx);
+        return BeanSheet(
+          title: '主题',
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final mode in const [
+                  ThemeMode.system,
+                  ThemeMode.light,
+                  ThemeMode.dark,
+                ])
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => Navigator.of(ctx).pop(mode),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              ThemeRepository.labelOf(mode),
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                          ),
+                          if (controller.mode == mode)
+                            Icon(
+                              Icons.check_rounded,
+                              size: 20,
+                              color: palette.goldDeep,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (picked == null) return;
+    await controller.setThemeMode(picked);
   }
 
   Widget _divider(BeanPalette palette) => Divider(
