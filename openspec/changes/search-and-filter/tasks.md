@@ -25,7 +25,17 @@
 
 - [x] 4.1 明细页标题栏新增搜索入口，点开进入 `SearchPage`；用例：点放大镜进入搜索页
 - [x] 4.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 154 + 新增）
-- [ ] 4.3 设备端回归：搜索关键词、按类型 + 时间筛选、分类 + 金额区间、从结果改一笔再返回；结果写入 tasks.md
+- [x] 4.3 设备端回归：搜索关键词、按类型 + 时间筛选、分类 + 金额区间、从结果改一笔再返回；结果写入 tasks.md
+
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**169 通过**（上一轮 154 + 本次 15）
+- `flutter test integration_test/search_flow_test.dart -d emulator-5554`：通过（真实文件库）
+  - 初始命中 3 笔 → 关键词「超市」收敛到 1 笔 → 清空关键词切「收入」得 1 笔 → 「全部收支」后进筛选面板选「购物」+ 金额 100–300 → 命中 1 笔 → 点进详情把分类改成「餐饮」→ 返回后原筛选不再命中（命中 0 笔 + 空状态）
+- 过程中修掉的两个测试/UI 问题：
+  - 筛选面板的分类一多会把「应用」顶出屏幕 → 改成「筛选条件可滚 + 操作行固定底部」
+  - 测试里 `find.byType(TextField).at(0)` 命中的是搜索框而不是金额输入框 → 改为按标签定位（`widgetWithText(TextField, '最小')`）
 
 ## Workflow follow-up
 
