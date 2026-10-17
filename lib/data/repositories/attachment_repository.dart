@@ -110,6 +110,19 @@ class AttachmentRepository {
     }
   }
 
+  /// 磁盘上的全部附件文件（按文件名排序）：备份打包用。
+  ///
+  /// 同一张图被多笔账引用时只返回一份——文件名就是去重键。
+  Future<List<File>> allFiles() async {
+    final dir = await ensureReady();
+    final files = <File>[];
+    await for (final entity in dir.list()) {
+      if (entity is File) files.add(entity);
+    }
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+    return files;
+  }
+
   /// 清理没有任何记录引用的文件（导入回滚后可能留下孤儿文件）。
   Future<int> sweepOrphans() async {
     final dir = await ensureReady();

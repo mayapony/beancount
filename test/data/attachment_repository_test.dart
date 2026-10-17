@@ -141,4 +141,20 @@ void main() {
     expect(repo.fileFor('sha_keep.png')!.existsSync(), isTrue);
     expect(File('${tmp.path}/sha_orphan.png').existsSync(), isFalse);
   });
+
+  test('allFiles 按文件名排序，同一张图被两笔账引用也只返回一份', () async {
+    final first = await newTransaction();
+    final second = await newTransaction();
+    await repo.add(transactionId: first, bytes: _png, fileName: 'b.png');
+    await repo.add(transactionId: second, bytes: _png, fileName: 'b.png');
+    await repo.add(
+      transactionId: first,
+      bytes: Uint8List.fromList(<int>[1, 2, 3]),
+      fileName: 'a.png',
+    );
+
+    final files = await repo.allFiles();
+    final names = files.map((f) => f.uri.pathSegments.last).toList();
+    expect(names, ['a.png', 'b.png']);
+  });
 }

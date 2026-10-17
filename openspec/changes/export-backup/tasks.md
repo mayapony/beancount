@@ -2,8 +2,8 @@
 
 ## 1. 数据出口
 
-- [ ] 1.1 `TransactionRepository.exportRows()` 返回 `ExportRow`（分类路径 / 账户名 / 标签 / 附件名），按发生时间升序；`test/data/transaction_repository_test.dart` 用例覆盖二级分类、无账户、多标签多附件
-- [ ] 1.2 `AttachmentRepository.allFiles()` 按文件名去重返回磁盘上的附件清单；用例覆盖同一文件被两笔账引用时只返回一份
+- [x] 1.1 `TransactionRepository.exportRows()` 返回 `ExportRow`（分类路径 / 账户名 / 标签 / 附件名），按发生时间升序；`test/data/transaction_repository_test.dart` 用例覆盖二级分类、无账户、多标签多附件
+- [x] 1.2 `AttachmentRepository.allFiles()` 按文件名去重返回磁盘上的附件清单；用例覆盖同一文件被两笔账引用时只返回一份
 
 ## 2. CSV 写出
 

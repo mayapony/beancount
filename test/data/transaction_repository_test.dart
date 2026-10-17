@@ -286,6 +286,72 @@ void main() {
     expect(shared.existsSync(), isFalse, reason: '引用计数归零后回收');
   });
 
+  test('exportRows 装配分类路径/账户/标签/附件，并按时间升序', () async {
+    final dir = await Directory.systemTemp.createTemp('bean_export_');
+    addTearDown(() => dir.delete(recursive: true));
+    final attachments = AttachmentRepository(db, directory: dir);
+    await attachments.ensureReady();
+    final repoWithFiles = TransactionRepository(db, attachments: attachments);
+
+    final parent = (await categories.findByName('餐饮', CategoryType.expense))!;
+    final child = await categories.ensure(
+      name: '外卖',
+      type: CategoryType.expense,
+      parentId: parent.id,
+    );
+    final account = (await AccountRepository(db).all()).first;
+
+    final later = await repoWithFiles.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2500,
+        categoryId: parent.id,
+        happenedAt: DateTime(2026, 10, 18, 9),
+        note: '有账户无图',
+        accountId: account.id,
+      ),
+    );
+    final earlier = await repoWithFiles.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: child.id,
+        happenedAt: DateTime(2026, 10, 17, 12),
+        note: '二级分类',
+        tags: ['出差', '报销'],
+      ),
+    );
+    await attachments.add(
+      transactionId: earlier.transactionId,
+      bytes: const [1, 2, 3],
+      fileName: 'a.png',
+    );
+    await attachments.add(
+      transactionId: earlier.transactionId,
+      bytes: const [4, 5, 6],
+      fileName: 'b.png',
+      sortOrder: 1,
+    );
+
+    final rows = await repoWithFiles.exportRows();
+    expect(rows, hasLength(2));
+    expect(rows.first.transaction.id, earlier.transactionId, reason: '按时间升序');
+    expect(rows.first.categoryPath, ['餐饮', '外卖']);
+    expect(rows.first.tags, unorderedEquals(['出差', '报销']));
+    expect(rows.first.attachmentNames, ['a.png', 'b.png']);
+    expect(rows.first.accountName, isNull);
+
+    expect(rows.last.transaction.id, later.transactionId);
+    expect(rows.last.categoryPath, ['餐饮']);
+    expect(rows.last.accountName, account.name);
+    expect(rows.last.attachmentNames, isEmpty);
+    expect(rows.last.tags, isEmpty);
+  });
+
+  test('exportRows 对空账本返回空列表', () async {
+    expect(await repo.exportRows(), isEmpty);
+  });
+
   test('delete 删除交易、标签关联与附件记录', () async {
     final dir = await Directory.systemTemp.createTemp('bean_del_');
     addTearDown(() => dir.delete(recursive: true));

@@ -122,6 +122,25 @@ class LedgerSnapshot {
   bool get hasNothingAtAll => totalCount == 0;
 }
 
+/// 导出到 CSV 的一行：分类已经还原成「一级 / 二级」路径，附件是磁盘文件名。
+class ExportRow {
+  const ExportRow({
+    required this.transaction,
+    required this.categoryPath,
+    this.accountName,
+    this.tags = const <String>[],
+    this.attachmentNames = const <String>[],
+  });
+
+  final Transaction transaction;
+
+  /// 长度 1 表示只有一级分类；长度 2 是「一级, 二级」。
+  final List<String> categoryPath;
+  final String? accountName;
+  final List<String> tags;
+  final List<String> attachmentNames;
+}
+
 /// 交易仓储：写库、去重、按天读取。
 class TransactionRepository {
   TransactionRepository(this._db, {AttachmentRepository? attachments})
@@ -424,6 +443,71 @@ class TransactionRepository {
         .get();
     final names = tags.map((t) => t.name).toList()..sort();
     return names;
+  }
+
+  /// 导出用的全量数据：按发生时间升序，分类路径/账户名/标签/附件名一次装配好。
+  ///
+  /// 导出是「全量备份」语义，所以不分页、不分月——数据量级由用户自己的账本决定。
+  Future<List<ExportRow>> exportRows() async {
+    final transactions = await (_db.select(_db.transactions)
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.happenedAt),
+          ]))
+        .get();
+    if (transactions.isEmpty) return const [];
+
+    final categories = {
+      for (final c in await _db.select(_db.categories).get()) c.id: c,
+    };
+    final accounts = {
+      for (final a in await _db.select(_db.accounts).get()) a.id: a,
+    };
+    final tagNames = {
+      for (final t in await _db.select(_db.tags).get()) t.id: t.name,
+    };
+
+    final tagsByTransaction = <String, List<String>>{};
+    for (final link in await _db.select(_db.transactionTags).get()) {
+      final name = tagNames[link.tagId];
+      if (name == null) continue;
+      tagsByTransaction.putIfAbsent(link.transactionId, () => []).add(name);
+    }
+
+    final attachmentsByTransaction = <String, List<String>>{};
+    final attachmentRows = await (_db.select(_db.attachments)
+          ..orderBy([(a) => OrderingTerm(expression: a.sortOrder)]))
+        .get();
+    for (final attachment in attachmentRows) {
+      attachmentsByTransaction
+          .putIfAbsent(attachment.transactionId, () => [])
+          .add(attachment.fileName);
+    }
+
+    return [
+      for (final transaction in transactions)
+        ExportRow(
+          transaction: transaction,
+          categoryPath: _categoryPath(transaction.categoryId, categories),
+          accountName: transaction.accountId == null
+              ? null
+              : accounts[transaction.accountId!]?.name,
+          tags: tagsByTransaction[transaction.id] ?? const [],
+          attachmentNames:
+              attachmentsByTransaction[transaction.id] ?? const [],
+        ),
+    ];
+  }
+
+  List<String> _categoryPath(
+    String categoryId,
+    Map<String, Category> byId,
+  ) {
+    final category = byId[categoryId];
+    if (category == null) return const ['未分类'];
+    final parentId = category.parentId;
+    if (parentId == null) return [category.name];
+    final parent = byId[parentId];
+    return parent == null ? [category.name] : [parent.name, category.name];
   }
 
   /// 全部去重键：导入前用它判断哪些行已经存在。
