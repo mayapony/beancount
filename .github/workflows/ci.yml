@@ -26,6 +26,11 @@ jobs:
       - name: 单元与 Widget 测试
         run: flutter test
 
+      # 打包会走 manifest / 资源 / 插件配置：平台配置被改坏时在这里就红，
+      # 不必等到手动发版才发现。用 debug 构建，快且足够验证配置。
+      - name: 构建 APK（校验平台配置）
+        run: flutter build apk --debug
+
       - name: 校验 OpenSpec 规范
         run: |
           npm install -g @fission-ai/openspec

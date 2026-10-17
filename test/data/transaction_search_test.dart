@@ -259,4 +259,41 @@ void main() {
       5,
     );
   });
+
+  test('关键词能搜到超出 limit 的老账（SQL 预筛）', () async {
+    final food = await cat('餐饮');
+    for (var i = 0; i < 30; i++) {
+      await repo.create(
+        NewTransaction(
+          type: EntryType.expense,
+          amountCents: 100 + i,
+          categoryId: food,
+          happenedAt: DateTime(2026, 1, 1, 9),
+          note: '老账 $i',
+        ),
+      );
+    }
+    for (var i = 0; i < 30; i++) {
+      await repo.create(
+        NewTransaction(
+          type: EntryType.expense,
+          amountCents: 200 + i,
+          categoryId: food,
+          happenedAt: DateTime(2026, 10, 17, 9),
+          note: '新账 $i',
+        ),
+      );
+    }
+
+    // limit 只取最近 5 笔，但关键词命中的是最早那批
+    final result = await repo.searchLedger(
+      const LedgerFilter(keyword: '老账 3'),
+      limit: 5,
+      now: now,
+    );
+
+    expect(result.matchedCount, 1, reason: '「老账 3」在最早的 30 笔里');
+    expect(result.truncated, isFalse);
+    expect(result.groups.single.items.single.transaction.note, '老账 3');
+  });
 }

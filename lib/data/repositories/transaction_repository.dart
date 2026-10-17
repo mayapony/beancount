@@ -385,6 +385,56 @@ class TransactionRepository {
       );
     }
 
+    // 关键词先在 SQL 里预筛一遍：否则 limit 会先把"最近 2000 笔"截出来，
+    // 老账永远搜不到（1 万笔的护栏用例就是在这一步发现的）。
+    // 这里只要求"是超集"，精确语义（一级分类名、标签）留给下面内存里那遍。
+    final keywordRaw = filter.keyword.trim().toLowerCase();
+    if (keywordRaw.isNotEmpty) {
+      final like = '%${keywordRaw.replaceAll('%', '\\%').replaceAll('_', '\\_')}%';
+      final allCategories = await _db.select(_db.categories).get();
+      final byName = {
+        for (final c in allCategories)
+          if (c.name.toLowerCase().contains(keywordRaw)) c.id,
+      };
+      final parentIds = {for (final c in allCategories) if (c.parentId != null) c.parentId!};
+      final matchingParents = byName.intersection(parentIds);
+      final categoryIds = <String>{
+        ...byName,
+        for (final c in allCategories)
+          if (c.parentId != null && matchingParents.contains(c.parentId)) c.id,
+      };
+      final matchingAccounts = {
+        for (final a in await _db.select(_db.accounts).get())
+          if (a.name.toLowerCase().contains(keywordRaw)) a.id,
+      };
+      final matchingTags = {
+        for (final t in await _db.select(_db.tags).get())
+          if (t.name.toLowerCase().contains(keywordRaw)) t.id,
+      };
+      final taggedIds = matchingTags.isEmpty
+          ? const <String>{}
+          : {
+              for (final link in await (_db.select(_db.transactionTags)
+                    ..where((t) => t.tagId.isIn(matchingTags.toList())))
+                  .get())
+                link.transactionId,
+            };
+
+      var keywordCondition =
+          _db.transactions.note.lower().like(like) |
+          _db.transactions.categoryId.isIn(categoryIds.toList());
+      if (matchingAccounts.isNotEmpty) {
+        keywordCondition = keywordCondition |
+            _db.transactions.accountId.isIn(matchingAccounts.toList()) |
+            _db.transactions.toAccountId.isIn(matchingAccounts.toList());
+      }
+      if (taggedIds.isNotEmpty) {
+        keywordCondition =
+            keywordCondition | _db.transactions.id.isIn(taggedIds.toList());
+      }
+      condition = condition & keywordCondition;
+    }
+
     // 多取一条用于判断是否被截断
     query
       ..where((t) => condition)
