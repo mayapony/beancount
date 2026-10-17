@@ -10,7 +10,12 @@ import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/services/export/export_service.dart';
 import 'package:bean_count/services/import/bee_count_archive.dart';
 import 'package:bean_count/services/import/bee_count_csv.dart';
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+
+int directoryImageCount(Directory dir) =>
+    dir.listSync().whereType<File>().length;
 
 void main() {
   late AppDatabase db;
@@ -192,5 +197,66 @@ void main() {
     expect(of(12).readableSize, '12 B');
     expect(of(2048).readableSize, '2.0 KB');
     expect(of(18 * 1024 * 1024).readableSize, '18 MB');
+  });
+
+  test('删掉图片后，完整备份里不再包含它', () async {
+    final tmp = await Directory.systemTemp.createTemp('bean_export_del');
+    addTearDown(() async {
+      if (await tmp.exists()) await tmp.delete(recursive: true);
+    });
+
+    final db = AppDatabase(openInMemoryConnection());
+    addTearDown(db.close);
+    final attachments = AttachmentRepository(db, directory: tmp);
+    final transactions = TransactionRepository(db, attachments: attachments);
+    final categories = CategoryRepository(db);
+    await db.select(db.categories).get();
+    await attachments.ensureReady();
+
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    final created = await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '带两张图',
+      ),
+    );
+    final keep = await attachments.add(
+      transactionId: created.transactionId,
+      bytes: Uint8List.fromList(List<int>.filled(8, 1)),
+      fileName: 'keep.png',
+    );
+    await attachments.add(
+      transactionId: created.transactionId,
+      bytes: Uint8List.fromList(List<int>.filled(8, 2)),
+      fileName: 'drop.png',
+    );
+
+    await attachments.remove(
+      (await attachments.attachmentsOf(created.transactionId))
+          .firstWhere((a) => a.fileName == 'drop.png')
+          .id,
+    );
+    expect(keep.fileName, 'keep.png');
+
+    final service = ExportService(
+      transactions: transactions,
+      attachments: attachments,
+    );
+    final backup = await service.buildBackup();
+    expect(
+      backup.entryCount,
+      1,
+      reason: '只有一笔交易',
+    );
+
+    // zip 里只应有 keep.png，没有 drop.png
+    final archive = ZipDecoder().decodeBytes(backup.bytes);
+    final names = archive.files.map((f) => f.name).toList();
+    expect(names.any((n) => n.contains('beecount_attachments')), isTrue);
+    final imageCount = directoryImageCount(tmp);
+    expect(imageCount, 1, reason: '磁盘上也只剩一张');
   });
 }
