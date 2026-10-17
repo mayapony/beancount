@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          channel: stable
+          cache: true
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      - name: 静态分析（零告警）
+        run: flutter analyze
+
+      - name: 单元与 Widget 测试
+        run: flutter test
+
+      - name: 校验 OpenSpec 规范
+        run: |
+          npm install -g @fission-ai/openspec
+          openspec validate --all --strict
