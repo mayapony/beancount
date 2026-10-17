@@ -223,7 +223,7 @@ class _ExportPageState extends State<ExportPage> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${_last!.readableSize} · ${_location ?? ''}',
+                    '${_last!.readableSize} · ${_directoryOf(_location)}',
                     style: TextStyle(
                       fontSize: 12,
                       color: palette.textSecondary,
@@ -265,8 +265,15 @@ class _ExportPageState extends State<ExportPage> {
   }
 }
 
-class _ExportTile extends StatelessWidget {
-  const _ExportTile({
+/// 成功卡片里的位置：只留目录，文件名已经在上面的标题里了。
+String _directoryOf(String? location) {
+  if (location == null || location.isEmpty) return '';
+  final at = location.lastIndexOf(RegExp(r'[/\\]'));
+  if (at <= 0) return location;
+  return '${location.substring(0, at)}/';
+}
+
+class _ExportTile extends StatelessWidget {  const _ExportTile({
     required this.title,
     required this.subtitle,
     required this.icon,

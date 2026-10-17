@@ -131,7 +131,7 @@ void main() {
     expect(saved!.fileName, 'beecount_20261018_011500.csv');
     expect(saved!.entryCount, 1);
     expect(find.text('已导出 beecount_20261018_011500.csv'), findsOneWidget);
-    expect(find.textContaining('下载/beecount'), findsOneWidget);
+    expect(find.textContaining('下载/'), findsOneWidget, reason: '只显示目录');
   });
 
   testWidgets('取消保存不显示成功、按钮恢复可点', (tester) async {
