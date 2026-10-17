@@ -14,8 +14,16 @@
 
 ## 3. 回归
 
-- [ ] 3.1 设备端回归：建一张信用卡账户、设还款日 → 记一笔支出 → 资产页出现「待还」与天数；结果写入 tasks.md
+- [x] 3.1 设备端回归：建一张信用卡账户、设还款日 → 记一笔支出 → 资产页出现「待还」与天数；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found；`flutter test`：**283 通过**（上一轮 270 + 本次 13）
+- 设备端 `integration_test/card_bills_flow_test.dart -d emulator-5554`：通过
+  - 建信用卡（账单日 5 / 还款日 20）→ 刷 3,200 元 → 资产页出现「待还 / 招商信用卡 / ¥3,200.00 / 还有 N 天」
+- 迁移：`schemaVersion` 3 → 4 只给 accounts 加两列；v1→v4 与全新建库两条用例都过，老数据与索引不变
+- 过程中修的展示问题：提醒卡头部原本对单张卡重复显示天数（下面一行已有）→ 单张不再显示头部天数；
+  另 `SectionTitle` 内部自带 `Expanded`，不能塞进带 `Spacer` 的 `Row`（会 `RenderFlex` 报错），改用普通 `Text`
 ## Workflow follow-up
 
 - 归档 change：`openspec archive credit-card-bills --yes`
