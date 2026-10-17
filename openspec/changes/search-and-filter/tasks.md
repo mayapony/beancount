@@ -23,8 +23,8 @@
 
 ## 4. 入口与回归
 
-- [ ] 4.1 明细页标题栏新增搜索入口，点开进入 `SearchPage`；用例：点放大镜进入搜索页
-- [ ] 4.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 154 + 新增）
+- [x] 4.1 明细页标题栏新增搜索入口，点开进入 `SearchPage`；用例：点放大镜进入搜索页
+- [x] 4.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 154 + 新增）
 - [ ] 4.3 设备端回归：搜索关键词、按类型 + 时间筛选、分类 + 金额区间、从结果改一笔再返回；结果写入 tasks.md
 
 ## Workflow follow-up

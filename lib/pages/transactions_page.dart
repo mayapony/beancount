@@ -11,6 +11,7 @@ import '../utils/month.dart';
 import '../widgets/common.dart';
 import '../widgets/ledger_day_list.dart';
 import '../widgets/month_picker_sheet.dart';
+import 'search_page.dart';
 import 'transaction_detail_page.dart';
 
 /// 明细页：按天分组的交易列表，数据来自本地库（写入后自动刷新）。
@@ -77,6 +78,20 @@ class _TransactionsPageState extends State<TransactionsPage> {
     });
   }
 
+  /// 打开搜索页（搜索页自己取候选分类/账户）。
+  Future<void> _openSearch() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SearchPage(
+          repository: widget.repository,
+          attachments: widget.attachments,
+          categories: widget.categories,
+          accounts: widget.accounts,
+        ),
+      ),
+    );
+  }
+
   /// 打开一笔的详情；编辑面板要的候选分类/账户在这里现取，避免列表变旧。
   Future<void> _openRow(TransactionRow row) async {
     final categoryList = widget.categories == null
@@ -131,6 +146,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
           attachments: widget.attachments,
           onPickMonth: _showMonth,
           onOpenRow: _openRow,
+          onSearch: _openSearch,
           onSwipeMonth: (delta) =>
               _showMonth(delta > 0 ? _month.next : _month.previous),
         );
@@ -188,6 +204,7 @@ class _Ledger extends StatelessWidget {
     this.attachments,
     required this.onPickMonth,
     required this.onOpenRow,
+    required this.onSearch,
     required this.onSwipeMonth,
   });
 
@@ -198,6 +215,9 @@ class _Ledger extends StatelessWidget {
 
   /// 点一行进入详情。
   final ValueChanged<TransactionRow> onOpenRow;
+
+  /// 打开搜索页。
+  final VoidCallback onSearch;
 
   /// 左右滑动切月：+1 下个月，-1 上个月。
   final ValueChanged<int> onSwipeMonth;
@@ -239,6 +259,12 @@ class _Ledger extends StatelessWidget {
               title: month.title,
               subtitle: '${month.year}年 · ${expenseCount + incomeCount} 笔收支',
               actions: [
+                BeanCircleAction(
+                  icon: Icons.search_rounded,
+                  tooltip: '搜索账目',
+                  onTap: onSearch,
+                ),
+                const SizedBox(width: 8),
                 BeanCircleAction(
                   icon: Icons.calendar_month_rounded,
                   tooltip: '切换月份',

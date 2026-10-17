@@ -6,6 +6,7 @@ import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/attachment_viewer_page.dart';
+import 'package:bean_count/pages/search_page.dart';
 import 'package:bean_count/pages/transaction_detail_page.dart';
 import 'package:bean_count/pages/transactions_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
@@ -404,6 +405,31 @@ void main() {
 
     expect(find.text('带图的一笔'), findsNothing);
     expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('标题栏搜索入口进入搜索页', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '牛肉面',
+      ),
+    );
+
+    await pumpPage(tester);
+    await tester.tap(find.byTooltip('搜索账目'));
+    await pumpFrames(tester);
+
+    expect(find.byType(SearchPage), findsOneWidget);
+    expect(find.text('命中 1 笔'), findsOneWidget);
   });
 
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
