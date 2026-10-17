@@ -15,8 +15,16 @@
 
 ## 3. 回归
 
-- [ ] 3.1 设备端回归：建 USD 账户（汇率 7.25）→ 记一笔 USD 100 → 明细显示原币与折合 → 洞察合计按 725 元计；结果写入 tasks.md
+- [x] 3.1 设备端回归：建 USD 账户（汇率 7.25）→ 记一笔 USD 100 → 明细显示原币与折合 → 洞察合计按 725 元计；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found；`flutter test`：**297 通过**（上一轮 283 + 本次 14）
+- 设备端 `integration_test/multi_currency_flow_test.dart -d emulator-5554`：通过
+  - USD 账户 + USD 100 @ 7.25 的交易 → 洞察合计 725.00 元 → 明细显示 `US$100.00` 与 `≈ ¥725.00`
+- 迁移：`schemaVersion` 4 → 5；v1→v5 与新库两条用例都过（accounts.currency、transactions 三列）
+- 换算精度：全部走整数 ppm（`baseCentsOf` 加半个单位再整除），避免 `10000 * 7.25 = 72499.999…`
+- 已知限制（写进 spec）：导出仍是本位币金额 + `CNY`，原币与汇率不进入导出，避免回灌后金额翻倍
 ## Workflow follow-up
 
 - 归档 change：`openspec archive multi-currency --yes`
