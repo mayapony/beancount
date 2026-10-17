@@ -2,8 +2,8 @@
 
 ## 1. 仓储
 
-- [ ] 1.1 `TransactionRepository.categoryLedger(rootId, {from, to, limit})`：含子分类、按日分组、合计只算支出、返回笔数；`test/data/category_ledger_test.dart` 用例：含子分类、排除其它分类、from/to 边界、空结果
-- [ ] 1.2 超出 limit 时只取最近 N 笔；用例：1200 笔时返回 1000 笔且笔数与合计基于返回集
+- [x] 1.1 `TransactionRepository.categoryLedger(rootId, {from, to, limit})`：含子分类、按日分组、合计只算支出、返回笔数；`test/data/category_ledger_test.dart` 用例：含子分类、排除其它分类、from/to 边界、空结果
+- [x] 1.2 超出 limit 时只取最近 N 笔；用例：1200 笔时返回 1000 笔且笔数与合计基于返回集
 
 ## 2. 下钻页
 

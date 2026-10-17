@@ -150,6 +150,21 @@ class TransactionRow {
 ///
 /// 除当月分组外还带上整库总笔数：只有它才能区分「一笔账都没有」和
 /// 「这个月没有账，但别处有」——两种空状态给用户的说法完全不同。
+/// 分类下钻的结果：按日分组 + 合计（只算支出）+ 笔数。
+class CategoryLedger {
+  const CategoryLedger({
+    required this.groups,
+    required this.totalCents,
+    required this.count,
+  });
+
+  final List<DayGroup> groups;
+  final int totalCents;
+  final int count;
+
+  bool get isEmpty => count == 0;
+}
+
 class LedgerSnapshot {
   const LedgerSnapshot({required this.groups, required this.totalCount});
 
@@ -332,6 +347,46 @@ class TransactionRepository {
     final rows = await txQuery.get();
     if (rows.isEmpty) return const [];
     return _groupByDay(await _rowsFor(rows));
+  }
+
+  /// 分类下钻：某个分类（含所有二级分类）在 [from, to) 内的账目，按日分组。
+  ///
+  /// 合计只算支出——下钻页回答的是"这一类花了多少"，转账与收入不进合计。
+  Future<CategoryLedger> categoryLedger(
+    String rootId, {
+    DateTime? from,
+    DateTime? to,
+    int limit = 1000,
+  }) async {
+    final children = await childrenOfCategory(rootId);
+    final ids = <String>[rootId, ...children.map((c) => c.id)];
+
+    final query = _db.select(_db.transactions)
+      ..where((t) => t.categoryId.isIn(ids))
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.happenedAt, mode: OrderingMode.desc),
+      ])
+      ..limit(limit);
+
+    if (from != null) {
+      query.where((t) => t.happenedAt.isBiggerOrEqualValue(from));
+    }
+    if (to != null) {
+      query.where((t) => t.happenedAt.isSmallerThanValue(to));
+    }
+
+    final rows = await query.get();
+    if (rows.isEmpty) {
+      return const CategoryLedger(groups: [], totalCents: 0, count: 0);
+    }
+    final groups = _groupByDay(await _rowsFor(rows));
+    var total = 0;
+    var count = 0;
+    for (final group in groups) {
+      total += group.expenseCents;
+      count += group.items.length;
+    }
+    return CategoryLedger(groups: groups, totalCents: total, count: count);
   }
 
   /// 搜索：结构化条件交给 SQL，关键词在内存里匹配备注与关联名称。
