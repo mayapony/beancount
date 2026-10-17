@@ -16,7 +16,8 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 120),
         children: [
-          const BeanPageHeader(title: '设置'),
+          // 设置是"入口列表"，没有数字可当锚点，所以标题保留（只是换成大标题）
+          const BeanLargeTitle(title: '设置'),
 
           // ── 外观 ──────────────────────────────────────────
           Padding(
@@ -146,8 +147,9 @@ class SettingsPage extends StatelessWidget {
   }
 
   Widget _divider(BeanPalette palette) => Divider(
-        height: 1,
-        indent: 64,
+        height: BeanSpace.hairline,
+        thickness: BeanSpace.hairline,
+        indent: 60,
         color: palette.border,
       );
 }
@@ -173,17 +175,18 @@ class _SettingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
     final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: [
+          // iOS 设置页语言：29 圆角方块 + 实色 + 白色字形
           Container(
-            width: 36,
-            height: 36,
+            width: 29,
+            height: 29,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
+              color: color,
+              borderRadius: BorderRadius.circular(7),
             ),
-            child: Icon(icon, size: 19, color: color),
+            child: Icon(icon, size: 18, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -193,16 +196,19 @@ class _SettingTile extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 17,
+                    height: 1.25,
+                    letterSpacing: -0.2,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     subtitle!,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 13,
+                      height: 1.2,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -213,13 +219,13 @@ class _SettingTile extends StatelessWidget {
           if (trailing != null)
             Text(
               trailing!,
-              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+              style: TextStyle(fontSize: 15, color: palette.textSecondary),
             ),
           if (onTap != null) ...[
-            const SizedBox(width: 4),
+            const SizedBox(width: 6),
             Icon(
               Icons.chevron_right_rounded,
-              size: 18,
+              size: 20,
               color: palette.textSecondary,
             ),
           ],

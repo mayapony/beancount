@@ -25,54 +25,39 @@ class AssetsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 120),
         children: [
-          const BeanPageHeader(title: '资产', subtitle: '共 3 个账户'),
+          // 标题就是净资产本身：一个数字承担定位 + 层级 + 锚点
+          BeanLargeTitle(
+            title: '¥${formatMoney(netWorth)}',
+            subtitle: '净资产 · 共 ${demoAccounts.length} 个账户',
+          ),
 
-          // ── 净资产 ────────────────────────────────────────
+          // ── 资产构成 + 走势 ────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
             child: BeanCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '净资产',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  AmountText(
-                    netWorth,
-                    showSign: false,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w700,
-                    color: BeanColors.goldDeep,
-                  ),
-                  const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
                         child: _SubMetric(
                           label: '总资产',
-                          child: AmountText(
-                            assets,
-                            showSign: false,
-                            fontSize: 15,
-                            isIncome: true,
+                          child: _Money(
+                            value: assets,
+                            color: palette.income,
                           ),
                         ),
                       ),
-                      Container(width: 1, height: 30, color: palette.border),
+                      Container(
+                          width: BeanSpace.hairline,
+                          height: 30,
+                          color: palette.border),
                       const SizedBox(width: 16),
                       Expanded(
                         child: _SubMetric(
                           label: '总负债',
-                          child: AmountText(
-                            debts,
-                            showSign: false,
-                            fontSize: 15,
-                          ),
+                          child: _Money(value: debts),
                         ),
                       ),
                     ],
@@ -152,8 +137,9 @@ class AssetsPage extends StatelessWidget {
                     _AccountRow(account: demoAccounts[i]),
                     if (i != demoAccounts.length - 1)
                       Divider(
-                        height: 1,
-                        indent: 68,
+                        height: BeanSpace.hairline,
+                        thickness: BeanSpace.hairline,
+                        indent: 62,
                         color: palette.border,
                       ),
                   ],
@@ -191,8 +177,9 @@ class AssetsPage extends StatelessWidget {
                         const Text(
                           '招行信用卡 8 天后到期',
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 17,
+                            letterSpacing: -0.2,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -267,13 +254,13 @@ class _AccountRow extends StatelessWidget {
     final palette = BeanPalette.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: BeanSpace.card,
-        vertical: 12,
+        horizontal: 16,
+        vertical: 11,
       ),
       child: Row(
         children: [
           CategoryAvatar(categoryIndex: account.categoryIndex),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,30 +268,63 @@ class _AccountRow extends StatelessWidget {
                 Text(
                   account.name,
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 17,
+                    height: 1.25,
+                    letterSpacing: -0.2,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   account.isCredit
                       ? '${account.type} · ${account.dueDay} 日还款'
                       : account.type,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
+                    height: 1.2,
                     color: palette.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          AmountText(
-            account.balance,
-            showSign: false,
-            fontSize: 15,
-            color: account.balance < 0 ? palette.expense : null,
+          // 余额用「符号 + ¥ + 两位小数」：欠款是 -¥3,280.40，不是没有符号的 3,280.40
+          _Money(
+            value: account.balance,
+            color: account.balance < 0 ? palette.alert : null,
+            signed: true,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 带货币符号的金额：`-¥3,280.40` / `¥1,240.55`。
+class _Money extends StatelessWidget {
+  const _Money({
+    required this.value,
+    this.color,
+    this.signed = false,
+  });
+
+  final double value;
+  final Color? color;
+
+  /// 保留参数只为语义清楚：负数一律带 `-`，正数不加 `+`（余额不是收支）
+  final bool signed;
+
+  @override
+  Widget build(BuildContext context) {
+    final negative = value < 0;
+    return Text(
+      '${negative ? '-' : ''}¥${formatMoney(value.abs())}',
+      style: TextStyle(
+        fontSize: 17,
+        letterSpacing: -0.2,
+        fontWeight: FontWeight.w500,
+        color: color,
+        fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );
   }

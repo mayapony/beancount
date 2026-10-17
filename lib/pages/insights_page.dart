@@ -21,68 +21,18 @@ class InsightsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 120),
         children: [
-          const BeanPageHeader(
-            title: '洞察',
-            subtitle: '2026 年 10 月 · 支出',
+          // 金额即标题：先给结论，再给图表
+          BeanLargeTitle(
+            title: '¥${formatMoney(totalExpense)}',
+            subtitle: '本月支出 · 2026年10月 · 日均 ${formatMoneyCompact(dailyAvg)}',
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(BeanSpace.page, 0, BeanSpace.page, 16),
+            padding: const EdgeInsets.fromLTRB(
+                BeanSpace.page, 0, BeanSpace.page, 18),
             child: const _CapsuleSwitcher(options: ['月', '年', '全部']),
           ),
 
-          // ── 总支出 ────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
-            child: BeanCard(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '总支出',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: palette.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        AmountText(
-                          totalExpense,
-                          showSign: false,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        '日均',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: palette.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        formatMoney(dailyAvg),
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: BeanSpace.section),
+          const SizedBox(height: 4),
 
           // ── 分类占比（环形图） ─────────────────────────────
           Padding(
@@ -106,8 +56,9 @@ class InsightsPage extends StatelessWidget {
                               for (final stat in demoCategoryStats)
                                 PieChartSectionData(
                                   value: stat.value,
-                                  color: BeanColors
-                                      .categories[stat.categoryIndex],
+                                  // 图表用降饱和的分类色，和图例保持一致
+                                  color:
+                                      palette.chartColors[stat.categoryIndex],
                                   radius: 22,
                                   showTitle: false,
                                 ),
@@ -207,13 +158,19 @@ class InsightsPage extends StatelessWidget {
                               showTitles: true,
                               interval: 7,
                               reservedSize: 22,
-                              getTitlesWidget: (value, meta) => Text(
-                                '${value.toInt() + 1}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: palette.textSecondary,
-                                ),
-                              ),
+                              getTitlesWidget: (value, meta) {
+                                // 只在 7 的倍数处标日期，避免末尾"29 30"叠字
+                                if (value.toInt() % 7 != 0) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Text(
+                                  '${value.toInt() + 1}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: palette.textSecondary,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -284,9 +241,9 @@ class InsightsPage extends StatelessWidget {
                               child: LinearProgressIndicator(
                                 value: stat.value / totalExpense,
                                 minHeight: 8,
-                                backgroundColor:
-                                    palette.chartColors[stat.categoryIndex]
-                                        .withValues(alpha: 0.12),
+                                backgroundColor: palette
+                                    .chartColors[stat.categoryIndex]
+                                    .withValues(alpha: 0.12),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   palette.chartColors[stat.categoryIndex],
                                 ),
@@ -370,33 +327,37 @@ class _CapsuleSwitcherState extends State<_CapsuleSwitcher> {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
+    // 分段控件：砂色轨道 + 白色胶囊，不用金色底（金色留给选中分类与主按钮）
     return Container(
-      padding: const EdgeInsets.all(4),
+      height: 36,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: palette.gold.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(BeanRadius.chip),
+        color: palette.neutral.track,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
           for (var i = 0; i < widget.options.length; i++)
             Expanded(
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => _index = i),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  duration: const Duration(milliseconds: 160),
                   decoration: BoxDecoration(
-                    color: _index == i ? palette.surface : Colors.transparent,
-                    borderRadius: BorderRadius.circular(BeanRadius.chip),
-                    boxShadow: _index == i ? BeanShadow.soft : null,
+                    color: _index == i
+                        ? palette.neutral.raised
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
                   child: Text(
                     widget.options[i],
                     style: TextStyle(
                       fontSize: 13,
+                      letterSpacing: -0.1,
                       fontWeight:
-                          _index == i ? FontWeight.w700 : FontWeight.w500,
+                          _index == i ? FontWeight.w600 : FontWeight.w500,
                       color: _index == i
                           ? BeanColors.goldDeep
                           : palette.textSecondary,

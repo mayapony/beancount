@@ -387,7 +387,8 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: BeanColors.surfaceDark,
-                            borderRadius: BorderRadius.circular(BeanRadius.card),
+                            borderRadius:
+                                BorderRadius.circular(BeanRadius.card),
                           ),
                           child: Row(
                             children: [

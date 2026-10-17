@@ -40,41 +40,15 @@ class TransactionsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.only(bottom: 120),
         children: [
-          // 与其他页面统一的标题栏：左「明细」，右侧月份切换
-          BeanPageHeader(
-            title: '明细',
+          // 没有「明细」标题：月份就是标题，底部 tab 已经说明这是哪一页
+          BeanLargeTitle(
+            title: '10月',
+            subtitle: '2026年 · ${expenseCount + incomeCount} 笔收支',
             actions: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: BeanColors.gold.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(BeanRadius.chip),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.calendar_month_rounded,
-                      size: 15,
-                      color: BeanColors.goldDeep,
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      '2026年10月',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: BeanColors.goldDeep,
-                      ),
-                    ),
-                    const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: BeanColors.goldDeep,
-                    ),
-                  ],
-                ),
+              BeanCircleAction(
+                icon: Icons.calendar_month_rounded,
+                tooltip: '切换月份',
+                onTap: () {},
               ),
             ],
           ),
@@ -88,7 +62,7 @@ class TransactionsPage extends StatelessWidget {
                   Expanded(
                     child: _Metric(
                       label: '支出',
-                      child: AmountText(totalExpense, fontSize: 20),
+                      child: AmountText(totalExpense, fontSize: 17),
                     ),
                   ),
                   _divider(palette),
@@ -98,7 +72,7 @@ class TransactionsPage extends StatelessWidget {
                       child: AmountText(
                         totalIncome,
                         isIncome: true,
-                        fontSize: 20,
+                        fontSize: 17,
                       ),
                     ),
                   ),
@@ -109,7 +83,7 @@ class TransactionsPage extends StatelessWidget {
                       child: AmountText(
                         totalIncome - totalExpense,
                         showSign: false,
-                        fontSize: 20,
+                        fontSize: 17,
                         color: BeanColors.goldDeep,
                       ),
                     ),
@@ -200,8 +174,9 @@ class TransactionsPage extends StatelessWidget {
                             _TransactionRow(item: group.items[i]),
                             if (i != group.items.length - 1)
                               Divider(
-                                height: 1,
-                                indent: 68,
+                                height: BeanSpace.hairline,
+                                thickness: BeanSpace.hairline,
+                                indent: 62,
                                 color: palette.border,
                               ),
                           ],
@@ -257,14 +232,15 @@ class _TransactionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
     return Padding(
+      // 行高 56：iOS 列表的节奏，比原来的 64 更紧凑但留白更多
       padding: const EdgeInsets.symmetric(
-        horizontal: BeanSpace.card,
-        vertical: 12,
+        horizontal: 16,
+        vertical: 11,
       ),
       child: Row(
         children: [
           CategoryAvatar(categoryIndex: item.categoryIndex),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -272,14 +248,20 @@ class _TransactionRow extends StatelessWidget {
                 Text(
                   item.title,
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 17,
+                    height: 1.25,
+                    letterSpacing: -0.2,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
-                  '${BeanColors.categoryNames[item.categoryIndex]} · ${item.time}',
-                  style: TextStyle(fontSize: 12, color: palette.textSecondary),
+                  '${item.time} · ${BeanColors.categoryNames[item.categoryIndex]}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.2,
+                    color: palette.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -287,7 +269,8 @@ class _TransactionRow extends StatelessWidget {
           AmountText(
             item.amount,
             isIncome: item.isIncome,
-            fontSize: 15,
+            fontSize: 17,
+            fontWeight: FontWeight.w500,
           ),
         ],
       ),
