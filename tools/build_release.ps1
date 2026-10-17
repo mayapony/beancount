@@ -4,11 +4,16 @@
 #   pwsh -File tools/build_release.ps1            # 完整校验 + 出包
 #   pwsh -File tools/build_release.ps1 -SkipTests # 跳过测试（只出包）
 #
-# 签名：脚本不碰密钥。有 android/key.properties 时 Gradle 用它签名，
-# 没有时 Flutter 会用 debug 签名并在输出里提示——发布前记得配好。
+# 签名：脚本不碰密钥。有 android/key.properties 时 Gradle 用它签名（与 CI 发布同一把），
+# 没有时回退 debug 签名并在输出里提示——那种包只能自己装，别分发。
+#
+# 版本号：默认取最近的 git tag（v1.2.3 → 1.2.3）与提交数；也可显式传 -BuildName/-BuildNumber。
+# 真正的发布不走这个脚本，而是打 tag 让 .github/workflows/release.yml 跑（见 RELEASING.md）。
 
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [string]$BuildName,
+    [string]$BuildNumber
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +29,15 @@ function Invoke-Step {
     }
 }
 
+if (-not $BuildName) {
+    $tag = git describe --tags --abbrev=0 2>$null
+    if ($LASTEXITCODE -eq 0 -and $tag) { $BuildName = $tag.Trim().TrimStart('v') }
+}
+if (-not $BuildNumber) {
+    $count = git rev-list --count HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $count) { $BuildNumber = $count.Trim() }
+}
+
 Invoke-Step '拉取依赖' { flutter pub get }
 Invoke-Step '静态分析' { flutter analyze }
 
@@ -31,7 +45,10 @@ if (-not $SkipTests) {
     Invoke-Step '测试' { flutter test }
 }
 
-Invoke-Step '构建 release APK' { flutter build apk --release }
+$buildArgs = @('build', 'apk', '--release')
+if ($BuildName) { $buildArgs += "--build-name=$BuildName" }
+if ($BuildNumber) { $buildArgs += "--build-number=$BuildNumber" }
+Invoke-Step "构建 release APK（$($BuildName ?? 'pubspec')+$($BuildNumber ?? 'pubspec')）" { flutter @buildArgs }
 
 $apk = Join-Path $root 'build/app/outputs/flutter-apk/app-release.apk'
 if (-not (Test-Path $apk)) {
@@ -46,6 +63,8 @@ Write-Host '产物：' -NoNewline
 Write-Host $apk -ForegroundColor Green
 Write-Host "体积：$sizeMb MB"
 Write-Host "SHA256 前 16 位：$sha"
-if (-not (Test-Path (Join-Path $root 'android/key.properties'))) {
-    Write-Host '注意：没有 android/key.properties，这次用的是 debug 签名（不能上架）。' -ForegroundColor Yellow
+if (Test-Path (Join-Path $root 'android/key.properties')) {
+    Write-Host '签名：发布签名（android/key.properties 生效，可直接覆盖安装）。' -ForegroundColor Green
+} else {
+    Write-Host '签名：debug 签名 —— 只能自己装，不要分发。发布请打 tag 走 CI（见 RELEASING.md）。' -ForegroundColor Yellow
 }

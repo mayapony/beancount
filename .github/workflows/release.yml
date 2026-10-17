@@ -1,0 +1,154 @@
+name: Release
+
+# 打 tag 即发布：v1.2.3 → GitHub Release（APK + SHA256SUMS）
+# 手动 dispatch = 只演练构建并上传 workflow artifact，不建 Release。
+#
+# 需要的仓库 Secrets（见 RELEASING.md）：
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_ALIAS / ANDROID_STORE_PASSWORD / ANDROID_KEY_PASSWORD
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # release notes 要算上一次 tag 到这次的提交区间
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.3'
+          channel: stable
+          cache: true
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      - name: 静态分析（零告警）
+        run: flutter analyze
+
+      # 发布前必须绿：宁可不发，也不要发一个测试挂掉的版本
+      - name: 单元与 Widget 测试
+        run: flutter test
+
+      - name: 推导版本号
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            # 手动演练：用 pubspec 里的版本，只出构建产物
+            VERSION="$(sed -n 's/^version: *\([0-9][^+]*\).*/\1/p' pubspec.yaml | head -1)"
+            TAG=""
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "构建版本：${VERSION}（tag: ${TAG:-无，演练模式}）"
+
+      - name: 还原签名密钥
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${KEYSTORE_BASE64}" ] || missing+=("ANDROID_KEYSTORE_BASE64")
+          [ -n "${KEY_ALIAS}" ] || missing+=("ANDROID_KEY_ALIAS")
+          [ -n "${STORE_PASSWORD}" ] || missing+=("ANDROID_STORE_PASSWORD")
+          [ -n "${KEY_PASSWORD}" ] || missing+=("ANDROID_KEY_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::缺少签名 Secrets：${missing[*]}。配置方法见 RELEASING.md（没有密钥就不要发布）。"
+            exit 1
+          fi
+          # 只写文件，绝不 echo 内容或密码
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > android/release-keystore.jks
+          {
+            echo "storeFile=../release-keystore.jks"
+            echo "storePassword=${STORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS}"
+            echo "keyPassword=${KEY_PASSWORD}"
+          } > android/key.properties
+          echo "签名配置已就绪（内容不打印）"
+
+      - name: 构建 release APK
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.version }}" \
+            --build-number="${{ github.run_number }}"
+
+      - name: 校验签名不是 debug
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          APKSIGNER="$(ls -1 "${ANDROID_HOME}"/build-tools/*/apksigner | sort -V | tail -1)"
+          CERTS="$("${APKSIGNER}" verify --print-certs "${APK}")"
+          echo "${CERTS}"
+          if echo "${CERTS}" | grep -qi "Android Debug"; then
+            echo "::error::APK 是 debug 签名，不能发布：签名密钥没生效，检查 Secrets 与 key.properties。"
+            exit 1
+          fi
+
+      - name: 生成校验和
+        run: |
+          cd build/app/outputs/flutter-apk
+          sha256sum app-release.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cp SHA256SUMS.txt "${GITHUB_WORKSPACE}/SHA256SUMS.txt"
+
+      - name: 上传构建产物（演练模式也留档）
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ steps.version.outputs.version }}-${{ github.run_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: 创建 GitHub Release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          RANGE="${PREV:+${PREV}..}${TAG}"
+          {
+            echo "金豆 ${VERSION}"
+            echo
+            echo "安装：下载 \`app-release.apk\` 直接安装（Android 6.0+）。"
+            echo "校验：\`sha256sum -c SHA256SUMS.txt\`。"
+            echo
+            echo "## 变更"
+            echo
+            git log --no-merges --pretty='- %s' "${RANGE}"
+          } > release-notes.md
+          gh release create "${TAG}" \
+            build/app/outputs/flutter-apk/app-release.apk \
+            SHA256SUMS.txt \
+            --title "金豆 ${VERSION}" \
+            --notes-file release-notes.md
+
+      # 密钥文件只活在本次 runner 上，跑完即销毁；显式清掉只是多一道保险
+      - name: 清理密钥
+        if: always()
+        run: |
+          rm -f android/key.properties android/release-keystore.jks

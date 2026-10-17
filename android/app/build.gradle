@@ -5,6 +5,20 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// 发布签名：有 android/key.properties 就用它，没有就回退 debug 签名（本地开发/出包不受影响）。
+// key.properties 与 keystore 绝不入库（见 .gitignore 与 RELEASING.md）。
+def keystorePropertiesFile = rootProject.file('key.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    def missing = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+            .findAll { !keystoreProperties[it] }
+    if (!missing.isEmpty()) {
+        throw new GradleException(
+                "android/key.properties 缺少字段：${missing.join(', ')}；写法见 RELEASING.md")
+    }
+}
+
 android {
     namespace = "com.jindou.bean_count"
     compileSdk = flutter.compileSdkVersion
@@ -30,11 +44,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties['keyAlias']
+                keyPassword = keystoreProperties['keyPassword']
+                // storeFile 相对于 android/app/ 解析，例如 ../release-keystore.jks
+                // 指到 android/release-keystore.jks
+                storeFile = file(keystoreProperties['storeFile'])
+                storePassword = keystoreProperties['storePassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            // 配了 key.properties 用发布签名；没配回退 debug，避免本地 `flutter run --release` 挂掉。
+            // 发布流水线会校验产物不是 debug 签名（见 .github/workflows/release.yml）。
+            signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
             // ML Kit 插件引用了未打包的其它脚本类，release 的 R8 需要放行
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

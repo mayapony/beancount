@@ -36,6 +36,11 @@ migrate_working_dir/
 /android/app/profile
 /android/app/release
 
+# 发布签名：密钥与密码绝不入库（CI 用 GitHub Secrets 注入，见 RELEASING.md）
+android/key.properties
+*.jks
+*.keystore
+
 # Symbolication / obfuscation
 app.*.symbols
 app.*.map.json
@@ -54,3 +59,11 @@ app.*.map.json
 # 暂时只提交代码：docs/ 里的文档与截图（含真实金额截图）先不入库。
 # 需要把文档纳入版本管理时，删掉下面这一行即可。
 /docs/*
+
+# 发布签名：密钥与口令绝不入库（CI 用 secrets 还原）
+/android/key.properties
+*.jks
+*.keystore
+
+# 发布产物（tools/release.ps1 的输出目录）
+/dist/
