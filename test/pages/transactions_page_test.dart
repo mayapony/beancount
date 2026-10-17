@@ -374,6 +374,38 @@ void main() {
     expect(find.byType(AttachmentViewerPage), findsOneWidget);
   });
 
+  testWidgets('删除后该行与缩略图从明细消失', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1200,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '带图的一笔',
+      ),
+    );
+    await tester.runAsync(() async {
+      await attachments.ensureReady();
+      await attachments.add(
+        transactionId: created.transactionId,
+        bytes: Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
+        fileName: 'gone.png',
+      );
+    });
+
+    await pumpPage(tester);
+    expect(find.text('带图的一笔'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+
+    // 删除要走真实文件 IO，放在 runAsync 里；明细靠数据流自动重发
+    await tester.runAsync(() => repo.delete(created.transactionId));
+    await pumpFrames(tester);
+
+    expect(find.text('带图的一笔'), findsNothing);
+    expect(find.byType(Image), findsNothing);
+  });
+
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
     final food = await categories.findByName('餐饮', CategoryType.expense);
     final withImage = await repo.create(

@@ -131,6 +131,35 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     await _loadExtras();
   }
 
+  /// 删除这一笔：先确认（把金额说清楚，避免删错），删完退回明细。
+  Future<void> _delete() async {
+    final palette = BeanPalette.of(context);
+    final amount = formatMoney(_row.amountCents / 100);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除这笔？'),
+        content: Text('${_row.category.name}  $amount\n删除后无法恢复，关联的图片也会一并清理。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: palette.alert),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await widget.repository.delete(_row.transaction.id);
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
@@ -276,6 +305,16 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               ),
             ),
           ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: TextButton(
+              onPressed: _delete,
+              style: TextButton.styleFrom(foregroundColor: palette.alert),
+              child: const Text('删除这笔'),
+            ),
+          ),
         ],
       ),
     );

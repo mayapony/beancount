@@ -188,6 +188,117 @@ void main() {
     expect(find.text('备注'), findsNothing);
   });
 
+  /// 有多步真实异步（DB / 文件）时 pumpAndSettle 等不到，手动多推几帧。
+  Future<void> pumpFrames(WidgetTester tester) async {
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+  }
+
+  testWidgets('删除：取消不删，确认后删除并退回上一页', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 4500,
+        categoryId: (await categories.findByName('餐饮', CategoryType.expense))!
+            .id,
+        happenedAt: DateTime(2026, 10, 17, 19),
+        note: '晚饭',
+      ),
+    );
+
+    // 用宿主页面 push 详情，才能验证「删除后退回上一页」
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                onPressed: () async {
+                  final row = await repo.byId(created.transactionId);
+                  final cats = await categories.allCategories();
+                  final accs = await accounts.withBalances();
+                  if (!context.mounted) return;
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => TransactionDetailPage(
+                        row: row!,
+                        repository: repo,
+                        attachments: attachments,
+                        categories: cats,
+                        accounts: accs,
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('打开'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await pumpFrames(tester);
+    expect(find.byType(TransactionDetailPage), findsOneWidget);
+
+    // 取消：记录仍在
+    await tester.tap(find.text('删除这笔'));
+    await pumpFrames(tester);
+    expect(find.text('删除这笔？'), findsOneWidget);
+    expect(find.textContaining('45.00'), findsWidgets);
+    await tester.tap(find.text('取消'));
+    await pumpFrames(tester);
+    expect(await repo.byId(created.transactionId), isNotNull);
+
+    // 确认：删掉并回到宿主页
+    await tester.tap(find.text('删除这笔'));
+    await pumpFrames(tester);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(await repo.byId(created.transactionId), isNull);
+    expect(find.byType(TransactionDetailPage), findsNothing);
+    expect(find.text('打开'), findsOneWidget);
+  });
+
+  testWidgets('删除最后一笔引用时，图片文件被回收（真实异步路径）', (tester) async {
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1200,
+        categoryId: (await categories.findByName('餐饮', CategoryType.expense))!
+            .id,
+        happenedAt: DateTime(2026, 10, 17, 8),
+        note: '带图',
+      ),
+    );
+    // 文件删除是真实 IO：必须在 runAsync 里跑，否则 widget test 的假时钟会挂住
+    await tester.runAsync(() async {
+      await attachments.ensureReady();
+      await attachments.add(
+        transactionId: created.transactionId,
+        bytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+        fileName: 'only.png',
+      );
+      expect(File('${tmp.path}/only.png').existsSync(), isTrue);
+      await repo.delete(created.transactionId);
+    });
+
+    expect(await repo.byId(created.transactionId), isNull);
+    expect(
+      File('${tmp.path}/only.png').existsSync(),
+      isFalse,
+      reason: '最后一条引用被删，文件要回收',
+    );
+  });
+
   testWidgets('有图时显示缩略图，数量写进标题', (tester) async {
     final created = await repo.create(
       NewTransaction(
