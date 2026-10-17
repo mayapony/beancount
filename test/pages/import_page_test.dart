@@ -8,6 +8,7 @@ import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/import_page.dart';
 import 'package:bean_count/pages/settings_page.dart';
+import 'package:bean_count/data/repositories/lock_repository.dart';
 import 'package:bean_count/data/repositories/recurring_repository.dart';
 import 'package:bean_count/services/export/export_service.dart';
 import 'package:bean_count/services/import/import_service.dart';
@@ -62,6 +63,7 @@ void main() {
           categories: CategoryRepository(db),
           accounts: AccountRepository(db),
           recurring: RecurringRepository(db),
+          lock: LockRepository(db),
         ),
       );
 
@@ -167,5 +169,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('还没有循环规则'), findsOneWidget);
+  });
+  testWidgets('设置页有应用锁入口，点开进入设置页', (tester) async {
+    await pump(tester, settingsPage());
+
+    expect(find.text('应用锁'), findsOneWidget);
+    await tester.ensureVisible(find.text('应用锁'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用锁'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已关闭'), findsOneWidget);
+    expect(find.text('开启应用锁'), findsOneWidget);
   });
 }

@@ -10,6 +10,7 @@ import '../data/repositories/app_state_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../data/repositories/insights_repository.dart';
+import '../data/repositories/lock_repository.dart';
 import '../data/repositories/net_worth_repository.dart';
 import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
@@ -55,6 +56,7 @@ class _ShellPageState extends State<ShellPage> {
   late final InsightsRepository _insightsRepo = InsightsRepository(_db);
   late final RecurringRepository _recurringRepo = RecurringRepository(_db);
   late final NetWorthRepository _netWorthRepo = NetWorthRepository(_db);
+  late final LockRepository _lockRepo = LockRepository(_db);
   late final AttachmentRepository _attachmentRepo =
       widget.attachmentRepository ?? AttachmentRepository(_db);
   late final ImportService _importService = ImportService(
@@ -84,6 +86,7 @@ class _ShellPageState extends State<ShellPage> {
       categories: _categoryRepo,
       accounts: _accountRepo,
       recurring: _recurringRepo,
+      lock: _lockRepo,
     ),
   ];
 

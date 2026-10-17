@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repositories/account_repository.dart';
+import '../data/repositories/lock_repository.dart';
 import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
@@ -9,6 +10,7 @@ import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'accounts_page.dart';
 import 'categories_page.dart';
+import 'app_lock_page.dart';
 import 'design_showcase_page.dart';
 import 'recurring_page.dart';
 import 'export_page.dart';
@@ -22,6 +24,7 @@ class SettingsPage extends StatelessWidget {
     required this.categories,
     required this.accounts,
     required this.recurring,
+    required this.lock,
   });
 
   final ImportService importer;
@@ -29,6 +32,7 @@ class SettingsPage extends StatelessWidget {
   final CategoryRepository categories;
   final AccountRepository accounts;
   final RecurringRepository recurring;
+  final LockRepository lock;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +76,12 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.lock_outline_rounded,
                     color: const Color(0xFF3B82F6),
                     title: '应用锁',
-                    trailing: 'M9',
+                    subtitle: '打开 App 需要输入 PIN',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AppLockPage(repository: lock),
+                      ),
+                    ),
                   ),
                 ],
               ),

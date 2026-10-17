@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bean_count/data/db/app_database.dart';
+import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/main.dart';
 
 void main() {
@@ -10,7 +12,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const BeanApp());
+    final db = AppDatabase(openInMemoryConnection());
+    addTearDown(db.close);
+    await tester.pumpWidget(BeanApp(database: db));
     await tester.pump(const Duration(milliseconds: 400));
 
     int currentIndex() =>
