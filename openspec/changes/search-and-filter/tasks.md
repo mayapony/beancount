@@ -10,8 +10,8 @@
 
 ## 2. 抽出日分组列表
 
-- [ ] 2.1 把明细页的日分组与行渲染抽到 `lib/widgets/ledger_day_list.dart`（`LedgerDayList`），明细页改用它且现有 widget test 全绿
-- [ ] 2.2 抽出后的行仍支持：点行进入详情、点缩略图看大图；用例沿用明细页的两条导航测试
+- [x] 2.1 把明细页的日分组与行渲染抽到 `lib/widgets/ledger_day_list.dart`（`LedgerDayList`），明细页改用它且现有 widget test 全绿
+- [x] 2.2 抽出后的行仍支持：点行进入详情、点缩略图看大图；用例沿用明细页的两条导航测试
 
 ## 3. 搜索页
 
