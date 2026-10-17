@@ -17,6 +17,8 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/ocr/receipt_recognizer.dart';
+import '../services/ocr/receipt_recognizer_factory.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
@@ -65,6 +67,7 @@ class _ShellPageState extends State<ShellPage> {
   late final RecurringRepository _recurringRepo = RecurringRepository(_db);
   late final NetWorthRepository _netWorthRepo = NetWorthRepository(_db);
   late final LockRepository _lockRepo = LockRepository(_db);
+  late final ReceiptRecognizer? _receiptRecognizer = systemReceiptRecognizer();
   late final EntryWriter _entryWriter = EntryWriter(
     transactions: _transactionRepo,
     attachments: _attachmentRepo,
@@ -217,6 +220,9 @@ class _ShellPageState extends State<ShellPage> {
         recentNotes: recentNotes,
         fxRates: _fxRates,
         pickImage: kIsWeb ? null : systemImagePicker(),
+        recognizeReceipt: _receiptRecognizer == null
+            ? null
+            : (bytes) => recognizeReceipt(_receiptRecognizer, bytes),
         pickEnabled: !kIsWeb,
         initialCategoryId: _lastSelection.categoryId,
         initialIsIncome: _lastSelection.isIncome,

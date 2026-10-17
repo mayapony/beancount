@@ -8,6 +8,7 @@ import '../data/db/app_database.dart';
 import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
 import '../services/attachments/image_picker_service.dart';
+import '../services/ocr/receipt_parser.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/fx.dart';
@@ -80,6 +81,7 @@ class QuickEntrySheet extends StatefulWidget {
     this.pickImage,
     this.pickEnabled = true,
     this.fxRates = const <String, int>{},
+    this.recognizeReceipt,
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -105,6 +107,9 @@ class QuickEntrySheet extends StatefulWidget {
 
   /// 各币种上次用过的汇率（ppm），外币账户记账时作为默认值。
   final Map<String, int> fxRates;
+
+  /// 小票识别：图片 bytes → 线索。为空时不启用（Web/测试）。
+  final Future<ReceiptGuess?> Function(Uint8List bytes)? recognizeReceipt;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -239,6 +244,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   late String? _toAccountId = widget.initialDraft?.toAccount?.id;
   late DateTime _time = widget.initialDraft?.time ?? DateTime.now();
 
+  /// 用户是否手动改过日期（改过就不让识别结果覆盖）
+  bool _timeChanged = false;
+
   /// 保存中：按钮暂时禁用，避免重复提交
   bool _saving = false;
 
@@ -250,6 +258,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   /// 外币汇率（ppm）；选中外币账户时才用得上。
   int? _ratePpm;
+
+  /// 识别中（选图后自动跑一次）
+  bool _recognizingReceipt = false;
 
   /// 当前选中账户的币种（没有账户时按本位币）。
   String get _foreignCurrency {
@@ -408,6 +419,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       if (!mounted) return;
       if (picked != null) {
         setState(() => _images.add(picked));
+        await _applyReceipt(picked);
       }
     } catch (_) {
       if (!mounted) return;
@@ -421,6 +433,78 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     } finally {
       if (mounted) setState(() => _picking = false);
     }
+  }
+
+  /// 选图后跑一次识别：只补空字段，不覆盖用户已经输入的内容。
+  Future<void> _applyReceipt(PickedImage image) async {
+    final recognize = widget.recognizeReceipt;
+    if (recognize == null || !mounted) return;
+
+    setState(() => _recognizingReceipt = true);
+    ReceiptGuess? guess;
+    String? error;
+    try {
+      guess = await recognize(image.bytes);
+    } catch (_) {
+      error = '识别失败，可以手动填';
+    } finally {
+      if (mounted) setState(() => _recognizingReceipt = false);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      _showHint(error);
+      return;
+    }
+    if (guess == null || guess.isEmpty) {
+      _showHint('没认出金额，手动填一下');
+      return;
+    }
+
+    final filled = <String>[];
+    setState(() {
+      if (guess!.hasAmount && _amount == '0') {
+        _amount = (guess.amountCents! / 100).toStringAsFixed(2);
+        _left = null;
+        _op = null;
+        filled.add('金额');
+      }
+      if (guess.categoryName != null && _categoryId == null) {
+        final match = widget.categories
+            .where((c) => c.name == guess!.categoryName)
+            .where((c) => c.type.name == (_isIncome ? 'income' : 'expense'))
+            .firstOrNull;
+        if (match != null) {
+          _categoryId = match.id;
+          filled.add('分类');
+        }
+      }
+      final note = guess.note;
+      if (note != null && note.trim().isNotEmpty && _note.trim().isEmpty) {
+        _note = note.trim();
+        filled.add('备注');
+      }
+      final at = guess.happenedAt;
+      if (at != null && !_timeChanged) {
+        _time = at;
+        filled.add('日期');
+      }
+    });
+
+    if (filled.isEmpty) {
+      _showHint('识别到了文字，但没有可填的空位');
+    } else if (guess.hasAmount) {
+      _showHint('已识别 ¥${(guess.amountCents! / 100).toStringAsFixed(2)}，'
+          '请确认后保存');
+    } else {
+      _showHint('认出了文字，金额没认出来');
+    }
+  }
+
+  void _showHint(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text), duration: const Duration(seconds: 2)),
+    );
   }
 
   /// 备注：用弹窗编辑，避免系统键盘顶掉自定义数字键盘。
@@ -595,7 +679,10 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       builder: (_) => _TimeSheet(initial: _time),
     );
     if (picked == null || !mounted) return;
-    setState(() => _time = picked);
+    setState(() {
+      _time = picked;
+      _timeChanged = true;
+    });
   }
 
   @override
@@ -923,7 +1010,29 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                             height: 44,
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: _statusLine(palette),
+                              child: _recognizingReceipt
+                                  ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          width: 12,
+                                          height: 12,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.6,
+                                            color: BeanColors.goldDeep,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '识别中…',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: palette.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : _statusLine(palette),
                             ),
                           ),
                         ),
