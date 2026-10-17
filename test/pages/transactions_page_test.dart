@@ -257,6 +257,45 @@ void main() {
     expect(find.text('当月那笔'), findsNothing);
   });
 
+  testWidgets('左右滑动切换相邻月份', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    final current = LedgerMonth.current();
+    final next = current.next;
+
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '当月那笔',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3000,
+        categoryId: food.id,
+        happenedAt: DateTime(next.year, next.month, 5, 9),
+        note: '下月那笔',
+      ),
+    );
+
+    await pumpPage(tester);
+    expect(find.text('当月那笔'), findsOneWidget);
+
+    // 向左甩：切到下个月
+    await tester.fling(find.byType(ListView), const Offset(-320, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(find.text('下月那笔'), findsOneWidget);
+    expect(find.text('当月那笔'), findsNothing);
+
+    // 向右甩：回到当月
+    await tester.fling(find.byType(ListView), const Offset(320, 0), 1200);
+    await tester.pumpAndSettle();
+    expect(find.text('当月那笔'), findsOneWidget);
+  });
+
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
     final food = await categories.findByName('餐饮', CategoryType.expense);
     final withImage = await repo.create(

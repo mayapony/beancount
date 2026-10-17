@@ -101,6 +101,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
           groups: data.groups,
           attachments: widget.attachments,
           onPickMonth: _showMonth,
+          onSwipeMonth: (delta) => _showMonth(delta > 0 ? _month.next : _month.previous),
         );
       },
     );
@@ -154,12 +155,19 @@ class _Ledger extends StatelessWidget {  const _Ledger({
     required this.groups,
     this.attachments,
     required this.onPickMonth,
+    required this.onSwipeMonth,
   });
 
   final LedgerMonth month;
   final List<DayGroup> groups;
   final AttachmentRepository? attachments;
   final ValueChanged<LedgerMonth> onPickMonth;
+
+  /// 左右滑动切月：+1 下个月，-1 上个月。
+  final ValueChanged<int> onSwipeMonth;
+
+  /// 滑动速度阈值（px/s）：低于它按误触处理，免得手指蹭到列表就翻月。
+  static const double _swipeVelocity = 200;
 
   @override
   Widget build(BuildContext context) {
@@ -180,9 +188,16 @@ class _Ledger extends StatelessWidget {  const _Ledger({
 
     return SafeArea(
       bottom: false,
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 120),
-        children: [
+      child: GestureDetector(
+        // 只对水平拖动生效：垂直滚动仍归 ListView
+        onHorizontalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity.abs() < _swipeVelocity) return;
+          onSwipeMonth(velocity < 0 ? 1 : -1);
+        },
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 120),
+          children: [
           // 没有「明细」标题：月份就是标题，底部 tab 已经说明这是哪一页
           BeanLargeTitle(
             title: month.title,
@@ -280,7 +295,8 @@ class _Ledger extends StatelessWidget {  const _Ledger({
           const SizedBox(height: BeanSpace.section),
           ...groups.map((group) => _DaySection(
                 group: group, attachments: attachments)),
-        ],
+          ],
+        ),
       ),
     );
   }
