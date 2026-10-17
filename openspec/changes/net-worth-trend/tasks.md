@@ -9,13 +9,13 @@
 
 ## 2. 资产页
 
-- [ ] 2.1 资产页接收 `NetWorthRepository`，新增「净资产走势」卡片：当前值 + 变化额 + 三档胶囊；`test/pages/insights_assets_page_test.dart` 用例断言渲染与切换后点数变化
-- [ ] 2.2 走势图用 fl_chart 绘制（允许负值、不显示纵轴刻度和网格竖线）；用例：有点时出现 `LineChart`，空账本显示「还没有足够的数据」
-- [ ] 2.3 Shell 把 `NetWorthRepository` 传给资产页；用例：入口页可构建
+- [x] 2.1 资产页接收 `NetWorthRepository`，新增「净资产走势」卡片：当前值 + 变化额 + 三档胶囊；`test/pages/insights_assets_page_test.dart` 用例断言渲染与切换后点数变化
+- [x] 2.2 走势图用 fl_chart 绘制（允许负值、不显示纵轴刻度和网格竖线）；用例：有点时出现 `LineChart`，空账本显示「还没有足够的数据」
+- [x] 2.3 Shell 把 `NetWorthRepository` 传给资产页；用例：入口页可构建
 
 ## 3. 回归
 
-- [ ] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 202 + 新增）
+- [x] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 202 + 新增）
 - [ ] 3.2 设备端回归：记两笔账 → 资产页曲线出现 → 切三档点数正确 → 改一笔金额后曲线变化；结果写入 tasks.md
 
 ## Workflow follow-up

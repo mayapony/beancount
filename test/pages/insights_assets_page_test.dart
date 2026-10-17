@@ -4,10 +4,12 @@ import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/insights_repository.dart';
+import 'package:bean_count/data/repositories/net_worth_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/assets_page.dart';
 import 'package:bean_count/pages/insights_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -96,5 +98,71 @@ void main() {
     await pump(tester, AssetsPage(repository: accounts));
 
     expect(find.text('还没有账户'), findsOneWidget);
+  });
+
+  testWidgets('资产页显示净资产走势与三档切换', (tester) async {
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.income,
+        amountCents: 500000,
+        categoryId: (await categories.findByName('工资', CategoryType.income))!
+            .id,
+        happenedAt: DateTime.now(),
+        note: '工资',
+      ),
+    );
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 120000,
+        categoryId: food.id,
+        happenedAt: DateTime.now(),
+        note: '吃饭',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Scaffold(
+          body: AssetsPage(
+            repository: accounts,
+            netWorth: NetWorthRepository(db),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('净资产走势'), findsOneWidget);
+    expect(find.byType(LineChart), findsOneWidget);
+    expect(find.text('近6月'), findsOneWidget);
+
+    // 切到「全部」：仍然是同一张图，但点集变了（不断言内部，只断言不崩）
+    await tester.tap(find.text('全部'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(LineChart), findsOneWidget);
+  });
+
+  testWidgets('没有交易时走势显示空状态', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Scaffold(
+          body: AssetsPage(
+            repository: accounts,
+            netWorth: NetWorthRepository(db),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('还没有足够的数据'), findsOneWidget);
+    expect(find.byType(LineChart), findsNothing);
   });
 }
