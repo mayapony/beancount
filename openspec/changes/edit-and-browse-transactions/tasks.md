@@ -39,7 +39,17 @@
 ## 7. 集成回归
 
 - [x] 7.1 `flutter analyze` 干净、`flutter test` 全绿（新增用例计入，不得低于当前 79 + 新增数）
-- [ ] 7.2 模拟器回归：切到上个月 / 回到本月 / 编辑一笔真实账目 / 删除一笔带图账目 / 重启后数据一致；结果记录在本次变更说明里
+- [x] 7.2 模拟器回归：切到上个月 / 回到本月 / 编辑一笔真实账目 / 删除一笔带图账目 / 重启后数据一致；结果记录在本次变更说明里
+
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**110 通过**（原 79 + 本次 31）
+- `flutter test integration_test/edit_delete_flow_test.dart -d emulator-5554`：2 通过
+  - 设备端全链路：默认当月 → 月份选择器切到上月 → 进详情 → 编辑改分类 → 删除该笔 → 回本月仍能看到当月那笔
+  - 落盘一致性：edit + delete 后关闭数据库、`NativeDatabase` 重开文件库，金额/分类/备注为新值、被删记录不存在
+- 截图（`test/tools/capture_screens_test.dart`）：`24-month-picker.png`、`25-transaction-detail.png`
+- 已知工具限制：截图脚本里详情页的 `Image.file` 有时来不及解码（列表缩略图正常），属截图工具的假时钟问题，不影响运行时
 
 ## Workflow follow-up
 

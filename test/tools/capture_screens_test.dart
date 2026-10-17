@@ -163,7 +163,15 @@ void main() {
 
   tearDownAll(() async {
     await _db.close();
-    if (_attachmentDir.existsSync()) _attachmentDir.deleteSync(recursive: true);
+    // 临时目录可能还被 Image.file 的缓存句柄占着（Windows 会报 errno 32），
+    // 清理失败不该让截图脚本变红。
+    try {
+      if (_attachmentDir.existsSync()) {
+        _attachmentDir.deleteSync(recursive: true);
+      }
+    } on FileSystemException {
+      // ignore
+    }
   });
 
   testWidgets('shot: entry flow', (tester) async {
@@ -310,6 +318,30 @@ void main() {
     await _settle(tester);
     await _settle(tester);
     await _shot(tester, '20-import-preview');
+  });
+
+  /// 月份选择器与交易详情页（本轮新增的两个界面）。
+  testWidgets('shot: month picker + detail', (tester) async {
+    await tester.runAsync(
+      () => resetDemoLedger(_db, attachments: _attachments),
+    );
+    await _pumpApp(tester);
+
+    await tester.tap(find.byIcon(Icons.calendar_month_rounded));
+    await _settle(tester);
+    await _shot(tester, '24-month-picker');
+
+    await tester.tap(find.byTooltip('关闭').last);
+    await _settle(tester);
+
+    await tester.tap(find.text('公司楼下的牛肉面'));
+    await _settle(tester);
+    // 详情页的图片是 Image.file：真实解码发生在 runAsync 里，等它一会儿再拍
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 400)),
+    );
+    await _settle(tester);
+    await _shot(tester, '25-transaction-detail');
   });
 
   testWidgets('shot: scrolled to bottom', (tester) async {

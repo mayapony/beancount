@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bean_count/data/db/app_database.dart';
@@ -26,7 +27,13 @@ Future<void> resetDemoLedger(
     await db.delete(db.tags).go();
   });
   if (attachments != null) {
-    await attachments.sweepOrphans();
+    // 上一张截图可能还持着 Image.file 的句柄（Windows 会报 errno 32），
+    // 清不掉就留给系统临时目录，截图脚本不该因此变红。
+    try {
+      await attachments.sweepOrphans();
+    } on FileSystemException {
+      // ignore
+    }
   }
   await seedDemoLedger(db, attachments: attachments);
 }
