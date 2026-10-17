@@ -11,12 +11,12 @@
 ## 2. 接线
 
 - [x] 2.1 `parseImportFile(bytes, fileName)` 统一入口：xlsx / 文本 / BeeCount 分发；`test/services/import_service_test.dart` 或新用例：入口能返回正确 `ParseResult`
-- [ ] 2.2 导入页文件选择允许 `xlsx`，解析改走统一入口；用例：导入页仍能显示预览（现有用例保持绿）
-- [ ] 2.3 导入页提示文案补上「支持支付宝/微信账单与 Excel」
+- [x] 2.2 导入页文件选择允许 `xlsx`，解析改走统一入口；用例：导入页仍能显示预览（现有用例保持绿）
+- [x] 2.3 导入页提示文案补上「支持支付宝/微信账单与 Excel」
 
 ## 3. 回归
 
-- [ ] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 241 + 新增）
+- [x] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 241 + 新增）
 - [ ] 3.2 设备端回归：导入一份支付宝格式账单 → 预览数字正确 → 落库后分类/账户正确；结果写入 tasks.md
 
 ## Workflow follow-up

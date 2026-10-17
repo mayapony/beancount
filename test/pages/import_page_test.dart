@@ -70,12 +70,12 @@ void main() {
   testWidgets('设置页有导入入口，点开进入导入页', (tester) async {
     await pump(tester, settingsPage());
 
-    expect(find.text('从 BeeCount 导入'), findsOneWidget);
-    await tester.tap(find.text('从 BeeCount 导入'));
+    expect(find.text('导入账单'), findsOneWidget);
+    await tester.tap(find.text('导入账单'));
     await tester.pumpAndSettle();
 
-    expect(find.text('选择备份文件'), findsOneWidget);
-    expect(find.textContaining('怎么拿备份'), findsOneWidget);
+    expect(find.text('选择账单文件'), findsOneWidget);
+    expect(find.textContaining('支持哪些文件'), findsOneWidget);
   });
 
   testWidgets('设置页有导出入口，点开进入导出页', (tester) async {

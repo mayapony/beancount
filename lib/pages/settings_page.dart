@@ -169,8 +169,8 @@ class SettingsPage extends StatelessWidget {
                   _SettingTile(
                     icon: Icons.move_to_inbox_rounded,
                     color: BeanColors.goldDeep,
-                    title: '从 BeeCount 导入',
-                    subtitle: '支持完整备份 zip（含图片）与 CSV',
+                    title: '导入账单',
+                    subtitle: 'BeeCount 备份 / 支付宝 / 微信 / Excel',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => ImportPage(service: importer),

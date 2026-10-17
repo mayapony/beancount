@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/import/bee_count_archive.dart';
-import '../services/import/bee_count_csv.dart';
+import '../services/import/statement_import.dart';
 import '../services/import/import_planner.dart';
 import '../services/import/import_report.dart';
 import '../services/import/import_service.dart';
@@ -45,6 +45,9 @@ class _ImportPageState extends State<ImportPage> {
   int _total = 0;
   final List<String> _warnings = [];
 
+  /// 识别出的账单格式（支付宝/微信），显示在预览的提示里。
+  String? _formatNote;
+
   @override
   void initState() {
     super.initState();
@@ -67,7 +70,7 @@ class _ImportPageState extends State<ImportPage> {
     try {
       final picked = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const ['zip', 'csv'],
+        allowedExtensions: const ['zip', 'csv', 'xlsx'],
         withData: true,
       );
       if (picked == null || picked.files.isEmpty) {
@@ -101,7 +104,12 @@ class _ImportPageState extends State<ImportPage> {
       return;
     }
 
-    final parsed = parseBeeCountCsv(export.csvBytes);
+    // 统一入口：BeeCount CSV/zip、支付宝/微信账单、Excel 都从这里进
+    final statement = await parseImportFile(
+      export.csvBytes,
+      fileName: export.zipName.isEmpty ? name : export.zipName,
+    );
+    final parsed = statement.result;
     if (!parsed.ok) {
       setState(() {
         _stage = _Stage.idle;
@@ -109,6 +117,9 @@ class _ImportPageState extends State<ImportPage> {
       });
       return;
     }
+    _formatNote = statement.kind == StatementKind.beecount
+        ? null
+        : '按${statement.kind.label}解析（账户统一记为「支付宝」/「微信支付」）';
 
     final sizes = <String, int>{
       for (final a in export.attachments) a.fileName: a.bytes.length,
@@ -127,6 +138,7 @@ class _ImportPageState extends State<ImportPage> {
       _plan = plan;
       _warnings
         ..clear()
+        ..addAll([if (_formatNote != null) _formatNote!])
         ..addAll(export.warnings)
         ..addAll(plan.attachmentWarnings.take(5));
       _stage = _Stage.preview;
@@ -179,7 +191,7 @@ class _ImportPageState extends State<ImportPage> {
       body: SafeArea(
         child: Column(
           children: [
-            _TopBar(title: '从 BeeCount 导入'),
+            _TopBar(title: '导入账单'),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(
@@ -217,10 +229,12 @@ class _ImportPageState extends State<ImportPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionTitle('怎么拿备份'),
+              const SectionTitle('支持哪些文件'),
               Text(
-                '在 BeeCount 里：设置 → 数据管理 → 导出备份，会得到一个 zip。\n'
-                'zip 里包含 CSV 和附件图片；只选 CSV 也能导入，但图片不会带过来。',
+                'BeeCount：设置 → 数据管理 → 导出备份，得到一个 zip（含 CSV 与图片）；'
+                '只选 CSV 也能导入，图片不会带过来。\n'
+                '支付宝 / 微信：导出账单 CSV 直接选（GBK 编码也认）。\n'
+                'Excel：表头是 BeeCount 或支付宝/微信的 .xlsx 也能导入。',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.5,
@@ -261,7 +275,7 @@ class _ImportPageState extends State<ImportPage> {
               borderRadius: BorderRadius.circular(BeanRadius.button),
             ),
           ),
-          label: const Text('选择备份文件'),
+          label: const Text('选择账单文件'),
         ),
       ],
     );
