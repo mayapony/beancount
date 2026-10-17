@@ -18,8 +18,6 @@ class SettingsPage extends StatelessWidget {
         children: [
           const BeanPageHeader(title: '设置'),
 
-          const SizedBox(height: 8),
-
           // ── 外观 ──────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),

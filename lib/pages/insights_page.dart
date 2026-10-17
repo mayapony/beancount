@@ -26,7 +26,7 @@ class InsightsPage extends StatelessWidget {
             subtitle: '2026 年 10 月 · 支出',
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(BeanSpace.page, 8, BeanSpace.page, 16),
+            padding: const EdgeInsets.fromLTRB(BeanSpace.page, 0, BeanSpace.page, 16),
             child: const _CapsuleSwitcher(options: ['月', '年', '全部']),
           ),
 

@@ -186,7 +186,7 @@ class BeanPageHeader extends StatelessWidget {
         BeanSpace.page,
         12,
         BeanSpace.page,
-        4,
+        12,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
