@@ -1,20 +1,75 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../data/demo_data.dart';
+import '../data/db/app_database.dart';
+import '../data/repositories/insights_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
 
-class InsightsPage extends StatelessWidget {
-  const InsightsPage({super.key});
+/// 洞察页：金额即标题，下面是分类占比、趋势、排行。
+class InsightsPage extends StatefulWidget {
+  const InsightsPage({super.key, required this.repository});
+
+  final InsightsRepository repository;
+
+  @override
+  State<InsightsPage> createState() => _InsightsPageState();
+}
+
+class _InsightsPageState extends State<InsightsPage> {
+  InsightsPeriod _period = InsightsPeriod.month;
+  late Stream<RangeInsights> _stream = widget.repository.watch(period: _period);
+
+  void _select(InsightsPeriod period) {
+    if (period == _period) return;
+    setState(() {
+      _period = period;
+      _stream = widget.repository.watch(period: period);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<RangeInsights>(
+      stream: _stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const SafeArea(
+            bottom: false,
+            child: BeanEmptyState(
+              title: '数据暂时打不开',
+              subtitle: '本地数据库没准备好，重启 App 再试',
+            ),
+          );
+        }
+        final data = snapshot.data;
+        if (data == null) return const SizedBox.shrink();
+        return _InsightsBody(
+          data: data,
+          period: _period,
+          onSelect: _select,
+        );
+      },
+    );
+  }
+}
+
+class _InsightsBody extends StatelessWidget {
+  const _InsightsBody({
+    required this.data,
+    required this.period,
+    required this.onSelect,
+  });
+
+  final RangeInsights data;
+  final InsightsPeriod period;
+  final ValueChanged<InsightsPeriod> onSelect;
 
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    final totalExpense =
-        demoCategoryStats.fold<double>(0, (s, c) => s + c.value);
-    final dailyAvg = totalExpense / 30;
+    final total = data.expenseCents / 100;
 
     return SafeArea(
       bottom: false,
@@ -23,249 +78,290 @@ class InsightsPage extends StatelessWidget {
         children: [
           // 金额即标题：先给结论，再给图表
           BeanLargeTitle(
-            title: '¥${formatMoney(totalExpense)}',
-            subtitle: '本月支出 · 2026年10月 · 日均 ${formatMoneyCompact(dailyAvg)}',
+            title: '¥${formatMoney(total)}',
+            subtitle:
+                '${data.rangeLabel}支出 · 日均 ${formatMoneyCompact(data.dailyAverage)}',
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
-                BeanSpace.page, 0, BeanSpace.page, 18),
-            child: const _CapsuleSwitcher(options: ['月', '年', '全部']),
+              BeanSpace.page,
+              0,
+              BeanSpace.page,
+              18,
+            ),
+            child: _CapsuleSwitcher(
+              options: const ['月', '年', '全部'],
+              index: period.index,
+              onTap: (i) => onSelect(InsightsPeriod.values[i]),
+            ),
           ),
 
           const SizedBox(height: 4),
 
-          // ── 分类占比（环形图） ─────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
-            child: BeanCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionTitle('分类占比'),
-                  SizedBox(
-                    height: 190,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        PieChart(
-                          PieChartData(
-                            sectionsSpace: 3,
-                            centerSpaceRadius: 58,
-                            startDegreeOffset: -90,
-                            sections: [
-                              for (final stat in demoCategoryStats)
-                                PieChartSectionData(
-                                  value: stat.value,
-                                  // 图表用降饱和的分类色，和图例保持一致
-                                  color:
-                                      palette.chartColors[stat.categoryIndex],
-                                  radius: 22,
-                                  showTitle: false,
+          if (data.categories.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanEmptyState(
+                title: '这段时间还没有支出',
+                subtitle: '记一笔，就能看到分类占比',
+              ),
+            )
+          else ...[
+            // ── 分类占比（环形图） ─────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionTitle('分类占比'),
+                    SizedBox(
+                      height: 190,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          PieChart(
+                            PieChartData(
+                              sectionsSpace: 3,
+                              centerSpaceRadius: 58,
+                              startDegreeOffset: -90,
+                              sections: [
+                                for (final item in data.categories)
+                                  PieChartSectionData(
+                                    value: item.cents.toDouble(),
+                                    color: chartColorOf(item.category, palette),
+                                    radius: 22,
+                                    showTitle: false,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${data.rangeLabel}支出',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: palette.textSecondary,
                                 ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                formatMoney(total),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ],
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 14,
+                      runSpacing: 8,
+                      children: [
+                        for (final item in data.categories)
+                          _LegendItem(
+                            color: chartColorOf(item.category, palette),
+                            name: item.category.name,
+                            value: item.cents / 100,
+                            total: total,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: BeanSpace.section),
+
+            // ── 趋势（折线 + 渐变面积） ────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SectionTitle(
+                      '${data.rangeLabel}趋势',
+                      trailing: Text(
+                        '日均 ${formatMoneyCompact(data.dailyAverage)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textSecondary,
                         ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
+                      ),
+                    ),
+                    SizedBox(
+                      height: 170,
+                      child: _TrendChart(
+                        points: data.trend,
+                        labelStep: data.trend.length > 12 ? 7 : 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: BeanSpace.section),
+
+            // ── 分类排行 ─────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionTitle('分类排行'),
+                    for (final item in data.categories)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
                           children: [
-                            Text(
-                              '本月支出',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: palette.textSecondary,
+                            CategoryAvatar(
+                              name: item.category.name,
+                              colorValue: item.category.color,
+                              iconKey: item.category.icon,
+                              size: 32,
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 52,
+                              child: Text(
+                                item.category.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              formatMoney(totalExpense),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: total == 0 ? 0 : item.cents / 100 / total,
+                                  minHeight: 8,
+                                  backgroundColor: chartColorOf(
+                                    item.category,
+                                    palette,
+                                  ).withValues(alpha: 0.12),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    chartColorOf(item.category, palette),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 72,
+                              child: Text(
+                                formatMoneyCompact(item.cents / 100),
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 14,
-                    runSpacing: 8,
-                    children: [
-                      for (final stat in demoCategoryStats)
-                        _LegendItem(
-                          color: palette.chartColors[stat.categoryIndex],
-                          name: stat.name,
-                          value: stat.value,
-                          total: totalExpense,
-                        ),
-                    ],
-                  ),
-                ],
+                      ),
+                  ],
+                ),
               ),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 图表用色：把分类色向表面色混合，降低饱和度，贴合暖金基调。
+Color chartColorOf(Category category, BeanPalette palette) =>
+    Color.lerp(Color(category.color), palette.surface, 0.28) ??
+    Color(category.color);
+
+class _TrendChart extends StatelessWidget {
+  const _TrendChart({required this.points, required this.labelStep});
+
+  final List<TrendPoint> points;
+
+  /// 每多少个点标一次横轴文字，避免末尾叠字。
+  final int labelStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final maxY = points.fold<int>(0, (m, p) => p.cents > m ? p.cents : m);
+    final step = maxY <= 0 ? 50.0 : (maxY / 100).ceil() * 25.0;
+
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: (points.length - 1).clamp(1, 99999).toDouble(),
+        minY: 0,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: step,
+          getDrawingHorizontalLine: (v) => FlLine(
+            color: palette.border,
+            strokeWidth: 1,
           ),
-
-          const SizedBox(height: BeanSpace.section),
-
-          // ── 收支趋势（折线 + 渐变面积） ────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
-            child: BeanCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SectionTitle(
-                    '本月趋势',
-                    trailing: Text(
-                      '日均 ${formatMoneyCompact(dailyAvg)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: palette.textSecondary,
-                      ),
-                    ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: labelStep.toDouble(),
+              reservedSize: 22,
+              getTitlesWidget: (value, meta) {
+                final i = value.round();
+                if (i < 0 || i >= points.length) return const SizedBox.shrink();
+                if (i % labelStep != 0) return const SizedBox.shrink();
+                return Text(
+                  points[i].label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: palette.textSecondary,
                   ),
-                  SizedBox(
-                    height: 170,
-                    child: LineChart(
-                      LineChartData(
-                        minX: 0,
-                        maxX: (demoDailyTrend.length - 1).toDouble(),
-                        minY: 0,
-                        gridData: FlGridData(
-                          show: true,
-                          drawVerticalLine: false,
-                          horizontalInterval: 50,
-                          getDrawingHorizontalLine: (v) => FlLine(
-                            color: palette.border,
-                            strokeWidth: 1,
-                          ),
-                        ),
-                        borderData: FlBorderData(show: false),
-                        titlesData: FlTitlesData(
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          rightTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          topTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              interval: 7,
-                              reservedSize: 22,
-                              getTitlesWidget: (value, meta) {
-                                // 只在 7 的倍数处标日期，避免末尾"29 30"叠字
-                                if (value.toInt() % 7 != 0) {
-                                  return const SizedBox.shrink();
-                                }
-                                return Text(
-                                  '${value.toInt() + 1}',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: palette.textSecondary,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        lineTouchData: LineTouchData(enabled: false),
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: [
-                              for (var i = 0; i < demoDailyTrend.length; i++)
-                                FlSpot(i.toDouble(), demoDailyTrend[i]),
-                            ],
-                            isCurved: true,
-                            curveSmoothness: 0.25,
-                            color: BeanColors.gold,
-                            barWidth: 3,
-                            isStrokeCapRound: true,
-                            dotData: FlDotData(show: false),
-                            belowBarData: BarAreaData(
-                              show: true,
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  BeanColors.gold.withValues(alpha: 0.26),
-                                  BeanColors.gold.withValues(alpha: 0.02),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
-
-          const SizedBox(height: BeanSpace.section),
-
-          // ── 分类排行 ─────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
-            child: BeanCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SectionTitle('分类排行'),
-                  for (final stat in demoCategoryStats)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        children: [
-                          CategoryAvatar(
-                            categoryIndex: stat.categoryIndex,
-                            size: 32,
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 46,
-                            child: Text(
-                              stat.name,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ),
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(999),
-                              child: LinearProgressIndicator(
-                                value: stat.value / totalExpense,
-                                minHeight: 8,
-                                backgroundColor: palette
-                                    .chartColors[stat.categoryIndex]
-                                    .withValues(alpha: 0.12),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  palette.chartColors[stat.categoryIndex],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 72,
-                            child: Text(
-                              formatMoneyCompact(stat.value),
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+        ),
+        lineTouchData: LineTouchData(enabled: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: [
+              for (var i = 0; i < points.length; i++)
+                FlSpot(i.toDouble(), points[i].cents / 100),
+            ],
+            isCurved: true,
+            curveSmoothness: 0.25,
+            color: BeanColors.gold,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  BeanColors.gold.withValues(alpha: 0.26),
+                  BeanColors.gold.withValues(alpha: 0.02),
                 ],
               ),
             ),
@@ -304,7 +400,7 @@ class _LegendItem extends StatelessWidget {
         Text(name, style: const TextStyle(fontSize: 12)),
         const SizedBox(width: 4),
         Text(
-          '${(value / total * 100).round()}%',
+          total == 0 ? '0%' : '${(value / total * 100).round()}%',
           style: TextStyle(fontSize: 12, color: palette.textSecondary),
         ),
       ],
@@ -312,17 +408,16 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
-class _CapsuleSwitcher extends StatefulWidget {
-  const _CapsuleSwitcher({required this.options});
+class _CapsuleSwitcher extends StatelessWidget {
+  const _CapsuleSwitcher({
+    required this.options,
+    required this.index,
+    required this.onTap,
+  });
 
   final List<String> options;
-
-  @override
-  State<_CapsuleSwitcher> createState() => _CapsuleSwitcherState();
-}
-
-class _CapsuleSwitcherState extends State<_CapsuleSwitcher> {
-  int _index = 0;
+  final int index;
+  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -337,28 +432,28 @@ class _CapsuleSwitcherState extends State<_CapsuleSwitcher> {
       ),
       child: Row(
         children: [
-          for (var i = 0; i < widget.options.length; i++)
+          for (var i = 0; i < options.length; i++)
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => setState(() => _index = i),
+                onTap: () => onTap(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   decoration: BoxDecoration(
-                    color: _index == i
+                    color: index == i
                         ? palette.neutral.raised
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    widget.options[i],
+                    options[i],
                     style: TextStyle(
                       fontSize: 13,
                       letterSpacing: -0.1,
                       fontWeight:
-                          _index == i ? FontWeight.w600 : FontWeight.w500,
-                      color: _index == i
+                          index == i ? FontWeight.w600 : FontWeight.w500,
+                      color: index == i
                           ? BeanColors.goldDeep
                           : palette.textSecondary,
                     ),

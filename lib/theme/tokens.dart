@@ -65,6 +65,17 @@ abstract final class BeanColors {
     '其他',
   ];
 
+  /// 收入分类色板（6 色）：与支出色板同明度、不同色相，
+  /// 避免"收入也用金色"造成语义混淆。
+  static const incomeCategories = <Color>[
+    Color(0xFF16A34A), // 工资
+    Color(0xFFEAB308), // 奖金
+    Color(0xFF0EA5E9), // 兼职
+    Color(0xFF8B5CF6), // 理财
+    Color(0xFFE11D48), // 红包
+    Color(0xFF94A3B8), // 其他收入
+  ];
+
   /// 图表用色：把分类色向表面色混合，降低饱和度，贴近暖金基调。
   static List<Color> softenedChartColors(Color surface) => [
         for (final c in categories) Color.lerp(c, surface, 0.28)!,

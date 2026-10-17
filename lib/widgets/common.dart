@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/category_icons.dart';
 import '../theme/tokens.dart';
+import '../utils/colors.dart';
+
+export '../theme/category_icons.dart'
+    show categoryIconFor, kCategoryIcons, kCategoryIconByKey;
 
 /// 分组卡片：白底 + 0.5px 发丝线，**不用阴影**。
 ///
@@ -180,48 +185,50 @@ class SectionTitle extends StatelessWidget {
 
 /// 分类图标（与 `BeanColors.categoryNames` 同序）。
 /// 记账面板的灰阶网格与列表行的彩色圆底共用这一份，避免两处各写一遍。
-const kCategoryIcons = <IconData>[
-  Icons.restaurant_rounded,
-  Icons.directions_bus_rounded,
-  Icons.shopping_bag_rounded,
-  Icons.movie_rounded,
-  Icons.home_rounded,
-  Icons.local_hospital_rounded,
-  Icons.school_rounded,
-  Icons.flight_rounded,
-  Icons.fitness_center_rounded,
-  Icons.devices_rounded,
-  Icons.pets_rounded,
-  Icons.more_horiz_rounded,
-];
+/// 实际定义在 `lib/theme/category_icons.dart`，这里 `export` 保持旧引用可用。
 
 /// 分类图标：**实心彩色圆 + 白色字形**（iOS 设置页 / 健康 App 的语言）。
 ///
-/// 原来是"淡色圆底 + 彩线图标"，在分组列表里会显脏；实心圆在 28–30 尺寸下更清楚，
-/// 也更符合果味方向。
+/// 数据层落地后，颜色与图标来自分类记录本身（用户可以自建分类），
+/// 因此主构造器接收记录字段；`CategoryAvatar.legacy` 只服务于还没接库的
+/// demo 页面，等 4.x 迁移完即删。
 class CategoryAvatar extends StatelessWidget {
   const CategoryAvatar({
     super.key,
-    required this.categoryIndex,
+    required this.name,
+    required this.colorValue,
+    required this.iconKey,
     this.size = 30,
   });
 
-  final int categoryIndex;
+  /// 兼容构造：用旧的分类下标（0–11）映射到种子支出分类的样式。
+  CategoryAvatar.legacy({
+    super.key,
+    required int categoryIndex,
+    this.size = 30,
+  })  : name = BeanColors
+            .categoryNames[categoryIndex % BeanColors.categoryNames.length],
+        colorValue = argbOf(BeanColors
+            .categories[categoryIndex % BeanColors.categories.length]),
+        iconKey = kExpenseCategoryIconKeys[
+            categoryIndex % kExpenseCategoryIconKeys.length];
+
+  final String name;
+  final int colorValue;
+  final String iconKey;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        BeanColors.categories[categoryIndex % BeanColors.categories.length];
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color,
+        color: Color(colorValue),
         shape: BoxShape.circle,
       ),
       child: Icon(
-        kCategoryIcons[categoryIndex % kCategoryIcons.length],
+        categoryIconFor(iconKey),
         size: size * 0.55,
         color: Colors.white,
       ),

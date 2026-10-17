@@ -16,3 +16,28 @@ String formatEntryTime(DateTime time, {DateTime? now}) {
   if (time.year == reference.year) return '${time.month}月${time.day}日 $hm';
   return '${time.year}年${time.month}月${time.day}日 $hm';
 }
+
+const _weekdays = <String>['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+/// 明细页的日期分组头：今天 / 昨天 / 10月15日 周四。
+String formatDayHeader(DateTime day, {DateTime? now}) {
+  final reference = now ?? DateTime.now();
+  final today = DateTime(reference.year, reference.month, reference.day);
+  final date = DateTime(day.year, day.month, day.day);
+  final diffDays = today.difference(date).inDays;
+  final weekday = _weekdays[date.weekday - 1];
+
+  if (diffDays == 0) return '今天 · $weekday';
+  if (diffDays == 1) return '昨天 · $weekday';
+  if (diffDays == 2) return '前天 · $weekday';
+  if (date.year == reference.year) {
+    return '${date.month}月${date.day}日 $weekday';
+  }
+  return '${date.year}年${date.month}月${date.day}日 $weekday';
+}
+
+/// 只到分钟的时间：12:30。
+String formatClock(DateTime time) =>
+    '${time.hour.toString().padLeft(2, '0')}:'
+    '${time.minute.toString().padLeft(2, '0')}';
+

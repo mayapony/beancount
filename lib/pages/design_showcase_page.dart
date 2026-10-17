@@ -1,7 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../data/demo_data.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../utils/money.dart';
@@ -9,6 +8,9 @@ import '../widgets/common.dart';
 
 /// 设计风格 Demo —— 把 docs/DESIGN.md 的 token 变成可触摸的页面，
 /// 用来在实际设备上敲定设计。
+/// 图表示例用的假占比（只为展示配色，不代表任何真实数据）。
+const _demoShares = <double>[42, 26, 14, 10, 8];
+
 class DesignShowcasePage extends StatefulWidget {
   const DesignShowcasePage({super.key});
 
@@ -112,7 +114,7 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                     for (var i = 0; i < BeanColors.categories.length; i++)
                       Column(
                         children: [
-                          CategoryAvatar(categoryIndex: i, size: 38),
+                          CategoryAvatar.legacy(categoryIndex: i, size: 38),
                           const SizedBox(height: 4),
                           Text(
                             BeanColors.categoryNames[i],
@@ -210,7 +212,7 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                   ),
                   child: Row(
                     children: [
-                      const CategoryAvatar(categoryIndex: 0),
+                      CategoryAvatar.legacy(categoryIndex: 0),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -277,10 +279,10 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                       centerSpaceRadius: 46,
                       startDegreeOffset: -90,
                       sections: [
-                        for (final stat in demoCategoryStats)
+                        for (var i = 0; i < 5; i++)
                           PieChartSectionData(
-                            value: stat.value,
-                            color: palette.chartColors[stat.categoryIndex],
+                            value: _demoShares[i],
+                            color: palette.chartColors[i],
                             radius: 18,
                             showTitle: false,
                           ),
@@ -392,7 +394,7 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                           ),
                           child: Row(
                             children: [
-                              const CategoryAvatar(categoryIndex: 0, size: 34),
+                              CategoryAvatar.legacy(categoryIndex: 0, size: 34),
                               const SizedBox(width: 10),
                               const Expanded(
                                 child: Text(

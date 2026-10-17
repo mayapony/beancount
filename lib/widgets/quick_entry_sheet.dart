@@ -4,19 +4,21 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../data/demo_data.dart';
+import '../data/db/app_database.dart';
+import '../data/db/enums.dart';
+import '../data/repositories/account_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/money.dart';
 import 'common.dart';
 
-/// 一笔记账的草稿：面板的产出，M1 数据层直接落库。
+/// 一笔记账的草稿：面板的产出，交给仓储落库。
 @immutable
 class QuickEntryDraft {
   const QuickEntryDraft({
     required this.amount,
     required this.isIncome,
-    required this.categoryIndex,
+    required this.category,
     required this.account,
     required this.time,
     this.note = '',
@@ -25,8 +27,10 @@ class QuickEntryDraft {
 
   final double amount;
   final bool isIncome;
-  final int categoryIndex;
-  final String account;
+
+  /// 选中的分类记录（一级或二级），落库时直接取 `id`。
+  final Category category;
+  final Account? account;
   final DateTime time;
   final String note;
   final List<String> tags;
@@ -46,17 +50,26 @@ class QuickEntrySheet extends StatefulWidget {
   const QuickEntrySheet({
     super.key,
     required this.onSubmit,
-    this.initialCategory = 0,
+    required this.categories,
+    required this.accounts,
+    this.initialCategoryId,
     this.initialIsIncome = false,
-    this.initialAccount,
+    this.initialAccountId,
   });
 
-  /// 分类/类型/账户继承上次记账的值（DESIGN.md §9.1：无需重选）。
-  final int initialCategory;
-  final bool initialIsIncome;
-  final String? initialAccount;
+  /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
+  final List<Category> categories;
 
-  final void Function(QuickEntryDraft draft) onSubmit;
+  /// 全部账户（含推导出来的余额），面板只负责选，不负责建。
+  final List<AccountBalance> accounts;
+
+  /// 分类/类型/账户继承上次记账的值（DESIGN.md §9.1：无需重选）。
+  final String? initialCategoryId;
+  final bool initialIsIncome;
+  final String? initialAccountId;
+
+  /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
+  final Future<String?> Function(QuickEntryDraft draft) onSubmit;
 
   @override
   State<QuickEntrySheet> createState() => _QuickEntrySheetState();
@@ -93,9 +106,35 @@ Color _onAccentFill(BuildContext context) =>
 class _QuickEntrySheetState extends State<QuickEntrySheet>
     with SingleTickerProviderStateMixin {
   late bool _isIncome = widget.initialIsIncome;
-  late int _categoryIndex = kQuickCategoryOrder.contains(widget.initialCategory)
-      ? widget.initialCategory
-      : kQuickCategoryOrder.first;
+
+  /// 当前选中的分类 id；为空或与当前类型不匹配时回落到第一个可见分类。
+  String? _categoryId;
+
+  /// 面板只展示一级分类，并按当前收支类型过滤。
+  List<Category> get _visibleCategories => [
+        for (final c in widget.categories)
+          if (c.parentId == null &&
+              c.type ==
+                  (_isIncome ? CategoryType.income : CategoryType.expense))
+            c,
+      ];
+
+  Category? get _selectedCategory {
+    final visible = _visibleCategories;
+    for (final c in visible) {
+      if (c.id == _categoryId) return c;
+    }
+    return visible.isEmpty ? null : visible.first;
+  }
+
+  /// 当前选中的账户；上次的账户被删了就回落到第一个。
+  AccountBalance? get _selectedAccount {
+    for (final a in widget.accounts) {
+      if (a.account.id == _accountId) return a;
+    }
+    return widget.accounts.isEmpty ? null : widget.accounts.first;
+  }
+
   String _amount = '0';
 
   /// 待计算的左操作数（支持 38.5 + 12 这类连续计算）
@@ -106,8 +145,14 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   final Set<String> _tags = <String>{};
 
   /// 账户与时间：都继承上次值，点胶囊可改。
-  late String _account = widget.initialAccount ?? _defaultAccount();
+  late String? _accountId = widget.initialAccountId;
   DateTime _time = DateTime.now();
+
+  /// 保存中：按钮暂时禁用，避免重复提交
+  bool _saving = false;
+
+  /// 保存失败原因，显示在金额卡的操作行位置
+  String? _errorText;
 
   /// 图片识别中
   bool _recognizing = false;
@@ -142,7 +187,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   double get _finalValue =>
       _op == null ? _value : _apply(_left ?? 0, _op!, _value);
 
-  bool get _canSubmit => _finalValue > 0;
+  bool get _canSubmit => _finalValue > 0 && _selectedCategory != null;
 
   double _apply(double a, String op, double b) {
     if (op == '+') return a + b;
@@ -158,6 +203,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   void _press(String key) {
     HapticFeedback.selectionClick();
     setState(() {
+      _errorText = null;
       if (key == '⌫') {
         _amount = _amount.length <= 1
             ? '0'
@@ -197,7 +243,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     setState(() {
       _recognizing = false;
       _amount = '38.50';
-      _categoryIndex = 0;
+      _categoryId = null;
       _isIncome = false;
       _left = null;
       _op = null;
@@ -318,24 +364,39 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     });
   }
 
-  void _submit({bool keepOpen = false}) {
-    if (!_canSubmit) return;
-    HapticFeedback.lightImpact();
-    widget.onSubmit(
-      QuickEntryDraft(
-        amount: _finalValue,
-        isIncome: _isIncome,
-        categoryIndex: _categoryIndex,
-        account: _account,
-        time: _time,
-        note: _note,
-        tags: List<String>.unmodifiable(_tags),
-      ),
+  Future<void> _submit({bool keepOpen = false}) async {
+    if (!_canSubmit || _saving) return;
+    final draft = QuickEntryDraft(
+      amount: _finalValue,
+      isIncome: _isIncome,
+      category: _selectedCategory!,
+      account: _selectedAccount?.account,
+      time: _time,
+      note: _note,
+      tags: List<String>.unmodifiable(_tags),
     );
+    HapticFeedback.lightImpact();
+    setState(() {
+      _saving = true;
+      _errorText = null;
+    });
+
+    // 落库失败（或命中去重）时面板保持打开，输入一律不动
+    final String? error = await widget.onSubmit(draft);
+    if (!mounted) return;
+    if (error != null) {
+      setState(() {
+        _saving = false;
+        _errorText = error;
+      });
+      return;
+    }
+
+    setState(() => _saving = false);
     if (keepOpen) {
       final summary =
           '已记 ${_isIncome ? '+' : '-'}¥${formatMoney(_finalValue)} · '
-          '${BeanColors.categoryNames[_categoryIndex]}';
+          '${_selectedCategory?.name ?? ''}';
       setState(() {
         _amount = '0';
         _left = null;
@@ -359,10 +420,13 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _AccountSheet(selected: _account),
+      builder: (_) => _AccountSheet(
+        accounts: widget.accounts,
+        selectedId: _accountId,
+      ),
     );
     if (picked == null || !mounted) return;
-    setState(() => _account = picked);
+    setState(() => _accountId = picked);
   }
 
   /// 时间选择：快捷「今天/昨天/前天」+ 日期时间滚轮。
@@ -445,43 +509,63 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
           ),
           const SizedBox(height: 6),
 
-          // ── 分类：4 列 × 3 行 = 12，正好填满（小屏时内部滚动）──
+          // ── 分类：4 列网格，首屏 3 行（12 个）；分类更多时内部滚动 ──
           Flexible(
             fit: FlexFit.loose,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 222),
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final visible = _visibleCategories;
+                  final selected = _selectedCategory;
+                  if (visible.isEmpty) {
+                    return SizedBox(
+                      height: 74,
+                      child: Center(
+                        child: Text(
+                          '还没有分类',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final rows = (visible.length / 4).ceil();
                   final grid = SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
-                        for (var row = 0; row < 3; row++)
+                        for (var row = 0; row < rows; row++)
                           Row(
                             children: [
                               for (var col = 0; col < 4; col++)
                                 Expanded(
-                                  child: _CategoryCell(
-                                    categoryIndex:
-                                        kQuickCategoryOrder[row * 4 + col],
-                                    selected: _categoryIndex ==
-                                        kQuickCategoryOrder[row * 4 + col],
-                                    onTap: () {
-                                      HapticFeedback.selectionClick();
-                                      setState(() {
-                                        _categoryIndex =
-                                            kQuickCategoryOrder[row * 4 + col];
-                                      });
-                                    },
-                                  ),
+                                  child: row * 4 + col < visible.length
+                                      ? _CategoryCell(
+                                          category: visible[row * 4 + col],
+                                          selected: selected?.id ==
+                                              visible[row * 4 + col].id,
+                                          onTap: () {
+                                            HapticFeedback.selectionClick();
+                                            setState(() {
+                                              _categoryId =
+                                                  visible[row * 4 + col].id;
+                                            });
+                                          },
+                                        )
+                                      : const SizedBox(height: 74),
                                 ),
                             ],
                           ),
                       ],
                     ),
                   );
-                  // 只有放不下 3 行时才加底部淡出：提示"还能滑"，而不是像被裁掉
-                  if (constraints.maxHeight >= 222) return grid;
+                  // 只有分类超过 3 行（需要滚动）时才加底部淡出：
+                  // 提示"还能滑"，而不是看起来被裁掉
+                  if (rows <= 3) return grid;
                   return ShaderMask(
                     blendMode: BlendMode.dstIn,
                     shaderCallback: (rect) => const LinearGradient(
@@ -506,7 +590,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                 Flexible(
                   child: _MetaChip(
                     icon: Icons.account_balance_wallet_rounded,
-                    label: _account,
+                    label: _selectedAccount?.account.name ?? '不选账户',
                     onTap: _pickAccount,
                   ),
                 ),
@@ -534,25 +618,40 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 运算过程固定占 18px：输入 + 时卡片不会突然变高
+                  // 运算过程固定占 18px：输入 + 时卡片不会突然变高。
+                  // 出错时同一行改显示原因（红色），不额外占高度。
                   SizedBox(
                     height: 18,
-                    child: _op == null
-                        ? null
-                        : Align(
+                    child: _errorText != null
+                        ? Align(
                             alignment: Alignment.bottomLeft,
                             child: Text(
-                              '${formatMoneyCompact(_left ?? 0)} $_op',
-                              style: TextStyle(
+                              _errorText!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
                                 fontSize: 13,
                                 height: 1.15,
-                                color: palette.textSecondary,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
+                                color: BeanColors.alertRed,
                               ),
                             ),
-                          ),
+                          )
+                        : (_op == null
+                            ? null
+                            : Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(
+                                  '${formatMoneyCompact(_left ?? 0)} $_op',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    height: 1.15,
+                                    color: palette.textSecondary,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              )),
                   ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -662,7 +761,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                     Expanded(
                       child: _SurfaceKey(
                         onTap: () => _submit(keepOpen: true),
-                        enabled: _canSubmit,
+                        enabled: _canSubmit && !_saving,
                         child: Text(
                           '再记',
                           style: TextStyle(
@@ -683,7 +782,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                     Expanded(
                       child: _SurfaceKey(
                         filled: true,
-                        enabled: _canSubmit,
+                        enabled: _canSubmit && !_saving,
                         onTap: _submit,
                         child: Text(
                           '完成',
@@ -771,9 +870,6 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     );
   }
 
-  /// 默认账户：demo 阶段取第一个；M1 之后换成"上次用的账户 / 默认账户设置"。
-  static String _defaultAccount() =>
-      demoAccounts.isEmpty ? '不选账户' : demoAccounts.first.name;
 
   Widget _digitKey(String digit) => _SurfaceKey(
         onTap: () => _press(digit),
@@ -948,12 +1044,12 @@ class _Segmented extends StatelessWidget {
 /// 12 个分类同屏时，颜色是噪声，选中项才是信息。
 class _CategoryCell extends StatelessWidget {
   const _CategoryCell({
-    required this.categoryIndex,
+    required this.category,
     required this.selected,
     required this.onTap,
   });
 
-  final int categoryIndex;
+  final Category category;
   final bool selected;
   final VoidCallback onTap;
 
@@ -978,14 +1074,16 @@ class _CategoryCell extends StatelessWidget {
                 color: selected ? _accentFill(context) : neutral.sand,
               ),
               child: Icon(
-                kCategoryIcons[categoryIndex % kCategoryIcons.length],
+                categoryIconFor(category.icon),
                 size: 22,
                 color: selected ? _onAccentFill(context) : neutral.iconNeutral,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              BeanColors.categoryNames[categoryIndex],
+              category.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -1184,9 +1282,23 @@ class _MiniSheet extends StatelessWidget {
 
 /// 选择账户：一行一个，选中打钩；金额带符号（信用卡欠款用警示色）。
 class _AccountSheet extends StatelessWidget {
-  const _AccountSheet({required this.selected});
+  const _AccountSheet({required this.accounts, required this.selectedId});
 
-  final String selected;
+  final List<AccountBalance> accounts;
+  final String? selectedId;
+
+  static String _typeLabel(AccountType type) {
+    switch (type) {
+      case AccountType.wallet:
+        return '钱包';
+      case AccountType.debit:
+        return '储蓄卡';
+      case AccountType.credit:
+        return '信用卡';
+      case AccountType.other:
+        return '其他';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1197,12 +1309,12 @@ class _AccountSheet extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Column(
           children: [
-            for (final account in demoAccounts)
+            for (final item in accounts)
               Material(
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => Navigator.of(context).pop(account.name),
+                  onTap: () => Navigator.of(context).pop(item.account.id),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -1210,17 +1322,14 @@ class _AccountSheet extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        CategoryAvatar(
-                          categoryIndex: account.categoryIndex,
-                          size: 36,
-                        ),
+                        _AccountDot(type: item.account.type, size: 36),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                account.name,
+                                item.account.name,
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -1228,9 +1337,7 @@ class _AccountSheet extends StatelessWidget {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                account.isCredit && account.dueDay != null
-                                    ? '${account.type} · ${account.dueDay} 日还款'
-                                    : account.type,
+                                _typeLabel(item.account.type),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: palette.textSecondary,
@@ -1241,12 +1348,12 @@ class _AccountSheet extends StatelessWidget {
                         ),
                         Text(
                           // 金额统一两位小数；负号放在 ¥ 前面，读作"欠 ¥3,280.40"
-                          '${account.balance < 0 ? '-' : ''}'
-                          '¥${formatMoney(account.balance.abs())}',
+                          '${item.balanceCents < 0 ? '-' : ''}'
+                          '¥${formatMoney(item.balanceCents.abs() / 100)}',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: account.balance < 0
+                            color: item.balanceCents < 0
                                 ? palette.alert
                                 : palette.expense,
                             fontFeatures: const [
@@ -1257,7 +1364,7 @@ class _AccountSheet extends StatelessWidget {
                         const SizedBox(width: 10),
                         SizedBox(
                           width: 20,
-                          child: account.name == selected
+                          child: item.account.id == selectedId
                               ? const Icon(
                                   Icons.check_circle_rounded,
                                   size: 20,
@@ -1273,6 +1380,33 @@ class _AccountSheet extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 账户圆点：颜色按类型固定，和资产页保持一致。
+class _AccountDot extends StatelessWidget {
+  const _AccountDot({required this.type, this.size = 30});
+
+  final AccountType type;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon) = switch (type) {
+      AccountType.wallet => (
+          BeanColors.gold,
+          Icons.account_balance_wallet_rounded
+        ),
+      AccountType.debit => (const Color(0xFF3B82F6), Icons.credit_card_rounded),
+      AccountType.credit => (const Color(0xFF8B5CF6), Icons.credit_score_rounded),
+      AccountType.other => (const Color(0xFF64748B), Icons.savings_rounded),
+    };
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, size: size * 0.53, color: Colors.white),
     );
   }
 }

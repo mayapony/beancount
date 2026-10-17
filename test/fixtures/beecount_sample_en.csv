@@ -1,0 +1,4 @@
+﻿Type,Category,Subcategory,Amount,Currency,Account,From Account,To Account,Note,Time,Tags,Attachments
+Expense,Food,,30.02,CNY,Cash,,,Fried chicken,  2026-10-17 19:27:00  ,"photo,ai",sha_aaaa1111.jpg
+Income,Salary,,14519.01,CNY,Bank Card,,,September pay,  2026-10-15 13:58:51  ,,
+Transfer,,,500.00,CNY,,Bank Card,Credit Card,Repay,  2026-10-12 09:00:00  ,,

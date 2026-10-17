@@ -9,7 +9,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:bean_count/data/db/app_database.dart';
+import 'package:bean_count/data/db/connection.dart';
+import 'package:bean_count/data/repositories/attachment_repository.dart';
+import 'package:bean_count/pages/import_page.dart';
 import 'package:bean_count/pages/shell.dart';
+import 'package:bean_count/data/repositories/account_repository.dart';
+import 'package:bean_count/data/repositories/category_repository.dart';
+import 'package:bean_count/data/repositories/transaction_repository.dart';
+import 'package:bean_count/services/import/import_service.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
@@ -18,10 +26,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'ios_preview.dart';
+import 'demo_seed.dart';
 
 const _cjkFontPath = r'C:\Windows\Fonts\NotoSansSC-VF.ttf';
 const _outDir = 'docs/review/shots';
+
+/// 截图脚本共用一份内存库：分类/种子真实存在，但不落磁盘、不碰 path_provider。
+late AppDatabase _db;
+late AttachmentRepository _attachments;
+late Directory _attachmentDir;
 
 Future<void> _loadBundledFonts() async {
   final manifest = json.decode(
@@ -48,9 +61,31 @@ Future<void> _loadCjkFont() async {
 
 ThemeData _theme([Brightness brightness = Brightness.light]) {
   final base = buildBeanTheme(brightness);
+  // 按钮样式在主题里写死了 fontSize/weight 但没带字族，测试环境会退回 Ahem（方块字）；
+  // 这里统一补上中文字族，截图里才不会出现豆腐块。
+  const labelStyle = TextStyle(
+    fontFamily: 'NotoSansSC',
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+  );
   return base.copyWith(
     textTheme: base.textTheme.apply(fontFamily: 'NotoSansSC'),
     primaryTextTheme: base.primaryTextTheme.apply(fontFamily: 'NotoSansSC'),
+    filledButtonTheme: FilledButtonThemeData(
+      style: base.filledButtonTheme.style?.copyWith(
+        textStyle: const WidgetStatePropertyAll(labelStyle),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: base.textButtonTheme.style?.copyWith(
+        textStyle: const WidgetStatePropertyAll(labelStyle),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: base.outlinedButtonTheme.style?.copyWith(
+        textStyle: const WidgetStatePropertyAll(labelStyle),
+      ),
+    ),
   );
 }
 
@@ -80,7 +115,10 @@ Future<void> _pumpApp(
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        home: const ShellPage(),
+        home: ShellPage(
+          database: _db,
+          attachmentRepository: _attachments,
+        ),
       ),
     ),
   );
@@ -115,8 +153,17 @@ Finder _inSheet(Finder matching) => find.descendant(
 
 void main() {
   setUpAll(() async {
+    _db = AppDatabase(openInMemoryConnection());
+    _attachmentDir = Directory.systemTemp.createTempSync('bean_shots');
+    _attachments = AttachmentRepository(_db, directory: _attachmentDir);
+    await seedDemoLedger(_db, attachments: _attachments);
     await _loadBundledFonts();
     await _loadCjkFont();
+  });
+
+  tearDownAll(() async {
+    await _db.close();
+    if (_attachmentDir.existsSync()) _attachmentDir.deleteSync(recursive: true);
   });
 
   testWidgets('shot: entry flow', (tester) async {
@@ -192,20 +239,23 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await _settle(tester);
 
-    await tester.tap(find.text('日常钱包'));
+    await tester.tap(_inSheet(find.byIcon(Icons.account_balance_wallet_rounded)));
     await _settle(tester);
     await _shot(tester, '08-entry-account');
 
     await tester.tap(find.byTooltip('关闭').last);
     await _settle(tester);
 
-    await tester.tap(find.textContaining('今天').first);
+    await tester.tap(_inSheet(find.textContaining('今天')));
     await _settle(tester);
     await _shot(tester, '09-entry-time');
   });
 
   // 四个 Tab：标题替换 + 分组列表 + 发丝线的整体走查
   testWidgets('shot: four tabs', (tester) async {
+    await tester.runAsync(
+      () => resetDemoLedger(_db, attachments: _attachments),
+    );
     await _pumpApp(tester);
     await _shot(tester, '10-home-current');
 
@@ -223,39 +273,54 @@ void main() {
   });
 
   // 滚到底：确认最后一条内容不会被底栏压住（底部 padding 够不够）
-  testWidgets('shot: scrolled to bottom', (tester) async {
-    await _pumpApp(tester);
-    await tester.tap(find.byIcon(Icons.donut_small_rounded));
-    await _settle(tester);
-    await tester.dragFrom(const Offset(200, 600), const Offset(0, -1200));
-    await _settle(tester);
-    await _shot(tester, '16-insights-bottom');
-  });
 
-  // 果味方向的原型（月份当标题 + 分组列表 + 发丝线）
-  testWidgets('shot: ios direction', (tester) async {
-    await _pumpApp(tester);
+  // 导入预览：评审"数字是否一眼看懂"
+  testWidgets('shot: import preview', (tester) async {
+    final categories = CategoryRepository(_db);
+    final accounts = AccountRepository(_db);
+    final transactions = TransactionRepository(_db);
+    final service = ImportService(
+      db: _db,
+      categories: categories,
+      accounts: accounts,
+      transactions: transactions,
+      attachments: _attachments,
+    );
+    final bytes = File('test/fixtures/beecount_sample.csv').readAsBytesSync();
+
+    tester.view.physicalSize = const Size(402, 874) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(
       RepaintBoundary(
         key: const ValueKey('screen'),
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: _theme(),
-          locale: const Locale('zh', 'CN'),
-          supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          home: const Material(
-            color: Colors.transparent,
-            child: IosHomePreview(),
+          home: ImportPage(
+            service: service,
+            initialBytes: bytes,
+            initialName: 'beecount_sample.csv',
           ),
         ),
       ),
     );
     await _settle(tester);
-    await _shot(tester, '11-home-ios');
+    await _settle(tester);
+    await _shot(tester, '20-import-preview');
+  });
+
+  testWidgets('shot: scrolled to bottom', (tester) async {
+    await tester.runAsync(
+      () => resetDemoLedger(_db, attachments: _attachments),
+    );
+    await _pumpApp(tester);
+    await tester.tap(find.byIcon(Icons.donut_small_rounded));
+    await _settle(tester);
+    await tester.dragFrom(const Offset(200, 600), const Offset(0, -1200));
+    await _settle(tester);
+    await _shot(tester, '16-insights-bottom');
   });
 }

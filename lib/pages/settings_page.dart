@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../services/import/import_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'design_showcase_page.dart';
+import 'import_page.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({super.key, required this.importer});
+
+  final ImportService importer;
 
   @override
   Widget build(BuildContext context) {
@@ -94,10 +98,22 @@ class SettingsPage extends StatelessWidget {
               child: Column(
                 children: [
                   _SettingTile(
+                    icon: Icons.move_to_inbox_rounded,
+                    color: BeanColors.goldDeep,
+                    title: '从 BeeCount 导入',
+                    subtitle: '支持完整备份 zip（含图片）与 CSV',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ImportPage(service: importer),
+                      ),
+                    ),
+                  ),
+                  _divider(palette),
+                  _SettingTile(
                     icon: Icons.swap_vert_rounded,
                     color: const Color(0xFF64748B),
-                    title: '导入 / 导出',
-                    subtitle: 'CSV / Excel / 支付宝 / 微信账单',
+                    title: '导出',
+                    subtitle: '导出回 BeeCount / CSV',
                     trailing: 'M8',
                   ),
                   _divider(palette),
