@@ -4,8 +4,9 @@ import '../theme/tokens.dart';
 
 /// 底部导航：4 Tab + 中间凹槽留给金豆 FAB。
 ///
-/// 底栏颜色与页面背景一致 —— 否则凹槽处会露出另一种颜色，在豆子周围形成
-/// 「方块」错觉。同色后凹槽隐形，金豆像浮在页面上。
+/// 凹槽（CircularNotchedRectangle）让金豆"嵌"进底栏，视觉更和谐。
+/// 注意：金豆的投影必须画在不被裁切的容器上，否则四角会残留方形暖色，
+/// 让凹槽看起来像一块方色块（见 bean_fab.dart 注释）。
 class BeanBottomNav extends StatelessWidget {
   const BeanBottomNav({
     super.key,
@@ -21,10 +22,10 @@ class BeanBottomNav extends StatelessWidget {
     final palette = BeanPalette.of(context);
     return BottomAppBar(
       shape: const CircularNotchedRectangle(),
-      notchMargin: 6,
+      notchMargin: 8,
       height: 72,
       padding: EdgeInsets.zero,
-      color: Theme.of(context).scaffoldBackgroundColor,
+      color: palette.surface,
       elevation: 0,
       child: Row(
         children: [

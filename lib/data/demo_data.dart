@@ -142,3 +142,8 @@ const demoDailyTrend = <double>[
   130, 92, 45, 76, 58, 140, 102, 64, 88, 150,
   70, 48, 96, 118, 82, 56, 134, 90, 66, 108,
 ];
+
+/// 记账面板的分类快选顺序（高频在前，值为 BeanColors.categories 的下标）。
+const kQuickCategoryOrder = <int>[
+  0, 1, 2, 4, 3, 5, 6, 9, 7, 8, 10, 11,
+];

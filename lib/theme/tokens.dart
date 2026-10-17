@@ -54,6 +54,11 @@ abstract final class BeanColors {
     '餐饮', '交通', '购物', '娱乐', '居家', '医疗',
     '教育', '旅行', '运动', '数码', '宠物', '其他',
   ];
+
+  /// 图表用色：把分类色向表面色混合，降低饱和度，贴近暖金基调。
+  static List<Color> softenedChartColors(Color surface) => [
+        for (final c in categories) Color.lerp(c, surface, 0.28)!,
+      ];
 }
 
 abstract final class BeanRadius {
@@ -96,6 +101,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
     required this.surface,
     required this.border,
     required this.textSecondary,
+    required this.chartColors,
   });
 
   final Color income;
@@ -108,6 +114,9 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
   final Color border;
   final Color textSecondary;
 
+  /// 图表专用的柔和分类色（不再直接使用高饱和品牌分类色）
+  final List<Color> chartColors;
+
   /// 设计约定：支出 = 默认文字色（不刷红），红色只用于警示。
   factory BeanPalette.light(Color onSurface) => BeanPalette(
         income: BeanColors.beanGreenDeep,
@@ -119,6 +128,8 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
         surface: BeanColors.surfaceLight,
         border: BeanColors.borderLight,
         textSecondary: BeanColors.textSecondaryLight,
+        chartColors:
+            BeanColors.softenedChartColors(BeanColors.surfaceLight),
       );
 
   factory BeanPalette.dark(Color onSurface) => BeanPalette(
@@ -131,6 +142,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
         surface: BeanColors.surfaceDark,
         border: BeanColors.borderDark,
         textSecondary: BeanColors.textSecondaryDark,
+        chartColors: BeanColors.softenedChartColors(BeanColors.surfaceDark),
       );
 
   static BeanPalette of(BuildContext context) =>
@@ -147,6 +159,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
     Color? surface,
     Color? border,
     Color? textSecondary,
+    List<Color>? chartColors,
   }) {
     return BeanPalette(
       income: income ?? this.income,
@@ -158,6 +171,7 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
       surface: surface ?? this.surface,
       border: border ?? this.border,
       textSecondary: textSecondary ?? this.textSecondary,
+      chartColors: chartColors ?? this.chartColors,
     );
   }
 
@@ -174,6 +188,14 @@ class BeanPalette extends ThemeExtension<BeanPalette> {
       surface: Color.lerp(surface, other.surface, t)!,
       border: Color.lerp(border, other.border, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      chartColors: [
+        for (var i = 0; i < chartColors.length; i++)
+          Color.lerp(
+            chartColors[i],
+            other.chartColors[i % other.chartColors.length],
+            t,
+          )!,
+      ],
     );
   }
 }

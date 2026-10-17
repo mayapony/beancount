@@ -144,7 +144,7 @@ class InsightsPage extends StatelessWidget {
                     children: [
                       for (final stat in demoCategoryStats)
                         _LegendItem(
-                          color: BeanColors.categories[stat.categoryIndex],
+                          color: palette.chartColors[stat.categoryIndex],
                           name: stat.name,
                           value: stat.value,
                           total: totalExpense,
@@ -285,10 +285,10 @@ class InsightsPage extends StatelessWidget {
                                 value: stat.value / totalExpense,
                                 minHeight: 8,
                                 backgroundColor:
-                                    BeanColors.categories[stat.categoryIndex]
+                                    palette.chartColors[stat.categoryIndex]
                                         .withValues(alpha: 0.12),
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  BeanColors.categories[stat.categoryIndex],
+                                  palette.chartColors[stat.categoryIndex],
                                 ),
                               ),
                             ),

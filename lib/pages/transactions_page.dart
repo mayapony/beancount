@@ -25,54 +25,58 @@ class TransactionsPage extends StatelessWidget {
               .fold<double>(0, (a, t) => a + t.amount),
     );
 
+    final expenseCount = demoDayGroups.fold<int>(
+      0,
+      (sum, g) => sum + g.items.where((t) => !t.isIncome).length,
+    );
+    final incomeCount = demoDayGroups.fold<int>(
+      0,
+      (sum, g) => sum + g.items.where((t) => t.isIncome).length,
+    );
+    final dailyAvg = totalExpense / 17;
+
     return SafeArea(
       bottom: false,
       child: ListView(
         padding: const EdgeInsets.only(bottom: 120),
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              BeanSpace.page,
-              12,
-              BeanSpace.page,
-              10,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: BeanColors.gold.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(BeanRadius.chip),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.calendar_month_rounded,
-                        size: 15,
-                        color: BeanColors.goldDeep,
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '2026年10月',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: BeanColors.goldDeep,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: BeanColors.goldDeep,
-                      ),
-                    ],
-                  ),
+          // 与其他页面统一的标题栏：左「明细」，右侧月份切换
+          BeanPageHeader(
+            title: '明细',
+            actions: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: BeanColors.gold.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(BeanRadius.chip),
                 ),
-              ],
-            ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.calendar_month_rounded,
+                      size: 15,
+                      color: BeanColors.goldDeep,
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '2026年10月',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: BeanColors.goldDeep,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: BeanColors.goldDeep,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
           // ── 本月概览 ──────────────────────────────────────
@@ -115,9 +119,42 @@ class TransactionsPage extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: BeanSpace.section),
+          // 一行细信息：日均 + 笔数（不加卡片，保持轻盈）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              BeanSpace.page,
+              10,
+              BeanSpace.page,
+              0,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.insights_rounded,
+                  size: 14,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '日均支出 ${formatMoney(dailyAvg)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: palette.textSecondary,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '$expenseCount 笔支出 · $incomeCount 笔收入',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-          // ── 明细列表 ──────────────────────────────────────
+          const SizedBox(height: BeanSpace.section),
           ...demoDayGroups.map(
             (group) => Padding(
               padding: const EdgeInsets.only(bottom: BeanSpace.section),

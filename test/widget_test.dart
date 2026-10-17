@@ -15,11 +15,11 @@ void main() {
     await tester.pumpWidget(const BeanApp());
     await tester.pump(const Duration(milliseconds: 400));
 
-    // 四个导航标签：明细 / 洞察 / 资产 / 设置
-    expect(find.text('明细'), findsOneWidget);
+    // 四个导航标签 + 各页标题（IndexedStack 会同时构建）
+    expect(find.text('明细'), findsWidgets);
     expect(find.text('洞察'), findsWidgets);
     expect(find.text('资产'), findsWidgets);
-    expect(find.text('设置'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
 
     // 首页不再显示品牌标题，保持干净
     expect(find.text('金豆'), findsNothing);

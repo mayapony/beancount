@@ -280,7 +280,7 @@ class _DesignShowcasePageState extends State<DesignShowcasePage> {
                         for (final stat in demoCategoryStats)
                           PieChartSectionData(
                             value: stat.value,
-                            color: BeanColors.categories[stat.categoryIndex],
+                            color: palette.chartColors[stat.categoryIndex],
                             radius: 18,
                             showTitle: false,
                           ),
