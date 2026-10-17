@@ -166,6 +166,22 @@ void main() {
     expect(parsed.rows, isEmpty);
   });
 
+  test('连续两次导出文件名不同，格式带时间戳', () async {
+    var tick = 0;
+    final clocked = ExportService(
+      transactions: repo,
+      attachments: attachments,
+      clock: () => DateTime(2026, 10, 18, 1, 15, tick++),
+    );
+
+    final first = await clocked.buildCsv();
+    final second = await clocked.buildCsv();
+
+    expect(first.fileName, matches(RegExp(r'^beecount_\d{8}_\d{6}\.csv$')));
+    expect(second.fileName, matches(RegExp(r'^beecount_\d{8}_\d{6}\.csv$')));
+    expect(first.fileName, isNot(second.fileName), reason: '同名会互相覆盖');
+  });
+
   test('可读大小按 1024 进制一档一档进位', () {
     ExportFile of(int size) => ExportFile(
           fileName: 'x',

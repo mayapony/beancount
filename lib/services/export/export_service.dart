@@ -37,6 +37,14 @@ class ExportFile {
   }
 }
 
+/// 导出页顶部要展示的规模。
+class ExportSummary {
+  const ExportSummary({required this.entryCount, required this.imageCount});
+
+  final int entryCount;
+  final int imageCount;
+}
+
 /// 导出账本：CSV（可回灌）与完整备份 zip（含全部票据）。
 ///
 /// 两种产物都复用**导入端的格式约定**，所以 `导出 → 清库 → 导入` 是可测闭环。
@@ -60,6 +68,14 @@ class ExportService {
     final date = '${now.year}${two(now.month)}${two(now.day)}';
     final time = '${two(now.hour)}${two(now.minute)}${two(now.second)}';
     return '${date}_$time';
+  }
+
+  /// 导出页打开时用：这笔钱不多也必须让用户看到规模。
+  Future<ExportSummary> summary() async {
+    return ExportSummary(
+      entryCount: await _transactions.count(),
+      imageCount: (await _attachments.allFiles()).length,
+    );
   }
 
   /// 只导账目：小、可读、可被 BeeCount 与本 App 再导入。

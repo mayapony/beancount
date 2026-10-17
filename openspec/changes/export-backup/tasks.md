@@ -18,9 +18,9 @@
 
 ## 4. 导出页与保存
 
-- [ ] 4.1 `ExportPage`：显示「N 笔 · M 张图」、两个导出按钮、进行中禁用与进度文案；`test/pages/export_page_test.dart` 覆盖渲染与状态
-- [ ] 4.2 保存走系统对话框：成功显示文件名/大小/位置；取消不落文件、不报成功；失败显示「导出失败：<原因>」；三个用例（注入假的 save 回调）
-- [ ] 4.3 文件名带时间戳：`beecount_YYYYMMDD_HHmmss.csv` / `beancount_backup_YYYYMMDD_HHmmss.zip`；用例断言格式与两次导出不同名
+- [x] 4.1 `ExportPage`：显示「N 笔 · M 张图」、两个导出按钮、进行中禁用与进度文案；`test/pages/export_page_test.dart` 覆盖渲染与状态
+- [x] 4.2 保存走系统对话框：成功显示文件名/大小/位置；取消不落文件、不报成功；失败显示「导出失败：<原因>」；三个用例（注入假的 save 回调）
+- [x] 4.3 文件名带时间戳：`beecount_YYYYMMDD_HHmmss.csv` / `beancount_backup_YYYYMMDD_HHmmss.zip`；用例断言格式与两次导出不同名
 
 ## 5. 接线与回归
 
