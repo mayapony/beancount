@@ -183,6 +183,38 @@ void main() {
     expect(find.text('很久以前'), findsNothing);
   });
 
+  testWidgets('空状态分两种：整库空 vs 当月空', (tester) async {
+    final current = LedgerMonth.current();
+    final previous = current.previous;
+
+    // ① 整库没有任何交易：无论浏览哪个月，都说「还没有记账」
+    await pumpPage(tester, month: previous);
+    expect(find.text('还没有记账'), findsOneWidget);
+    expect(find.text('这个月还没有记账'), findsNothing);
+
+    // ② 当月有一笔，但浏览的是上个月：给「回到本月」出口
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '刚刚这笔',
+      ),
+    );
+
+    await pumpPage(tester, month: previous);
+    expect(find.text('这个月还没有记账'), findsOneWidget);
+    expect(find.text('回到本月'), findsOneWidget);
+    expect(find.text('刚刚这笔'), findsNothing);
+
+    await tester.tap(find.text('回到本月'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('刚刚这笔'), findsOneWidget);
+  });
+
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
     final food = await categories.findByName('餐饮', CategoryType.expense);
     final withImage = await repo.create(

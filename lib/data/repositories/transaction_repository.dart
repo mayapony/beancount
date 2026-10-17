@@ -109,6 +109,19 @@ class TransactionRow {
   bool get isIncome => transaction.type == EntryType.income;
 }
 
+/// 明细页一次渲染所需的全部数据。
+///
+/// 除当月分组外还带上整库总笔数：只有它才能区分「一笔账都没有」和
+/// 「这个月没有账，但别处有」——两种空状态给用户的说法完全不同。
+class LedgerSnapshot {
+  const LedgerSnapshot({required this.groups, required this.totalCount});
+
+  final List<DayGroup> groups;
+  final int totalCount;
+
+  bool get hasNothingAtAll => totalCount == 0;
+}
+
 /// 交易仓储：写库、去重、按天读取。
 class TransactionRepository {
   TransactionRepository(this._db, {AttachmentRepository? attachments})
@@ -373,6 +386,30 @@ class TransactionRepository {
       attachmentCount: attachments.length,
       thumbnailFileName: attachments.isEmpty ? null : attachments.first.fileName,
     );
+  }
+
+  /// 明细页的完整快照：当月分组 + 整库总笔数。
+  Future<LedgerSnapshot> ledger({
+    int? year,
+    int? month,
+    int limit = 500,
+  }) async {
+    return LedgerSnapshot(
+      groups: await dayGroups(year: year, month: month, limit: limit),
+      totalCount: await count(),
+    );
+  }
+
+  /// 明细页快照流：先发当前值，之后相关表有变化就重发。
+  Stream<LedgerSnapshot> watchLedger({
+    int? year,
+    int? month,
+    int limit = 500,
+  }) async* {
+    yield await ledger(year: year, month: month, limit: limit);
+    yield* _db.tableUpdates().asyncMap(
+          (_) => ledger(year: year, month: month, limit: limit),
+        );
   }
 
   /// 全部去重键：导入前用它判断哪些行已经存在。

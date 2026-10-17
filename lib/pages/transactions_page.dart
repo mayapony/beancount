@@ -36,7 +36,7 @@ class TransactionsPage extends StatefulWidget {
 
 class _TransactionsPageState extends State<TransactionsPage> {
   late LedgerMonth _month = widget.initialMonth ?? LedgerMonth.current();
-  late Stream<List<DayGroup>> _stream = _watch();
+  late Stream<LedgerSnapshot> _stream = _watch();
 
   @override
   void initState() {
@@ -45,7 +45,18 @@ class _TransactionsPageState extends State<TransactionsPage> {
     widget.attachments?.ensureReady();
   }
 
-  Stream<List<DayGroup>> _watch() => widget.repository.watchDayGroups(
+  @override
+  void didUpdateWidget(covariant TransactionsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // initialMonth 变化时跟随（测试与深链会换它；正常使用不会变）
+    final next = widget.initialMonth;
+    if (next != null && next != _month) {
+      _month = next;
+      _stream = _watch();
+    }
+  }
+
+  Stream<LedgerSnapshot> _watch() => widget.repository.watchLedger(
         year: _month.year,
         month: _month.month,
       );
@@ -60,7 +71,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<DayGroup>>(
+    return StreamBuilder<LedgerSnapshot>(
       stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -72,25 +83,21 @@ class _TransactionsPageState extends State<TransactionsPage> {
             ),
           );
         }
-        final groups = snapshot.data;
-        if (groups == null) {
+        final data = snapshot.data;
+        if (data == null) {
           // 首帧还没读到库：留白，不闪"空账本"
           return const SizedBox.shrink();
         }
-        if (groups.isEmpty) {
-          return SafeArea(
-            bottom: false,
-            child: BeanEmptyState(
-              title: _month.isCurrent ? '还没有记账' : '这个月还没有记账',
-              subtitle: _month.isCurrent
-                  ? '点下方的金豆，记下第一笔'
-                  : '${_month.year}年${_month.month}月没有记录',
-            ),
+        if (data.groups.isEmpty) {
+          return _EmptyLedger(
+            month: _month,
+            hasNothingAtAll: data.hasNothingAtAll,
+            onBackToCurrent: () => _showMonth(LedgerMonth.current()),
           );
         }
         return _Ledger(
           month: _month,
-          groups: groups,
+          groups: data.groups,
           attachments: widget.attachments,
           onPickMonth: _showMonth,
         );
@@ -99,8 +106,49 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 }
 
-class _Ledger extends StatelessWidget {
-  const _Ledger({
+/// 空状态分两种：整库没有账 vs 当前浏览的月份没有账。
+///
+/// 后者才给「回到本月」出口——整库空时切月没有意义，只会让用户以为数据丢了。
+class _EmptyLedger extends StatelessWidget {
+  const _EmptyLedger({
+    required this.month,
+    required this.hasNothingAtAll,
+    required this.onBackToCurrent,
+  });
+
+  final LedgerMonth month;
+  final bool hasNothingAtAll;
+  final VoidCallback onBackToCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hasNothingAtAll) {
+      return const SafeArea(
+        bottom: false,
+        child: BeanEmptyState(
+          title: '还没有记账',
+          subtitle: '点下方的金豆，记下第一笔',
+        ),
+      );
+    }
+    return SafeArea(
+      bottom: false,
+      child: BeanEmptyState(
+        title: '这个月还没有记账',
+        subtitle: '${month.year}年${month.month}月没有记录',
+        icon: Icons.calendar_month_rounded,
+        action: month.isCurrent
+            ? null
+            : TextButton(
+                onPressed: onBackToCurrent,
+                child: const Text('回到本月'),
+              ),
+      ),
+    );
+  }
+}
+
+class _Ledger extends StatelessWidget {  const _Ledger({
     required this.month,
     required this.groups,
     this.attachments,

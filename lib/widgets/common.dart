@@ -243,11 +243,15 @@ class BeanEmptyState extends StatelessWidget {
     this.title = '还没有记账',
     this.subtitle = '种下第一笔，让它发芽',
     this.icon = Icons.spa_rounded,
+    this.action,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
+
+  /// 可选的操作（例如「回到本月」「切换月份」），空状态下唯一的出口。
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -282,6 +286,10 @@ class BeanEmptyState extends StatelessWidget {
             subtitle,
             style: TextStyle(fontSize: 13, color: palette.textSecondary),
           ),
+          if (action != null) ...[
+            const SizedBox(height: 14),
+            action!,
+          ],
         ],
       ),
     );
