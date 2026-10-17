@@ -18,7 +18,12 @@ void main() {
   });
 
   tearDown(() async {
-    if (await tmp.exists()) await tmp.delete(recursive: true);
+    // Windows 上 sqlite 文件句柄可能还没释放，清不掉不该让迁移用例变红
+    try {
+      if (await tmp.exists()) await tmp.delete(recursive: true);
+    } on FileSystemException {
+      // ignore
+    }
   });
 
   /// v1 的表结构（transactions 的 category_id 是 NOT NULL，且没有 to_account_id）。
@@ -121,7 +126,7 @@ void main() {
     );
   }
 
-  test('v1 库升级到 v2：历史数据不变、索引还在、能写转账', () async {
+  test('v1 库一路升到 v3：历史数据不变、索引还在、能写转账', () async {
     final file = File('${tmp.path}/v1.sqlite');
     final executor = NativeDatabase(
       file,
@@ -157,7 +162,7 @@ void main() {
 
     // 版本号推进到 2
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 2);
+    expect(version.data.values.first, 3);
 
     // 迁移后能写转账：分类为空、两端账户俱在
     await db.into(db.transactions).insert(
@@ -181,7 +186,7 @@ void main() {
     await db.close();
   });
 
-  test('全新库直接建成 v2，不需要迁移', () async {
+  test('全新库直接建成最新版本，不需要迁移', () async {
     final file = File('${tmp.path}/fresh.sqlite');
     final db = AppDatabase(NativeDatabase(file));
     await db.select(db.transactions).get();
@@ -193,8 +198,15 @@ void main() {
     expect(names, contains('to_account_id'));
     expect(names, contains('category_id'));
 
+    // 新表也直接建好
+    final recurring = await db.customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' "
+      "AND name = 'recurring_rules'",
+    ).get();
+    expect(recurring, hasLength(1));
+
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 2);
+    expect(version.data.values.first, 3);
     await db.close();
   });
 }

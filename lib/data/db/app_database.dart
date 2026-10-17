@@ -74,6 +74,14 @@ class Transactions extends Table {
   TextColumn get toAccountId =>
       text().nullable().references(Accounts, #id)();
 
+  /// 由循环规则生成时：规则 id 与期数（`yyyy-MM`）。
+  ///
+  /// 两个字段一起构成"这一期已经补过"的判据——比只靠去重键更稳：
+  /// 用户把自动生成的交易改过金额/备注后，键会变，但期数标记还在。
+  TextColumn get recurringRuleId =>
+      text().nullable().references(RecurringRules, #id)();
+  TextColumn get recurringPeriod => text().nullable()();
+
   /// 规范化后的备注（trim 过、空串而不是 null），参与去重键计算。
   TextColumn get note => text().withDefault(const Constant(''))();
   DateTimeColumn get happenedAt => dateTime()();
@@ -116,6 +124,35 @@ class Attachments extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// 循环记账规则：每月固定日自动补记一笔（支出/收入/转账）。
+///
+/// 不存「上次执行到哪」——补记是否已发生由交易的去重键（带 rule+期数的 salt）判定，
+/// 少一个会漂移的状态字段，也就少一类"补重了/补漏了"的 bug。
+class RecurringRules extends Table {
+  TextColumn get id => text()();
+  TextColumn get type => textEnum<EntryType>()();
+  IntColumn get amountCents => integer()();
+  TextColumn get categoryId =>
+      text().nullable().references(Categories, #id)();
+  TextColumn get accountId =>
+      text().nullable().references(Accounts, #id)();
+  TextColumn get toAccountId =>
+      text().nullable().references(Accounts, #id)();
+  TextColumn get note => text().withDefault(const Constant(''))();
+
+  /// 1..31：超过当月天数时落到该月最后一天（31 即「月末」）。
+  IntColumn get dayOfMonth => integer()();
+
+  /// 生效起始月：补记不会早于这个月。
+  IntColumn get startYear => integer()();
+  IntColumn get startMonth => integer()();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// 轻量键值：上次记账的选择等。
 class AppState extends Table {
   TextColumn get key => text()();
@@ -134,13 +171,14 @@ class AppState extends Table {
     TransactionTags,
     Attachments,
     AppState,
+    RecurringRules,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -160,6 +198,27 @@ class AppDatabase extends _$AppDatabase {
               ),
             );
             // 重建表后把索引补回来（drift 的 creating 只重建表本身）
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_happened_at '
+              'ON transactions (happened_at)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_category '
+              'ON transactions (category_id)',
+            );
+          }
+          if (from < 3) {
+            // v3：循环记账规则；交易上记录「由哪条规则、哪一期」生成。
+            await m.createTable(recurringRules);
+            await m.alterTable(
+              TableMigration(
+                transactions,
+                newColumns: [
+                  transactions.recurringRuleId,
+                  transactions.recurringPeriod,
+                ],
+              ),
+            );
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_transactions_happened_at '
               'ON transactions (happened_at)',

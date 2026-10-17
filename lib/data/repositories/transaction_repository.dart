@@ -20,6 +20,8 @@ class NewTransaction {
     this.note = '',
     this.tags = const <String>[],
     this.source = EntrySource.manual,
+    this.recurringRuleId,
+    this.recurringPeriod,
   });
 
   final EntryType type;
@@ -33,6 +35,10 @@ class NewTransaction {
   final String note;
   final List<String> tags;
   final EntrySource source;
+
+  /// 由循环规则生成时：规则 id 与期数（`yyyy-MM`）。
+  final String? recurringRuleId;
+  final String? recurringPeriod;
 
   bool get isTransfer => type == EntryType.transfer;
 }
@@ -224,6 +230,7 @@ class TransactionRepository {
       amountCents: input.amountCents,
       note: note,
       toAccountId: input.isTransfer ? input.toAccountId : null,
+      salt: _saltOf(input.recurringRuleId, input.recurringPeriod),
     );
 
     final existing = await (_db.select(_db.transactions)
@@ -244,6 +251,8 @@ class TransactionRepository {
               categoryId: Value(input.categoryId),
               accountId: Value(input.accountId),
               toAccountId: Value(input.toAccountId),
+              recurringRuleId: Value(input.recurringRuleId),
+              recurringPeriod: Value(input.recurringPeriod),
               note: Value(note),
               happenedAt: input.happenedAt,
               dedupeKey: dedupeKey,
@@ -266,6 +275,12 @@ class TransactionRepository {
     });
 
     return CreateResult(inserted: true, transactionId: id);
+  }
+
+  /// 循环补记的期数标记参与去重键：同规则同一期永远只生成一笔。
+  static String? _saltOf(String? ruleId, String? period) {
+    if (ruleId == null || period == null) return null;
+    return 'rule:$ruleId:$period';
   }
 
   /// 收支/转账的字段约束：转账两端俱在且不同，收支必须有分类。
@@ -553,7 +568,11 @@ class TransactionRepository {
         happenedAt: input.happenedAt,
         amountCents: input.amountCents,
         note: note,
-        toAccountId: input.type == EntryType.transfer ? input.toAccountId : null,
+        toAccountId:
+            input.type == EntryType.transfer ? input.toAccountId : null,
+        // 自动补记的交易带着「规则 + 期数」：改了金额也不能丢掉这个标记，
+        // 否则下次启动会把同一期再补一遍。
+        salt: _saltOf(current.recurringRuleId, current.recurringPeriod),
       );
       final sameKey = await (_db.select(_db.transactions)
             ..where((t) => t.dedupeKey.equals(dedupeKey)))

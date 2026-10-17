@@ -15,6 +15,7 @@ String dedupeKeyFor({
   required int amountCents,
   required String note,
   String? toAccountId,
+  String? salt,
 }) {
   final seconds = DateTime(
     happenedAt.year,
@@ -25,9 +26,11 @@ String dedupeKeyFor({
     happenedAt.second,
   ).millisecondsSinceEpoch ~/ 1000;
 
-  final source = toAccountId == null
+  final base = toAccountId == null
       ? '$seconds|$amountCents|${note.trim()}'
       : '$seconds|$amountCents|${note.trim()}|to:$toAccountId';
+  // salt 只用于「循环补记」这类需要按规则+期数区分的场景；为空时字节与旧版一致
+  final source = (salt == null || salt.isEmpty) ? base : '$base|$salt';
 
   final a = _polyHash(source, 131);
   final b = _polyHash(source, 1000003);

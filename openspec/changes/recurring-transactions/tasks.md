@@ -2,14 +2,14 @@
 
 ## 1. 数据模型与迁移
 
-- [ ] 1.1 新增 `recurring_rules` 表（类型/金额/分类/两端账户/备注/每月几号/起始月/启用）与 `schemaVersion = 3` 的 v2→v3 迁移（建表）；`test/data/db_migration_test.dart` 增加「v1 直接升到 v3」用例：表存在、历史交易与索引不受影响
-- [ ] 1.2 `dedupeKeyFor` 增加可选 `salt`（循环补记传 `rule:<id>:<yyyy-MM>`）；用例：同 salt 稳定、不同 salt 不同、传空 salt 时键与旧公式一致
+- [x] 1.1 新增 `recurring_rules` 表（类型/金额/分类/两端账户/备注/每月几号/起始月/启用）与 `schemaVersion = 3` 的 v2→v3 迁移（建表）；`test/data/db_migration_test.dart` 增加「v1 直接升到 v3」用例：表存在、历史交易与索引不受影响
+- [x] 1.2 `dedupeKeyFor` 增加可选 `salt`（循环补记传 `rule:<id>:<yyyy-MM>`）；用例：同 salt 稳定、不同 salt 不同、传空 salt 时键与旧公式一致
 
 ## 2. 规则仓储
 
-- [ ] 2.1 `RecurringRepository`：`all() / byId / create / update / setEnabled / delete`；用例覆盖增删改与默认启用
-- [ ] 2.2 纯函数 `occurrencesBetween(rule, from, to, now)`：每月指定日、29–31 落到月末、当月未到日子不补；用例覆盖 31 号在 2 月、10 月 3 日时不补 10 月
-- [ ] 2.3 `nextDueDate(rule, now)` 供列表展示下次执行日；用例：5 号规则在 8 号当天 → 下月 5 号
+- [x] 2.1 `RecurringRepository`：`all() / byId / create / update / setEnabled / delete`；用例覆盖增删改与默认启用
+- [x] 2.2 纯函数 `occurrencesBetween(rule, from, to, now)`：每月指定日、29–31 落到月末、当月未到日子不补；用例覆盖 31 号在 2 月、10 月 3 日时不补 10 月
+- [x] 2.3 `nextDueDate(rule, now)` 供列表展示下次执行日；用例：5 号规则在 8 号当天 → 下月 5 号
 
 ## 3. 补记服务
 
