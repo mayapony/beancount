@@ -1,0 +1,5 @@
+tags:
+  screenshots:
+    description: >-
+      设计评审截图工具：需要宿主机的中文字体与可写目录，产出去 docs/review/shots。
+      它是工具不是断言测试，CI 用 --exclude-tags screenshots 跳过。

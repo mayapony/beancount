@@ -24,7 +24,8 @@ jobs:
         run: flutter analyze
 
       - name: 单元与 Widget 测试
-        run: flutter test
+        # 截图工具依赖宿主字体、会写 docs/，不在 CI 跑（见 dart_test.yaml）
+        run: flutter test --exclude-tags screenshots
 
       # 打包会走 manifest / 资源 / 插件配置：平台配置被改坏时在这里就红，
       # 不必等到手动发版才发现。用 debug 构建，快且足够验证配置。

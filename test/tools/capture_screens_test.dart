@@ -5,11 +5,18 @@
 // 为什么需要它：`flutter test` 默认用 Ahem 字体（方块字），无法用于排版评审，
 // 所以这里手动加载 FontManifest（MaterialIcons）与系统中文字体 Noto Sans SC；
 // 截图必须包在 `tester.runAsync` 里，否则引擎回调在假时钟下永远不返回。
+//
+// 它是"生成截图的工具"，不是断言测试：依赖宿主机中文字体、会往 docs/ 写 PNG，
+// 在无头/无字体的 CI 上只会因为排版溢出而红，所以打 tag 让 CI 跳过。
+@Tags(['screenshots'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:bean_count/data/db/app_database.dart';
+// drift 的 Tags 表与 test_api 的 @Tags 注解重名
+import 'package:bean_count/data/db/app_database.dart' hide Tags;
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/pages/import_page.dart';
