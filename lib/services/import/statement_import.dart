@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart';
-import 'package:gbk_codec/gbk_codec.dart';
+import 'package:fast_gbk/fast_gbk.dart';
 
 import '../../data/db/enums.dart';
 import 'bee_count_csv.dart';

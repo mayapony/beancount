@@ -85,7 +85,12 @@ class _ShellPageState extends State<ShellPage> {
       categories: _categoryRepo,
       accounts: _accountRepo,
     ),
-    InsightsPage(repository: _insightsRepo),
+    InsightsPage(
+      repository: _insightsRepo,
+      transactions: _transactionRepo,
+      attachments: _attachmentRepo,
+      categories: _categories,
+    ),
     AssetsPage(repository: _accountRepo, netWorth: _netWorthRepo),
     SettingsPage(
       importer: _importService,

@@ -10,19 +10,10 @@ import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/services/import/import_service.dart';
 import 'package:bean_count/services/import/statement_import.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gbk_codec/gbk_codec.dart';
 
 /// 真实路径：GBK 编码的支付宝账单 → 解析 → 建计划 → 落库。
 void main() {
-  const statement = '''
-支付宝交易记录明细查询
-账号:138****0000
----------------------------------交易记录明细列表------------------------------------
-交易时间,交易分类,交易对方,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注
-2026-10-17 19:27:00,餐饮美食,街角炸鸡,炸鸡套餐,支出,38.50,余额宝,交易成功,2026101722001,SH001,
-2026-10-15 09:00:00,转账红包,张三,收到红包,收入,120.00,余额,交易成功,2026101522002,NULL,
-2026-10-14 08:00:00,投资理财,余额宝,余额宝收益,不计收支,0.12,余额宝,交易成功,2026101422003,NULL,
-''';
+
 
   late AppDatabase db;
   late Directory tmp;
@@ -53,10 +44,13 @@ void main() {
   });
 
   test('GBK 支付宝账单：预览数字正确，落库后分类与账户正确', () async {
-    final parsed = await parseImportFile(gbk.encode(statement));
+    // 真实支付宝导出是 GBK：用二进制样本，避免在测试里再造一遍编码
+    final gbkBytes =
+        File('test/fixtures/alipay_sample_gbk.csv').readAsBytesSync();
+    final parsed = await parseImportFile(gbkBytes);
     expect(parsed.kind, StatementKind.alipay);
     expect(parsed.result.rows, hasLength(2));
-    expect(parsed.result.skipped, hasLength(1));
+    expect(parsed.result.skipped, hasLength(2), reason: "不计收支 + 交易关闭 各一行");
 
     final plan = await planImport(
       service: importer,
@@ -81,7 +75,7 @@ void main() {
     // 再导一次不新增（去重生效）
     final again = await planImport(
       service: importer,
-      parsed: (await parseImportFile(gbk.encode(statement))).result,
+      parsed: (await parseImportFile(gbkBytes)).result,
       attachmentSizes: const {},
     );
     await importer.apply(again, attachments: const {});

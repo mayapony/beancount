@@ -2,16 +2,30 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../data/db/app_database.dart';
+import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/insights_repository.dart';
+import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
+import 'category_ledger_page.dart';
 
 /// 洞察页：金额即标题，下面是分类占比、趋势、排行。
 class InsightsPage extends StatefulWidget {
-  const InsightsPage({super.key, required this.repository});
+  const InsightsPage({
+    super.key,
+    required this.repository,
+    this.transactions,
+    this.attachments,
+    this.categories = const <Category>[],
+  });
 
   final InsightsRepository repository;
+
+  /// 分类下钻要读交易与附件；为空时下钻入口不出现。
+  final TransactionRepository? transactions;
+  final AttachmentRepository? attachments;
+  final List<Category> categories;
 
   @override
   State<InsightsPage> createState() => _InsightsPageState();
@@ -27,6 +41,43 @@ class _InsightsPageState extends State<InsightsPage> {
       _period = period;
       _stream = widget.repository.watch(period: period);
     });
+  }
+
+  /// 从分类汇总进入该分类的账目（含二级分类，期间与洞察页一致）。
+  void _drillDown(RangeInsights data, Category category) {
+    final transactions = widget.transactions;
+    if (transactions == null) return;
+
+    final now = DateTime.now();
+    final (from, to) = switch (_period) {
+      InsightsPeriod.month => (
+          DateTime(now.year, now.month),
+          DateTime(now.year, now.month + 1),
+        ),
+      InsightsPeriod.year => (DateTime(now.year), DateTime(now.year + 1)),
+      InsightsPeriod.all => (null, null),
+    };
+    final share = data.expenseCents == 0
+        ? null
+        : data.categories
+                .where((c) => c.category.id == category.id)
+                .map((c) => c.cents / data.expenseCents)
+                .firstOrNull;
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CategoryLedgerPage(
+          category: category,
+          repository: transactions,
+          attachments: widget.attachments,
+          categories: widget.categories,
+          from: from,
+          to: to,
+          rangeLabel: data.rangeLabel,
+          shareOfPeriod: share,
+        ),
+      ),
+    );
   }
 
   @override
@@ -49,6 +100,9 @@ class _InsightsPageState extends State<InsightsPage> {
           data: data,
           period: _period,
           onSelect: _select,
+          onDrillDown: widget.transactions == null
+              ? null
+              : (category) => _drillDown(data, category),
         );
       },
     );
@@ -60,11 +114,15 @@ class _InsightsBody extends StatelessWidget {
     required this.data,
     required this.period,
     required this.onSelect,
+    this.onDrillDown,
   });
 
   final RangeInsights data;
   final InsightsPeriod period;
   final ValueChanged<InsightsPeriod> onSelect;
+
+  /// 点分类进入下钻；为空时（没有交易仓储）不可点。
+  final ValueChanged<Category>? onDrillDown;
 
   @override
   Widget build(BuildContext context) {
@@ -165,11 +223,16 @@ class _InsightsBody extends StatelessWidget {
                       runSpacing: 8,
                       children: [
                         for (final item in data.categories)
-                          _LegendItem(
-                            color: chartColorOf(item.category, palette),
-                            name: item.category.name,
-                            value: item.cents / 100,
-                            total: total,
+                          GestureDetector(
+                            onTap: onDrillDown == null
+                                ? null
+                                : () => onDrillDown!(item.category),
+                            child: _LegendItem(
+                              color: chartColorOf(item.category, palette),
+                              name: item.category.name,
+                              value: item.cents / 100,
+                              total: total,
+                            ),
                           ),
                       ],
                     ),
@@ -220,10 +283,15 @@ class _InsightsBody extends StatelessWidget {
                   children: [
                     const SectionTitle('分类排行'),
                     for (final item in data.categories)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: onDrillDown == null
+                            ? null
+                            : () => onDrillDown!(item.category),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
                             CategoryAvatar(
                               name: item.category.name,
                               colorValue: item.category.color,
@@ -257,19 +325,20 @@ class _InsightsBody extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            SizedBox(
-                              width: 72,
-                              child: Text(
-                                formatMoneyCompact(item.cents / 100),
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                              SizedBox(
+                                width: 72,
+                                child: Text(
+                                  formatMoneyCompact(item.cents / 100),
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                   ],

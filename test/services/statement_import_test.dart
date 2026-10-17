@@ -4,7 +4,7 @@ import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/services/import/statement_import.dart';
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gbk_codec/gbk_codec.dart';
+import 'dart:io';
 
 const _alipay = '''
 支付宝交易记录明细查询
@@ -78,7 +78,9 @@ void main() {
     });
 
     test('GBK 编码也能正确读出中文', () async {
-      final parsed = await parseImportFile(gbk.encode(_alipay));
+      // 真实支付宝导出就是 GBK：用二进制样本，避免测试里再造一遍编码
+      final bytes = File('test/fixtures/alipay_sample_gbk.csv').readAsBytesSync();
+      final parsed = await parseImportFile(bytes);
       expect(parsed.kind, StatementKind.alipay);
       expect(parsed.result.rows.first.categoryName, '餐饮');
       expect(parsed.result.rows.first.note, '炸鸡套餐');
