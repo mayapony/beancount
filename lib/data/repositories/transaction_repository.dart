@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../db/app_database.dart';
+import '../../utils/fx.dart';
 import '../db/enums.dart';
 import '../dedupe.dart';
 import 'attachment_repository.dart';
@@ -22,6 +23,9 @@ class NewTransaction {
     this.source = EntrySource.manual,
     this.recurringRuleId,
     this.recurringPeriod,
+    this.currency = 'CNY',
+    this.originalAmountCents,
+    this.ratePpm,
   });
 
   final EntryType type;
@@ -39,6 +43,15 @@ class NewTransaction {
   /// 由循环规则生成时：规则 id 与期数（`yyyy-MM`）。
   final String? recurringRuleId;
   final String? recurringPeriod;
+
+  /// 原币档案：`currency != CNY` 时由界面传入原币金额与汇率。
+  ///
+  /// `amountCents` 永远是本位币金额（调用方或这里算好），统计只看它。
+  final String currency;
+  final int? originalAmountCents;
+  final int? ratePpm;
+
+  bool get isForeign => !isBaseCurrency(currency);
 
   bool get isTransfer => type == EntryType.transfer;
 }
@@ -240,9 +253,19 @@ class TransactionRepository {
     );
 
     final note = input.note.trim();
+    // 外币：本位币金额由原币 × 汇率算出来，避免界面各处各算一遍
+    var amountCents = input.amountCents;
+    if (input.isForeign) {
+      final rate = input.ratePpm;
+      if (rate == null || rate <= 0) {
+        throw ArgumentError('外币交易必须带汇率');
+      }
+      final original = input.originalAmountCents ?? input.amountCents;
+      amountCents = baseCentsOf(originalCents: original, ratePpm: rate);
+    }
     final dedupeKey = dedupeKeyFor(
       happenedAt: input.happenedAt,
-      amountCents: input.amountCents,
+      amountCents: amountCents,
       note: note,
       toAccountId: input.isTransfer ? input.toAccountId : null,
       salt: _saltOf(input.recurringRuleId, input.recurringPeriod),
@@ -262,7 +285,10 @@ class TransactionRepository {
             TransactionsCompanion.insert(
               id: id,
               type: input.type,
-              amountCents: input.amountCents,
+              amountCents: amountCents,
+              currency: Value(input.currency),
+              originalAmountCents: Value(input.originalAmountCents),
+              ratePpm: Value(input.ratePpm),
               categoryId: Value(input.categoryId),
               accountId: Value(input.accountId),
               toAccountId: Value(input.toAccountId),

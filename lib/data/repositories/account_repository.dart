@@ -207,6 +207,7 @@ class AccountRepository {
     required String name,
     AccountType type = AccountType.wallet,
     int initialBalanceCents = 0,
+    String currency = 'CNY',
     int? billingDay,
     int? dueDay,
   }) async {
@@ -226,6 +227,7 @@ class AccountRepository {
             name: trimmed,
             type: Value(type),
             initialBalanceCents: Value(initialBalanceCents),
+            currency: Value(_cleanCurrency(currency)),
             billingDay: Value(billingDay),
             dueDay: Value(dueDay),
             sortOrder: Value(maxOrder.read<int>('m') + 1),
@@ -244,6 +246,7 @@ class AccountRepository {
     bool clearBillingDay = false,
     int? dueDay,
     bool clearDueDay = false,
+    String? currency,
   }) async {
     _checkDay(billingDay, 'billingDay');
     _checkDay(dueDay, 'dueDay');
@@ -263,6 +266,9 @@ class AccountRepository {
         initialBalanceCents: initialBalanceCents == null
             ? const Value.absent()
             : Value(initialBalanceCents),
+        currency: currency == null
+            ? const Value.absent()
+            : Value(_cleanCurrency(currency)),
         billingDay: clearBillingDay
             ? const Value(null)
             : (billingDay == null ? const Value.absent() : Value(billingDay)),
@@ -271,6 +277,12 @@ class AccountRepository {
             : (dueDay == null ? const Value.absent() : Value(dueDay)),
       ),
     );
+  }
+
+  /// 币种统一成大写 ISO 代码；空值按本位币。
+  static String _cleanCurrency(String raw) {
+    final code = raw.trim().toUpperCase();
+    return code.isEmpty ? 'CNY' : code;
   }
 
   /// 日号只允许 1–28：避开大小月与 2 月的漂移。

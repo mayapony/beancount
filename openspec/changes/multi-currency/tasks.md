@@ -2,9 +2,9 @@
 
 ## 1. 数据层
 
-- [ ] 1.1 accounts 加 `currency`（默认 `CNY`）、transactions 加 `currency`（默认 `CNY`）/ `originalAmountCents` / `ratePpm`，`schemaVersion = 5` + 迁移；`test/data/db_migration_test.dart` 用例：v1→v5、全新库两列都在
-- [ ] 1.2 新增 `lib/utils/fx.dart`：`baseCentsOf(originalCents, ratePpm)`（四舍五入到分）、`ppmOf(double)`、`rateTextOf(ppm)`；`test/utils/fx_test.dart` 用例：7.25 整数换算、四舍五入边界、非法汇率
-- [ ] 1.3 `NewTransaction` 接受 `currency` / `originalAmountCents` / `ratePpm`，落库时算本位币；非 CNY 缺汇率抛 ArgumentError；`test/data/multi_currency_test.dart`：USD 100@7.25 → 72500、同月合计 825 元、缺汇率被拒
+- [x] 1.1 accounts 加 `currency`（默认 `CNY`）、transactions 加 `currency`（默认 `CNY`）/ `originalAmountCents` / `ratePpm`，`schemaVersion = 5` + 迁移；`test/data/db_migration_test.dart` 用例：v1→v5、全新库两列都在
+- [x] 1.2 新增 `lib/utils/fx.dart`：`baseCentsOf(originalCents, ratePpm)`（四舍五入到分）、`ppmOf(double)`、`rateTextOf(ppm)`；`test/utils/fx_test.dart` 用例：7.25 整数换算、四舍五入边界、非法汇率
+- [x] 1.3 `NewTransaction` 接受 `currency` / `originalAmountCents` / `ratePpm`，落库时算本位币；非 CNY 缺汇率抛 ArgumentError；`test/data/multi_currency_test.dart`：USD 100@7.25 → 72500、同月合计 825 元、缺汇率被拒
 
 ## 2. 交互
 

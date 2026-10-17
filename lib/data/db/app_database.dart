@@ -39,6 +39,10 @@ class Accounts extends Table {
       integer().withDefault(const Constant(0))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
+  /// 账户币种（ISO 代码）。本位币是 CNY；外币账户记账时按原币录入。
+  TextColumn get currency =>
+      text().withDefault(const Constant('CNY'))();
+
   /// 信用卡账单日 / 还款日（1–28）。只对 `type == credit` 有意义；
   /// 限定到 28 是为了避开大小月与 2 月的漂移——提醒不需要精确到 31 号。
   IntColumn get billingDay => integer().nullable()();
@@ -78,6 +82,14 @@ class Transactions extends Table {
   /// 转入账户：仅 `type == transfer` 时非空。
   TextColumn get toAccountId =>
       text().nullable().references(Accounts, #id)();
+
+  /// 原币档案：`currency != CNY` 时才有值。
+  ///
+  /// `amountCents` 始终是本位币金额（统计/余额只用它），
+  /// 这三列只负责"当时花了多少外币、汇率是多少"。
+  TextColumn get currency => text().withDefault(const Constant('CNY'))();
+  IntColumn get originalAmountCents => integer().nullable()();
+  IntColumn get ratePpm => integer().nullable()();
 
   /// 由循环规则生成时：规则 id 与期数（`yyyy-MM`）。
   ///
@@ -183,7 +195,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -240,6 +252,33 @@ class AppDatabase extends _$AppDatabase {
                 accounts,
                 newColumns: [accounts.billingDay, accounts.dueDay],
               ),
+            );
+          }
+          if (from < 5) {
+            // v5：账户币种 + 交易的原币档案（老数据自动是 CNY）
+            await m.alterTable(
+              TableMigration(
+                accounts,
+                newColumns: [accounts.currency],
+              ),
+            );
+            await m.alterTable(
+              TableMigration(
+                transactions,
+                newColumns: [
+                  transactions.currency,
+                  transactions.originalAmountCents,
+                  transactions.ratePpm,
+                ],
+              ),
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_happened_at '
+              'ON transactions (happened_at)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_category '
+              'ON transactions (category_id)',
             );
           }
         },
