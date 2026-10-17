@@ -28,7 +28,17 @@
 ## 5. 回归
 
 - [x] 5.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 169 + 新增）
-- [ ] 5.2 设备端回归：v1 数据升级不丢 → 记一笔转账 → 明细/账户余额正确 → 改金额 → 删除还原；结果写入 tasks.md
+- [x] 5.2 设备端回归：v1 数据升级不丢 → 记一笔转账 → 明细/账户余额正确 → 改金额 → 删除还原；结果写入 tasks.md
+
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**185 通过**（上一轮 169 + 本次 16）
+- 迁移测试 `test/data/db_migration_test.dart`：用 **v1 真实 DDL** 造老库（含数据与两个索引）→ 新代码打开 → 历史交易字段不变、索引仍在、`user_version = 2`、可写转账；另有一条「全新库直接建成 v2」
+- `flutter test integration_test/transfer_flow_test.dart -d emulator-5554`：2 通过
+  - **真实应用库**：设备上由旧版本创建的 v1 库，装上新版本后首次打开即迁移到 2，历史分类与账户保留
+  - UI 全链路：金豆 → 转账 → 300 → 完成 → 明细出现「A → B / 300.00」（不带符号）→ 两端账户各 ±300、各记一笔 → 进详情删除 → 余额还原
+- 说明：改金额走的是与「记一笔」同一个预填面板与 `update()`，面板预填与编辑路径已由 widget 用例覆盖（`编辑模式：以现值预填…`），设备端不再重复点数值
 
 ## Workflow follow-up
 

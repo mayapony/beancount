@@ -111,7 +111,7 @@ void main() {
     expect(find.text('交通'), findsWidgets);
 
     final edited = await transactions.byId(lastMonth.transactionId);
-    expect(edited!.category.name, '交通');
+    expect(edited!.category?.name, '交通');
     expect(edited.amountCents, 1500);
 
     // 删除这一笔，回到明细后该行消失
@@ -184,7 +184,7 @@ void main() {
     final row = await reopened.byId(created.transactionId);
     expect(row, isNotNull);
     expect(row!.amountCents, 2500);
-    expect(row.category.name, '交通');
+    expect(row.category?.name, '交通');
     expect(row.transaction.note, '改过之后');
     expect(await reopened.byId(toDelete.transactionId), isNull);
     expect(await reopened.count(), 1);
