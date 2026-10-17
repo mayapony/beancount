@@ -1,0 +1,18 @@
+/// 数据层使用的枚举。
+///
+/// drift 的 `textEnum` 会把枚举名写进 TEXT 列（`expense` / `income`），
+/// 因此这里枚举的**名字**就是磁盘格式，改名等于改 schema。
+library;
+
+/// 一笔交易的收支方向。
+enum EntryType { expense, income }
+
+/// 分类所属的收支类型（与 [EntryType] 同形，但语义上独立：
+/// 分类的归属不会因为交易方向扩展而变化）。
+enum CategoryType { expense, income }
+
+/// 账户类型，仅用于展示与图标选择，不参与余额计算。
+enum AccountType { wallet, debit, credit, other }
+
+/// 交易的来源，用来区分手工记账与导入。
+enum EntrySource { manual, import }
