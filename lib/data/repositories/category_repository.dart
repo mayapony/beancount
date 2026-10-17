@@ -18,6 +18,20 @@ class CategoryInUseException implements Exception {
   String toString() => 'CategoryInUseException($categoryId): $reason';
 }
 
+/// 分类改名时撞上同层级同名，抛出它而不是静默改不了。
+class DuplicateCategoryNameException implements Exception {
+  DuplicateCategoryNameException(this.name, {this.parentId});
+
+  final String name;
+
+  /// 为空表示冲突发生在一级分类之间。
+  final String? parentId;
+
+  @override
+  String toString() =>
+      parentId == null ? '已有一级分类「$name」' : '该父分类下已有「$name」';
+}
+
 /// 分类仓储：唯一负责分类树的读写与约束（最多两级、被引用不可删）。
 ///
 /// 领域模型直接用 drift 生成的 `Category`（表 `categories` 的行），
@@ -156,8 +170,36 @@ class CategoryRepository {
   Future<void> rename(String id, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', '分类名不能为空');
+
+    final current = await byId(id);
+    if (current == null) throw ArgumentError.value(id, 'id', '分类不存在');
+
+    // 同类型、同父级下不允许重名；不同父级可以各自有「其他」
+    final clash = await findByName(
+      trimmed,
+      current.type,
+      parentId: current.parentId,
+    );
+    if (clash != null && clash.id != id) {
+      throw DuplicateCategoryNameException(trimmed, parentId: current.parentId);
+    }
+
     await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
       CategoriesCompanion(name: Value(trimmed)),
+    );
+  }
+
+  /// 只改样式（颜色/图标），不动名称与层级。
+  Future<void> updateAppearance(
+    String id, {
+    int? color,
+    String? icon,
+  }) async {
+    await (_db.update(_db.categories)..where((t) => t.id.equals(id))).write(
+      CategoriesCompanion(
+        color: color == null ? const Value.absent() : Value(color),
+        icon: icon == null ? const Value.absent() : Value(icon),
+      ),
     );
   }
 
@@ -186,6 +228,79 @@ class CategoryRepository {
             .go();
       }
       await (_db.delete(_db.categories)..where((t) => t.id.equals(id))).go();
+    });
+  }
+
+  /// 同类型同级内上移/下移一位（delta 为 -1 / +1）。
+  ///
+  /// 只与相邻项交换 `sortOrder`，不整表重排——分类数量不多，但没必要写放大。
+  /// 相邻项按 `(sortOrder, name)` 稳定排序取，`sortOrder` 重复时也不会错位。
+  Future<void> moveBy(String id, int delta) async {
+    if (delta == 0) return;
+    final current = await byId(id);
+    if (current == null) return;
+
+    final siblings = current.parentId == null
+        ? await roots(current.type)
+        : await childrenOf(current.parentId!);
+    final order = siblings.map((c) => c.id).toList();
+    final at = order.indexOf(id);
+    if (at < 0) return;
+    final target = at + delta;
+    if (target < 0 || target >= order.length) return;
+
+    final neighbour = siblings[target];
+    await _db.transaction(() async {
+      await (_db.update(_db.categories)
+            ..where((t) => t.id.equals(id)))
+          .write(CategoriesCompanion(sortOrder: Value(neighbour.sortOrder)));
+      await (_db.update(_db.categories)
+            ..where((t) => t.id.equals(neighbour.id)))
+          .write(CategoriesCompanion(sortOrder: Value(current.sortOrder)));
+    });
+  }
+
+  /// 一次查出「分类 id → 使用笔数」，管理页不做 N+1 查询。
+  Future<Map<String, int>> usageCounts() async {
+    final rows = await _db.customSelect(
+      'SELECT category_id, COUNT(*) AS n FROM transactions GROUP BY category_id',
+    ).get();
+    return {
+      for (final row in rows)
+        row.read<String>('category_id'): row.read<int>('n'),
+    };
+  }
+
+  /// 把 [fromId] 下的交易迁移到 [toId]，然后删除 [fromId]（含无引用的子分类）。
+  Future<void> migrateAndDelete(String fromId, String toId) async {
+    if (fromId == toId) {
+      throw ArgumentError('不能迁移到自己');
+    }
+    final source = await byId(fromId);
+    final target = await byId(toId);
+    if (source == null) throw ArgumentError.value(fromId, 'fromId', '分类不存在');
+    if (target == null) throw ArgumentError.value(toId, 'toId', '目标分类不存在');
+    if (target.type != source.type) {
+      throw ArgumentError('只能迁移到同类型分类');
+    }
+    // 不能迁到自己的子级：那等于把树挂成环
+    final children = await childrenOf(fromId);
+    if (children.any((c) => c.id == toId)) {
+      throw ArgumentError('不能迁移到自己的子分类');
+    }
+
+    await _db.transaction(() async {
+      await (_db.update(_db.transactions)
+            ..where((t) => t.categoryId.equals(fromId)))
+          .write(TransactionsCompanion(categoryId: Value(toId)));
+      for (final child in children) {
+        await (_db.update(_db.transactions)
+              ..where((t) => t.categoryId.equals(child.id)))
+            .write(TransactionsCompanion(categoryId: Value(toId)));
+        await (_db.delete(_db.categories)..where((t) => t.id.equals(child.id)))
+            .go();
+      }
+      await (_db.delete(_db.categories)..where((t) => t.id.equals(fromId))).go();
     });
   }
 

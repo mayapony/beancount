@@ -2,11 +2,11 @@
 
 ## 1. 分类仓储
 
-- [ ] 1.1 `rename` 增加同层级重名校验（`DuplicateCategoryNameException`），自身改名不误判；用例：同名被拒、不同父级同名允许
-- [ ] 1.2 新增 `updateAppearance(id, {color, icon})`；用例：改图标后读回一致
-- [ ] 1.3 新增 `moveBy(id, delta)`（同类型同级交换排序，重复 sortOrder 也能正确换位）；用例：上移/下移/边界不动
-- [ ] 1.4 新增 `usageCounts()` 一次查出「分类 id → 笔数」；用例：与逐类 `transactionCount` 结果一致
-- [ ] 1.5 新增 `migrateAndDelete(fromId, toId)`：事务内迁移交易再删分类（含无引用子分类）；用例：迁移后笔数不变、目标分类笔数增加、源分类消失
+- [x] 1.1 `rename` 增加同层级重名校验（`DuplicateCategoryNameException`），自身改名不误判；用例：同名被拒、不同父级同名允许
+- [x] 1.2 新增 `updateAppearance(id, {color, icon})`；用例：改图标后读回一致
+- [x] 1.3 新增 `moveBy(id, delta)`（同类型同级交换排序，重复 sortOrder 也能正确换位）；用例：上移/下移/边界不动
+- [x] 1.4 新增 `usageCounts()` 一次查出「分类 id → 笔数」；用例：与逐类 `transactionCount` 结果一致
+- [x] 1.5 新增 `migrateAndDelete(fromId, toId)`：事务内迁移交易再删分类（含无引用子分类）；用例：迁移后笔数不变、目标分类笔数增加、源分类消失
 
 ## 2. 账户仓储
 
