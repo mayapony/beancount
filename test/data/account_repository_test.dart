@@ -82,4 +82,82 @@ void main() {
     final list = await accounts.withBalances();
     expect(list.map((a) => a.account.name), containsAll(['默认账户', '微信']));
   });
+
+  test('create 建账户：id 不与名称绑定，重名被拒', () async {
+    final created = await accounts.create(
+      name: '招商银行卡',
+      type: AccountType.debit,
+      initialBalanceCents: 2856000,
+    );
+    expect(created.id, isNot(contains('招商')));
+    expect(created.initialBalanceCents, 2856000);
+    expect(created.type, AccountType.debit);
+
+    await expectLater(
+      accounts.create(name: '招商银行卡'),
+      throwsA(isA<DuplicateAccountNameException>()),
+    );
+  });
+
+  test('update 改名/改类型/改期初余额，余额随之变化', () async {
+    final account = await accounts.ensure(name: '钱包');
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food.id,
+        accountId: account.id,
+        happenedAt: DateTime(2026, 10, 17, 12),
+        note: '牛肉面',
+      ),
+    );
+
+    await accounts.update(
+      account.id,
+      name: '日常钱包',
+      type: AccountType.credit,
+      initialBalanceCents: 200000,
+    );
+
+    final updated = (await accounts.withBalances())
+        .firstWhere((a) => a.account.id == account.id);
+    expect(updated.account.name, '日常钱包');
+    expect(updated.account.type, AccountType.credit);
+    expect(updated.balanceCents, 200000 - 3850);
+    expect(updated.count, 1);
+
+    // 改成别人已用的名字会被拒
+    await accounts.create(name: '支付宝');
+    await expectLater(
+      accounts.update(account.id, name: '支付宝'),
+      throwsA(isA<DuplicateAccountNameException>()),
+    );
+  });
+
+  test('delete：有交易引用被拒，无引用可删', () async {
+    final used = await accounts.ensure(name: '有账账户');
+    final empty = await accounts.ensure(name: '空账户');
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1000,
+        categoryId: food.id,
+        accountId: used.id,
+        happenedAt: DateTime(2026, 10, 17, 9),
+        note: '一笔',
+      ),
+    );
+
+    expect(await accounts.usageCount(used.id), 1);
+    await expectLater(
+      accounts.delete(used.id),
+      throwsA(isA<AccountInUseException>()),
+    );
+    expect(await accounts.byId(used.id), isNotNull);
+
+    await accounts.delete(empty.id);
+    expect(await accounts.byId(empty.id), isNull);
+  });
 }

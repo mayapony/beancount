@@ -10,9 +10,9 @@
 
 ## 2. 账户仓储
 
-- [ ] 2.1 新增 `create({name, type, initialBalanceCents})`，同名抛 `DuplicateAccountNameException`，id 不与名称绑定；用例：创建并读回
-- [ ] 2.2 新增 `update(id, {name, type, initialBalanceCents})`，改名查重；用例：改类型/期初余额后 `withBalances` 的余额随之变化
-- [ ] 2.3 新增 `delete(id)` 与 `usageCount(id)`，有引用抛 `AccountInUseException`；用例：有引用被拒、无引用可删
+- [x] 2.1 新增 `create({name, type, initialBalanceCents})`，同名抛 `DuplicateAccountNameException`，id 不与名称绑定；用例：创建并读回
+- [x] 2.2 新增 `update(id, {name, type, initialBalanceCents})`，改名查重；用例：改类型/期初余额后 `withBalances` 的余额随之变化
+- [x] 2.3 新增 `delete(id)` 与 `usageCount(id)`，有引用抛 `AccountInUseException`；用例：有引用被拒、无引用可删
 
 ## 3. 分类页
 

@@ -23,6 +23,27 @@ class AccountBalance {
   int get balanceCents => account.initialBalanceCents + incomeCents - expenseCents;
 }
 
+/// 账户被交易引用时抛出：删除会被拒绝，并告诉调用方有多少笔。
+class AccountInUseException implements Exception {
+  AccountInUseException(this.accountId, this.count);
+
+  final String accountId;
+  final int count;
+
+  @override
+  String toString() => '有 $count 笔交易在使用该账户，先迁移再删除';
+}
+
+/// 账户重名：新建或改名时撞上已有账户。
+class DuplicateAccountNameException implements Exception {
+  DuplicateAccountNameException(this.name);
+
+  final String name;
+
+  @override
+  String toString() => '已有同名账户「$name」';
+}
+
 /// 账户仓储：余额一律现算，账户本身只是"名字 + 初始余额"。
 class AccountRepository {
   AccountRepository(this._db);
@@ -119,4 +140,85 @@ class AccountRepository {
 
   Future<Account?> byId(String id) =>
       (_db.select(_db.accounts)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// 用户在账户管理里新建：名称必须唯一，id 与名称解耦（改名不会动主键）。
+  Future<Account> create({
+    required String name,
+    AccountType type = AccountType.wallet,
+    int initialBalanceCents = 0,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', '账户名不能为空');
+    await _ensureNameFree(trimmed);
+
+    final maxOrder = await _db
+        .customSelect('SELECT COALESCE(MAX(sort_order), -1) AS m FROM accounts')
+        .getSingle();
+    final id = 'acc-${DateTime.now().microsecondsSinceEpoch}-${_seq++}';
+    await _db.into(_db.accounts).insert(
+          AccountsCompanion.insert(
+            id: id,
+            name: trimmed,
+            type: Value(type),
+            initialBalanceCents: Value(initialBalanceCents),
+            sortOrder: Value(maxOrder.read<int>('m') + 1),
+          ),
+        );
+    return (await byId(id))!;
+  }
+
+  /// 改名 / 改类型 / 改期初余额。余额仍然由期初 + 交易推导，这里不写任何余额字段。
+  Future<void> update(
+    String id, {
+    String? name,
+    AccountType? type,
+    int? initialBalanceCents,
+  }) async {
+    final trimmed = name?.trim();
+    if (trimmed != null) {
+      if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', '账户名不能为空');
+      final current = await byId(id);
+      if (current != null && current.name != trimmed) {
+        await _ensureNameFree(trimmed, exceptId: id);
+      }
+    }
+
+    await (_db.update(_db.accounts)..where((t) => t.id.equals(id))).write(
+      AccountsCompanion(
+        name: trimmed == null ? const Value.absent() : Value(trimmed),
+        type: type == null ? const Value.absent() : Value(type),
+        initialBalanceCents: initialBalanceCents == null
+            ? const Value.absent()
+            : Value(initialBalanceCents),
+      ),
+    );
+  }
+
+  /// 删除账户：被交易引用时拒绝，避免出现"交易指向不存在账户"的记录。
+  Future<void> delete(String id) async {
+    final used = await usageCount(id);
+    if (used > 0) {
+      throw AccountInUseException(id, used);
+    }
+    await (_db.delete(_db.accounts)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<int> usageCount(String accountId) async {
+    final row = await _db.customSelect(
+      'SELECT COUNT(*) AS c FROM transactions WHERE account_id = ?',
+      variables: [Variable.withString(accountId)],
+    ).getSingle();
+    return row.read<int>('c');
+  }
+
+  Future<void> _ensureNameFree(String name, {String? exceptId}) async {
+    final existing = await (_db.select(_db.accounts)
+          ..where((t) => t.name.equals(name)))
+        .getSingleOrNull();
+    if (existing != null && existing.id != exceptId) {
+      throw DuplicateAccountNameException(name);
+    }
+  }
+
+  static int _seq = 0;
 }
