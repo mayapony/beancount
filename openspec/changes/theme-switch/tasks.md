@@ -14,8 +14,17 @@
 
 ## 3. 回归
 
-- [ ] 3.1 设备端回归：设置里切深色 → 界面变暗 → 杀进程重开仍是深色 → 切回跟随系统；结果写入 tasks.md
+- [x] 3.1 设备端回归：设置里切深色 → 界面变暗 → 杀进程重开仍是深色 → 切回跟随系统；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found；`flutter test`：**270 通过**（上一轮 261 + 本次 9）
+- 设备端 `integration_test/theme_flow_test.dart -d emulator-5554`：通过
+  - 设置 → 主题 → 深色：界面立即变暗、行尾显示「深色」
+  - 用同一份库重建 App（模拟冷启动、重新 `load()`）：首帧就是深色
+- 坑：模拟器系统当时是深色，`ThemeMode.system` 直接渲染成深色 → 用例里先把控制器固定成浅色再断言，避免依赖模拟器状态
+- 坑：中途 `pumpWidget(SizedBox.shrink())` 把整棵树卸载会让注入的库被关掉（后续 Shell 初始化报
+  `Can't re-open a database after closing it`）；改成直接替换 widget 后正常
 ## Workflow follow-up
 
 - 归档 change：`openspec archive theme-switch --yes`
