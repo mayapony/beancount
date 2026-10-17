@@ -101,8 +101,9 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.auto_awesome_rounded,
                     color: BeanColors.beanGreen,
                     title: '截图记账',
-                    subtitle: '截屏后自动识别，确认即入账',
-                    trailing: '自动',
+                    // 视觉识别还没接：与其写「自动」让人以为已经生效，不如标 Backlog
+                    subtitle: '截屏后自动识别（视觉模型待接入）',
+                    trailing: 'Backlog',
                   ),
                   _divider(palette),
                   _SettingTile(
