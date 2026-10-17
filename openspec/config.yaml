@@ -23,7 +23,7 @@ operations:
     guidance:
       - 每个 tasks.md 任务完成、其验证命令跑绿后，立即做一次原子提交
       - 提交只包含代码与 openspec 产物；docs/ 暂不入库（含真实金额截图）
-      - 提交信息格式 <type>(<scope>): <中文描述>，type ∈ feat/fix/refactor/test/docs/chore
+      - '提交信息格式 <type>(<scope>): <中文描述>，type ∈ feat/fix/refactor/test/docs/chore'
       - 实现与测试放在同一个提交里，不留「先写实现、后补测试」的提交
   archive:
     guidance:
