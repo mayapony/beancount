@@ -6,6 +6,7 @@ import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
+import '../utils/fx.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
 import '../pages/attachment_viewer_page.dart';
@@ -243,6 +244,32 @@ class _EntryRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
+            if (row.transaction.currency != 'CNY' &&
+                row.transaction.originalAmountCents != null) ...[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    formatForeign(
+                      row.transaction.originalAmountCents!,
+                      row.transaction.currency,
+                    ),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  Text(
+                    '≈ ¥${formatMoney(row.amountCents / 100)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ] else
             AmountText(
               row.amountCents / 100,
               isIncome: row.isIncome,

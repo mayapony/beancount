@@ -192,7 +192,11 @@ class _AccountRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_typeLabel(item.account.type)} · ${item.count} 笔',
+                    [
+                  _typeLabel(item.account.type),
+                  if (item.account.currency != 'CNY') item.account.currency,
+                  '${item.count} 笔',
+                ].join(' · '),
                     style: TextStyle(
                       fontSize: 12,
                       color: palette.textSecondary,
@@ -240,6 +244,7 @@ class _AccountEditorState extends State<_AccountEditor> {
         : formatCents(widget.existing!.initialBalanceCents),
   );
   late AccountType _type = widget.existing?.type ?? AccountType.wallet;
+  late String _currency = widget.existing?.currency ?? 'CNY';
   late final TextEditingController _billingDay = TextEditingController(
     text: widget.existing?.billingDay?.toString() ?? '',
   );
@@ -303,6 +308,7 @@ class _AccountEditorState extends State<_AccountEditor> {
           name: name,
           type: _type,
           initialBalanceCents: initial,
+          currency: _currency,
           billingDay: _type == AccountType.credit && billingDay > 0
               ? billingDay
               : null,
@@ -316,6 +322,7 @@ class _AccountEditorState extends State<_AccountEditor> {
           name: name,
           type: _type,
           initialBalanceCents: initial,
+          currency: _currency,
           billingDay: isCredit && billingDay > 0 ? billingDay : null,
           clearBillingDay: !isCredit || billingDay == 0,
           dueDay: isCredit && dueDay > 0 ? dueDay : null,
@@ -427,6 +434,42 @@ class _AccountEditorState extends State<_AccountEditor> {
                 hintText: '0.00',
                 isDense: true,
               ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              '币种',
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final code in const ['CNY', 'USD', 'EUR', 'JPY', 'HKD'])
+                  GestureDetector(
+                    onTap: () => setState(() => _currency = code),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _currency == code
+                            ? palette.goldDeep
+                            : palette.neutral.sand,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Text(
+                        code,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _currency == code
+                              ? Theme.of(context).colorScheme.onPrimary
+                              : palette.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             if (_type == AccountType.credit) ...[
               const SizedBox(height: 14),

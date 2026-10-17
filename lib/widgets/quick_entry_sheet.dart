@@ -10,6 +10,7 @@ import '../data/repositories/account_repository.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
+import '../utils/fx.dart';
 import '../utils/money.dart';
 import 'common.dart';
 
@@ -27,6 +28,8 @@ class QuickEntryDraft {
     this.note = '',
     this.tags = const <String>[],
     this.images = const <PickedImage>[],
+    this.currency = 'CNY',
+    this.ratePpm,
   });
 
   final double amount;
@@ -45,6 +48,12 @@ class QuickEntryDraft {
 
   /// 待落盘的图片（选好但还没保存）：保存时才写进附件目录。
   final List<PickedImage> images;
+
+  /// 原币币种（默认本位币）；外币时 [ratePpm] 必填。
+  final String currency;
+  final int? ratePpm;
+
+  bool get isForeign => !isBaseCurrency(currency);
 }
 
 /// 记一笔面板 —— 金豆按下直接进入，一次点击开始输入。
@@ -70,6 +79,7 @@ class QuickEntrySheet extends StatefulWidget {
     this.recentNotes = const <String>[],
     this.pickImage,
     this.pickEnabled = true,
+    this.fxRates = const <String, int>{},
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -92,6 +102,9 @@ class QuickEntrySheet extends StatefulWidget {
   /// 选图实现（测试可注入）；为空或 [pickEnabled] 为假时入口禁用。
   final ImagePickFn? pickImage;
   final bool pickEnabled;
+
+  /// 各币种上次用过的汇率（ppm），外币账户记账时作为默认值。
+  final Map<String, int> fxRates;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -234,6 +247,73 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   /// 已选图片（还没落盘，保存时才写进附件目录）
   final List<PickedImage> _images = <PickedImage>[];
+
+  /// 外币汇率（ppm）；选中外币账户时才用得上。
+  int? _ratePpm;
+
+  /// 当前选中账户的币种（没有账户时按本位币）。
+  String get _foreignCurrency {
+    final code = _selectedAccount?.account.currency ?? 'CNY';
+    return isBaseCurrency(code) ? 'CNY' : code;
+  }
+
+  /// 界面显示的汇率：用户改过就用改过的，否则用上次记住的。
+  int get _effectiveRate {
+    final code = _foreignCurrency;
+    return _ratePpm ?? widget.fxRates[code] ?? kUnitPpm;
+  }
+
+  /// 折合成本位币的金额（分）：外币时按汇率算，本位币时原样。
+  int get _baseCents {
+    final original = (_finalValue * 100).round();
+    if (_foreignCurrency == 'CNY') return original;
+    return baseCentsOf(originalCents: original, ratePpm: _effectiveRate);
+  }
+
+  /// 改汇率：弹一个数字输入，确认后立即反映到换算预览。
+  Future<void> _editRate() async {
+    final code = _foreignCurrency;
+    final controller = TextEditingController(text: rateTextOf(_effectiveRate));
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          '$code 汇率',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: '1 单位外币 = 多少 CNY',
+            isDense: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (raw == null || !mounted) return;
+    final ppm = parseRateText(raw);
+    if (ppm == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('汇率要写成大于 0 的数字，如 7.25')),
+      );
+      return;
+    }
+    setState(() => _ratePpm = ppm);
+  }
 
   /// 选图中（防重复点）
   bool _picking = false;
@@ -440,6 +520,8 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       note: _note,
       tags: List<String>.unmodifiable(_tags),
       images: List<PickedImage>.unmodifiable(_images),
+      currency: _foreignCurrency,
+      ratePpm: _foreignCurrency == 'CNY' ? null : _effectiveRate,
     );
     HapticFeedback.lightImpact();
     setState(() {
@@ -799,6 +881,38 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                     ],
                   ),
                   const SizedBox(height: 2),
+                  if (_foreignCurrency != 'CNY')
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _editRate,
+                        child: Row(
+                          children: [
+                            Text(
+                              '汇率',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '1 $_foreignCurrency = ¥${rateTextOf(_effectiveRate)}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '≈ ¥${formatMoney(_baseCents / 100)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   Row(
                     children: [
                       Expanded(

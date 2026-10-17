@@ -108,6 +108,30 @@ class _ShellPageState extends State<ShellPage> {
     ),
   ];
 
+  /// 各币种上次用过的汇率（ppm），面板打开前从 app_state 读出来。
+  Map<String, int> _fxRates = const <String, int>{};
+
+  static const _fxCodes = ['USD', 'EUR', 'JPY', 'HKD', 'GBP', 'THB'];
+
+  Future<void> _loadFxRates() async {
+    final rates = <String, int>{};
+    for (final code in _fxCodes) {
+      final raw = await _appState.read('fx_$code');
+      final ppm = int.tryParse(raw ?? '');
+      if (ppm != null && ppm > 0) rates[code] = ppm;
+    }
+    if (!mounted) return;
+    setState(() => _fxRates = rates);
+  }
+
+  Future<void> _rememberRate(String currency, int ppm) async {
+    await _appState.write('fx_$currency', '$ppm');
+    if (!mounted) return;
+    setState(() {
+      _fxRates = {..._fxRates, currency: ppm};
+    });
+  }
+
   /// 分类与账户是数据，面板打开前刷新一次（导入后可能新增）。
   List<Category> _categories = const <Category>[];
   List<AccountBalance> _accounts = const <AccountBalance>[];
@@ -120,6 +144,7 @@ class _ShellPageState extends State<ShellPage> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _loadFxRates();
     _runRecurringCatchUp();
   }
 
@@ -190,6 +215,7 @@ class _ShellPageState extends State<ShellPage> {
         categories: _categories,
         accounts: _accounts,
         recentNotes: recentNotes,
+        fxRates: _fxRates,
         pickImage: kIsWeb ? null : systemImagePicker(),
         pickEnabled: !kIsWeb,
         initialCategoryId: _lastSelection.categoryId,
@@ -210,12 +236,21 @@ class _ShellPageState extends State<ShellPage> {
               note: draft.note,
               tags: draft.tags,
               images: draft.images,
+              currency: draft.currency,
+              originalAmountCents:
+                  draft.currency == 'CNY' ? null : (draft.amount * 100).round(),
+              ratePpm: draft.ratePpm,
             );
             if (!result.inserted) {
               return '这笔已经记过了（同一秒、同一金额、同一备注）';
             }
           } catch (_) {
             return '保存失败，请重试';
+          }
+
+          // 外币：记住这次用的汇率，下次记同币种时默认用它
+          if (draft.currency != 'CNY' && draft.ratePpm != null) {
+            unawaited(_rememberRate(draft.currency, draft.ratePpm!));
           }
 
           // 转账不参与「上次选择」的记忆（它的分类为空）

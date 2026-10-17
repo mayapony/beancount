@@ -8,10 +8,10 @@
 
 ## 2. 交互
 
-- [ ] 2.1 记一笔：选中非 CNY 账户时显示汇率行（默认读 `app_state.fx_<CODE>`），保存后记住该币种汇率；`test/widgets/quick_entry_sheet_test.dart` 用例：USD 账户出现汇率行、填写后草稿带原币与汇率
-- [ ] 2.2 账户管理：新建/编辑可选币种（先给 CNY/USD/EUR/JPY/HKD 五个 + 自定义），账户行显示非 CNY 标签；用例：选 USD 保存后可读回
-- [ ] 2.3 明细行与详情页：非 CNY 显示原币 + 折合本位币（详情另给汇率一行）；用例：USD 交易的显示文案
-- [ ] 2.4 `flutter analyze` 干净、`flutter test` 全绿（不低于 283 + 新增）
+- [x] 2.1 记一笔：选中非 CNY 账户时显示汇率行（默认读 `app_state.fx_<CODE>`），保存后记住该币种汇率；`test/widgets/quick_entry_sheet_test.dart` 用例：USD 账户出现汇率行、填写后草稿带原币与汇率
+- [x] 2.2 账户管理：新建/编辑可选币种（先给 CNY/USD/EUR/JPY/HKD 五个 + 自定义），账户行显示非 CNY 标签；用例：选 USD 保存后可读回
+- [x] 2.3 明细行与详情页：非 CNY 显示原币 + 折合本位币（详情另给汇率一行）；用例：USD 交易的显示文案
+- [x] 2.4 `flutter analyze` 干净、`flutter test` 全绿（不低于 283 + 新增）
 
 ## 3. 回归
 

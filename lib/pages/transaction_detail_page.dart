@@ -9,6 +9,7 @@ import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
+import '../utils/fx.dart';
 import '../utils/money.dart';
 import '../widgets/common.dart';
 import '../widgets/quick_entry_sheet.dart';
@@ -246,6 +247,27 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     style: _valueStyle,
                   ),
                 ),
+                if (_row.transaction.currency != 'CNY' &&
+                    _row.transaction.originalAmountCents != null) ...[
+                  _DetailRow(
+                    label: '原币',
+                    child: Text(
+                      formatForeign(
+                        _row.transaction.originalAmountCents!,
+                        _row.transaction.currency,
+                      ),
+                      style: _valueStyle,
+                    ),
+                  ),
+                  _DetailRow(
+                    label: '汇率',
+                    child: Text(
+                      '1 ${_row.transaction.currency} = '
+                      '¥${rateTextOf(_row.transaction.ratePpm ?? kUnitPpm)}',
+                      style: _valueStyle,
+                    ),
+                  ),
+                ],
                 if (note.isNotEmpty)
                   _DetailRow(
                     label: '备注',

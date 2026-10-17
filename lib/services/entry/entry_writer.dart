@@ -28,6 +28,9 @@ class EntryWriter {
     String note = '',
     List<String> tags = const <String>[],
     List<PickedImage> images = const <PickedImage>[],
+    String currency = 'CNY',
+    int? originalAmountCents,
+    int? ratePpm,
   }) async {
     final result = await _transactions.create(
       NewTransaction(
@@ -39,6 +42,9 @@ class EntryWriter {
         happenedAt: happenedAt,
         note: note,
         tags: tags,
+        currency: currency,
+        originalAmountCents: originalAmountCents,
+        ratePpm: ratePpm,
       ),
     );
 
