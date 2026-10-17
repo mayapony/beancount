@@ -33,7 +33,16 @@
 
 - [x] 6.1 设置页新增「循环记账」入口；Shell 启动时执行一次 `applyDue`（不阻塞首帧、失败不影响启动）；用例：入口可点
 - [x] 6.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 185 + 新增）
-- [ ] 6.3 设备端回归：v2 库升 v3、新建房租规则 → 重启补记 → 明细可见 → 暂停后不再补；结果写入 tasks.md
+- [x] 6.3 设备端回归：v2 库升 v3、新建房租规则 → 重启补记 → 明细可见 → 暂停后不再补；结果写入 tasks.md
+
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**202 通过**（上一轮 185 + 本次 17）
+- 设备端 `integration_test/recurring_flow_test.dart -d emulator-5554`：2 通过
+  - **真实应用库**：设备上 v2 库装新版本后首次打开升到 v3，`recurring_rules` 表与 `recurring_rule_id / recurring_period` 列都在
+  - **启动补记**：建一条「每月 1 日、起始上月」的房租规则 → 挂载 Shell 后明细出现「房租」且交易数 ≥ 1；暂停该规则后再挂载，交易数不变
+- 过程中修掉一个真实崩溃：备注弹窗把 `TextEditingController` 在 `showDialog` 返回后立刻 dispose，弹窗关闭动画期间仍在重建 → "used after being disposed"。改成独立 `_NoteDialog` 自己持有控制器。
 
 ## Workflow follow-up
 
