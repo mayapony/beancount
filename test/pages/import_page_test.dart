@@ -8,6 +8,7 @@ import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/import_page.dart';
 import 'package:bean_count/pages/settings_page.dart';
+import 'package:bean_count/services/export/export_service.dart';
 import 'package:bean_count/services/import/import_service.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -50,7 +51,18 @@ void main() {
   }
 
   testWidgets('设置页有导入入口，点开进入导入页', (tester) async {
-    await pump(tester, Scaffold(body: SettingsPage(importer: service)));
+    await pump(
+      tester,
+      Scaffold(
+        body: SettingsPage(
+          importer: service,
+          exporter: ExportService(
+            transactions: TransactionRepository(db),
+            attachments: attachments,
+          ),
+        ),
+      ),
+    );
 
     expect(find.text('从 BeeCount 导入'), findsOneWidget);
     await tester.tap(find.text('从 BeeCount 导入'));
@@ -58,6 +70,28 @@ void main() {
 
     expect(find.text('选择备份文件'), findsOneWidget);
     expect(find.textContaining('怎么拿备份'), findsOneWidget);
+  });
+
+  testWidgets('设置页有导出入口，点开进入导出页', (tester) async {
+    await pump(
+      tester,
+      Scaffold(
+        body: SettingsPage(
+          importer: service,
+          exporter: ExportService(
+            transactions: TransactionRepository(db),
+            attachments: attachments,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('导出'), findsOneWidget);
+    await tester.tap(find.text('导出'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('导出 CSV'), findsOneWidget);
+    expect(find.text('完整备份 zip'), findsOneWidget);
   });
 
   testWidgets('给一份 CSV：预览数字与文件一致', (tester) async {

@@ -11,6 +11,7 @@ import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../data/repositories/insights_repository.dart';
 import '../data/repositories/transaction_repository.dart';
+import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/bean_bottom_nav.dart';
@@ -58,6 +59,10 @@ class _ShellPageState extends State<ShellPage> {
     transactions: _transactionRepo,
     attachments: _attachmentRepo,
   );
+  late final ExportService _exportService = ExportService(
+    transactions: _transactionRepo,
+    attachments: _attachmentRepo,
+  );
 
   late final List<Widget> _pages = [
     TransactionsPage(
@@ -68,7 +73,7 @@ class _ShellPageState extends State<ShellPage> {
     ),
     InsightsPage(repository: _insightsRepo),
     AssetsPage(repository: _accountRepo),
-    SettingsPage(importer: _importService),
+    SettingsPage(importer: _importService, exporter: _exportService),
   ];
 
   /// 分类与账户是数据，面板打开前刷新一次（导入后可能新增）。

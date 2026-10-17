@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 import 'design_showcase_page.dart';
+import 'export_page.dart';
 import 'import_page.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.importer});
+  const SettingsPage({
+    super.key,
+    required this.importer,
+    required this.exporter,
+  });
 
   final ImportService importer;
+  final ExportService exporter;
 
   @override
   Widget build(BuildContext context) {
@@ -113,8 +120,12 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.swap_vert_rounded,
                     color: const Color(0xFF64748B),
                     title: '导出',
-                    subtitle: '导出回 BeeCount / CSV',
-                    trailing: 'M8',
+                    subtitle: 'CSV 或含图片的完整备份',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ExportPage(service: exporter),
+                      ),
+                    ),
                   ),
                   _divider(palette),
                   _SettingTile(

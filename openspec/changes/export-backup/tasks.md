@@ -24,8 +24,8 @@
 
 ## 5. 接线与回归
 
-- [ ] 5.1 设置页「导出」从 `M8` 占位改为真实入口，进入 `ExportPage`；`test/pages/insights_assets_page_test.dart` 或新增用例断言入口可点
-- [ ] 5.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 110 + 新增）
+- [x] 5.1 设置页「导出」从 `M8` 占位改为真实入口，进入 `ExportPage`；`test/pages/insights_assets_page_test.dart` 或新增用例断言入口可点
+- [x] 5.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 110 + 新增）
 - [ ] 5.3 设备端回归：导出 CSV 与完整备份到「下载」→ 清库 → 用导出的 zip 导入 → 笔数与图片数一致；结果写入 tasks.md
 
 ## Workflow follow-up
