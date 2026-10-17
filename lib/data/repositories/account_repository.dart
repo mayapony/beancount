@@ -285,9 +285,16 @@ class AccountRepository {
   ///
   /// 顺序按剩余天数升序（同一天再按应还金额降序），最急的排最前。
   Future<List<CardDue>> dueReminders({DateTime? now}) async {
+    return cardDuesOf(await withBalances(), now: now);
+  }
+
+  /// 纯函数版：页面已经拿到余额时不必再查库。
+  static List<CardDue> cardDuesOf(
+    List<AccountBalance> balances, {
+    DateTime? now,
+  }) {
     final reference = now ?? DateTime.now();
     final today = DateTime(reference.year, reference.month, reference.day);
-    final balances = await withBalances();
 
     final result = <CardDue>[];
     for (final item in balances) {

@@ -104,6 +104,7 @@ class _AssetsBodyState extends State<_AssetsBody> {
         .where((a) => a.balanceCents < 0)
         .fold<int>(0, (sum, a) => sum + a.balanceCents.abs());
     final netWorth = totalAssets - totalDebts;
+    final cardDues = AccountRepository.cardDuesOf(accounts);
 
     return SafeArea(
       bottom: false,
@@ -115,6 +116,81 @@ class _AssetsBodyState extends State<_AssetsBody> {
             title: _signed(netWorth),
             subtitle: '净资产 · 共 ${accounts.length} 个账户',
           ),
+
+          // ── 还款提醒（有才显示）──────────────────────────
+          if (cardDues.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          '待还',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          // 单张卡不重复写天数（下面那一行已经有）
+                          cardDues.length > 1 ? '${cardDues.length} 张卡' : '',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cardDues.first.isUrgent
+                                ? palette.alert
+                                : palette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    for (final due in cardDues)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    due.account.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  Text(
+                                    _dueLabel(due),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: due.isUrgent
+                                          ? palette.alert
+                                          : palette.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '¥${formatMoney(due.owedCents / 100)}',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: BeanSpace.section),
+          ],
 
           // ── 资产构成 ──────────────────────────────────────
           Padding(
@@ -269,6 +345,13 @@ class _AssetsBodyState extends State<_AssetsBody> {
       ),
     );
   }
+}
+
+/// 还款提醒的剩余天数文案。
+String _dueLabel(CardDue due) {
+  if (due.isOverdue) return '已逾期 ${-due.daysLeft} 天';
+  if (due.isToday) return '今天到期';
+  return '还有 ${due.daysLeft} 天';
 }
 
 /// 负号放在 ¥ 前面：`-¥38.50` 读作"欠了 38.50"。

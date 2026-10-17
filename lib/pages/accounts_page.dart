@@ -240,6 +240,12 @@ class _AccountEditorState extends State<_AccountEditor> {
         : formatCents(widget.existing!.initialBalanceCents),
   );
   late AccountType _type = widget.existing?.type ?? AccountType.wallet;
+  late final TextEditingController _billingDay = TextEditingController(
+    text: widget.existing?.billingDay?.toString() ?? '',
+  );
+  late final TextEditingController _dueDay = TextEditingController(
+    text: widget.existing?.dueDay?.toString() ?? '',
+  );
   String? _error;
   bool _saving = false;
 
@@ -249,7 +255,18 @@ class _AccountEditorState extends State<_AccountEditor> {
   void dispose() {
     _name.dispose();
     _initial.dispose();
+    _billingDay.dispose();
+    _dueDay.dispose();
     super.dispose();
+  }
+
+  /// 空 → 0（不设置）；非法 → -1；合法 → 1..28。
+  int _parseDay(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return 0;
+    final value = int.tryParse(text);
+    if (value == null || value < 1 || value > 28) return -1;
+    return value;
   }
 
   int? _parseInitial() {
@@ -269,6 +286,12 @@ class _AccountEditorState extends State<_AccountEditor> {
       setState(() => _error = '期初余额要写成数字，如 1234.50');
       return;
     }
+    final billingDay = _parseDay(_billingDay.text);
+    final dueDay = _parseDay(_dueDay.text);
+    if (billingDay == -1 || dueDay == -1) {
+      setState(() => _error = '账单日/还款日只能是 1–28');
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -280,13 +303,23 @@ class _AccountEditorState extends State<_AccountEditor> {
           name: name,
           type: _type,
           initialBalanceCents: initial,
+          billingDay: _type == AccountType.credit && billingDay > 0
+              ? billingDay
+              : null,
+          dueDay:
+              _type == AccountType.credit && dueDay > 0 ? dueDay : null,
         );
       } else {
+        final isCredit = _type == AccountType.credit;
         await widget.repository.update(
           widget.existing!.id,
           name: name,
           type: _type,
           initialBalanceCents: initial,
+          billingDay: isCredit && billingDay > 0 ? billingDay : null,
+          clearBillingDay: !isCredit || billingDay == 0,
+          dueDay: isCredit && dueDay > 0 ? dueDay : null,
+          clearDueDay: !isCredit || dueDay == 0,
         );
       }
       if (!mounted) return;
@@ -395,6 +428,44 @@ class _AccountEditorState extends State<_AccountEditor> {
                 isDense: true,
               ),
             ),
+            if (_type == AccountType.credit) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _billingDay,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: '账单日（1–28）',
+                        hintText: '留空表示不提醒',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _dueDay,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: '还款日（1–28）',
+                        hintText: '资产页会提醒',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(
