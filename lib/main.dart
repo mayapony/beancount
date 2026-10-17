@@ -2,13 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'data/db/app_database.dart';
+import 'data/db/connection.dart';
+import 'data/repositories/lock_repository.dart';
 import 'pages/shell.dart';
 import 'theme/app_theme.dart';
+import 'widgets/lock_gate.dart';
 
 void main() => runApp(const BeanApp());
 
+/// 全 App 只有这一个数据库实例：应用锁与账本共享它。
+final AppDatabase _db = AppDatabase(openDatabaseConnection());
+
 class BeanApp extends StatelessWidget {
-  const BeanApp({super.key});
+  const BeanApp({super.key, this.database, this.lockRepository});
+
+  /// 测试注入用；为空时用真实的文件库。
+  final AppDatabase? database;
+  final LockRepository? lockRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +50,10 @@ class BeanApp extends StatelessWidget {
           child: child!,
         );
       },
-      home: const ShellPage(),
+      home: LockGate(
+        repository: lockRepository ?? LockRepository(database ?? _db),
+        child: ShellPage(database: database ?? _db),
+      ),
     );
   }
 }

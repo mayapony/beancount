@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bean_count/data/db/app_database.dart';
+import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/main.dart';
 import 'package:bean_count/utils/money.dart';
 
@@ -12,7 +14,9 @@ void main() {
   });
 
   testWidgets('首页渲染四 Tab 与中心金豆', (tester) async {
-    await tester.pumpWidget(const BeanApp());
+    final db = AppDatabase(openInMemoryConnection());
+    addTearDown(db.close);
+    await tester.pumpWidget(BeanApp(database: db));
     await tester.pump(const Duration(milliseconds: 400));
 
     // 四个导航标签 + 各页标题（IndexedStack 会同时构建）

@@ -7,15 +7,15 @@
 
 ## 2. 锁定页
 
-- [ ] 2.1 `LockScreen`：圆点、数字键盘（复用记账键盘视觉）、错误提示与抖动；`test/pages/lock_screen_test.dart` 用例：输对解锁回调、输错提示且不清空位数
-- [ ] 2.2 连续 5 次失败后限速 30 秒并显示倒计时；用例：用可注入时钟验证锁定期间不接受输入、超时后恢复
-- [ ] 2.3 正确解锁后错误计数归零；用例一条
+- [x] 2.1 `LockScreen`：圆点、数字键盘（复用记账键盘视觉）、错误提示与抖动；`test/pages/lock_screen_test.dart` 用例：输对解锁回调、输错提示且不清空位数
+- [x] 2.2 连续 5 次失败后限速 30 秒并显示倒计时；用例：用可注入时钟验证锁定期间不接受输入、超时后恢复
+- [x] 2.3 正确解锁后错误计数归零；用例一条
 
 ## 3. 入口与生命周期
 
-- [ ] 3.1 `LockGate`：读锁状态决定显示 `LockScreen` 还是 `ShellPage`；未开启直接进入、读库失败按未开启处理；`test/widgets/lock_gate_test.dart` 两条用例
-- [ ] 3.2 后台超过 60 秒回来重新锁定、10 秒回来不打扰；用例：直接调 `didChangeAppLifecycleState` + 注入时钟
-- [ ] 3.3 `main.dart` 用 `LockGate` 包住 `ShellPage`；用例：构建不崩
+- [x] 3.1 `LockGate`：读锁状态决定显示 `LockScreen` 还是 `ShellPage`；未开启直接进入、读库失败按未开启处理；`test/widgets/lock_gate_test.dart` 两条用例
+- [x] 3.2 后台超过 60 秒回来重新锁定、10 秒回来不打扰；用例：直接调 `didChangeAppLifecycleState` + 注入时钟
+- [x] 3.3 `main.dart` 用 `LockGate` 包住 `ShellPage`；用例：构建不崩
 
 ## 4. 设置流程
 
