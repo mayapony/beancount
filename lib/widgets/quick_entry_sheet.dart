@@ -1218,67 +1218,6 @@ class _SurfaceKey extends StatelessWidget {
   }
 }
 
-/// 面板内二级小面板的外框：暖灰拖拽条 + 标题 + 关闭键。
-class _MiniSheet extends StatelessWidget {
-  const _MiniSheet({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = BeanPalette.of(context);
-    final safeBottom = math.min(MediaQuery.viewPaddingOf(context).bottom, 28.0);
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(bottom: 16 + safeBottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: palette.neutral.handle,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-            child: Row(
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '关闭',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  style: IconButton.styleFrom(
-                    backgroundColor: palette.neutral.sand,
-                    foregroundColor: palette.textSecondary,
-                    minimumSize: const Size(40, 40),
-                    padding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          child,
-        ],
-      ),
-    );
-  }
-}
 
 /// 选择账户：一行一个，选中打钩；金额带符号（信用卡欠款用警示色）。
 class _AccountSheet extends StatelessWidget {
@@ -1303,7 +1242,7 @@ class _AccountSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    return _MiniSheet(
+    return BeanSheet(
       title: '选择账户',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1450,7 +1389,7 @@ class _TimeSheetState extends State<_TimeSheet> {
     int daysAgoOf(DateTime d) =>
         DateTime(today.year, today.month, today.day).difference(d).inDays;
 
-    return _MiniSheet(
+    return BeanSheet(
       title: '记账时间',
       child: Column(
         children: [

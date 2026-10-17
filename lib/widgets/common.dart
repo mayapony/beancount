@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/category_icons.dart';
@@ -136,7 +138,7 @@ class BeanCircleAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    return Material(
+    final button = Material(
       color: palette.surface,
       shape: CircleBorder(
         side: BorderSide(color: palette.border, width: BeanSpace.hairline),
@@ -152,6 +154,10 @@ class BeanCircleAction extends StatelessWidget {
         ),
       ),
     );
+    // tooltip 曾经只声明不渲染：无障碍读者与长按都拿不到提示
+    final tip = tooltip;
+    if (tip == null) return button;
+    return Tooltip(message: tip, child: button);
   }
 }
 
@@ -237,6 +243,71 @@ class CategoryAvatar extends StatelessWidget {
 }
 
 /// 空状态 = 品牌叙事位：一颗种子 + 「种下第一笔」。
+/// 底部小面板的外框：暖灰拖拽条 + 标题 + 关闭键。
+///
+/// 记账面板里的「选择账户 / 选择时间」与明细页的「选择月份」共用它，
+/// 保证二级面板长得一样。
+class BeanSheet extends StatelessWidget {
+  const BeanSheet({super.key, required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final safeBottom = math.min(MediaQuery.viewPaddingOf(context).bottom, 28.0);
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(bottom: 16 + safeBottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: palette.neutral.handle,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: '关闭',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: palette.neutral.sand,
+                    foregroundColor: palette.textSecondary,
+                    minimumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
 class BeanEmptyState extends StatelessWidget {
   const BeanEmptyState({
     super.key,

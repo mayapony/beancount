@@ -9,6 +9,7 @@ import '../utils/dates.dart';
 import '../utils/money.dart';
 import '../utils/month.dart';
 import '../widgets/common.dart';
+import '../widgets/month_picker_sheet.dart';
 import 'attachment_viewer_page.dart';
 
 /// 明细页：按天分组的交易列表，数据来自本地库（写入后自动刷新）。
@@ -190,7 +191,13 @@ class _Ledger extends StatelessWidget {  const _Ledger({
               BeanCircleAction(
                 icon: Icons.calendar_month_rounded,
                 tooltip: '切换月份',
-                onTap: () {},
+                onTap: () async {
+                  final picked = await MonthPickerSheet.show(
+                    context,
+                    current: month,
+                  );
+                  if (picked != null) onPickMonth(picked);
+                },
               ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/transactions_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/utils/month.dart';
+import 'package:bean_count/widgets/month_picker_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -213,6 +214,47 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('刚刚这笔'), findsOneWidget);
+  });
+
+  testWidgets('月份按钮打开选择器，选完切到该月', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    final previous = LedgerMonth.current().previous;
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1000,
+        categoryId: food!.id,
+        happenedAt: DateTime(previous.year, previous.month, 15, 9),
+        note: '上个月那笔',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2000,
+        categoryId: food.id,
+        happenedAt: DateTime.now(),
+        note: '当月那笔',
+      ),
+    );
+
+    await pumpPage(tester);
+    expect(find.text('当月那笔'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('切换月份'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择月份'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MonthPickerSheet),
+        matching: find.text('${previous.month}月'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('上个月那笔'), findsOneWidget);
+    expect(find.text('当月那笔'), findsNothing);
   });
 
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
