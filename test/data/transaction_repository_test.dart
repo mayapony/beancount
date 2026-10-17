@@ -232,6 +232,26 @@ void main() {
     expect(all.fold<int>(0, (sum, g) => sum + g.items.length), 500);
   });
 
+  test('byId 命中时带出分类与账户，不存在时返回 null', () async {
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: await foodId(),
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '午餐',
+      ),
+    );
+
+    final row = await repo.byId(created.transactionId);
+    expect(row, isNotNull);
+    expect(row!.amountCents, 3850);
+    expect(row.category.name, '餐饮');
+    expect(row.isIncome, isFalse);
+
+    expect(await repo.byId('tx-不存在'), isNull);
+  });
+
   test('按月订阅：只发该月数据，新增后自动重发', () async {
     final category = await foodId();
     await repo.create(

@@ -235,6 +235,38 @@ class TransactionRepository {
         );
   }
 
+  /// 读单笔明细（详情页用）；不存在时返回 null。
+  Future<TransactionRow?> byId(String id) async {
+    final tx = await (_db.select(_db.transactions)
+          ..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (tx == null) return null;
+
+    final category = await (_db.select(_db.categories)
+          ..where((c) => c.id.equals(tx.categoryId)))
+        .getSingleOrNull();
+    if (category == null) return null;
+
+    final accountId = tx.accountId;
+    final account = accountId == null
+        ? null
+        : await (_db.select(_db.accounts)..where((a) => a.id.equals(accountId)))
+            .getSingleOrNull();
+
+    final attachments = await (_db.select(_db.attachments)
+          ..where((a) => a.transactionId.equals(id))
+          ..orderBy([(a) => OrderingTerm(expression: a.sortOrder)]))
+        .get();
+
+    return TransactionRow(
+      transaction: tx,
+      category: category,
+      account: account,
+      attachmentCount: attachments.length,
+      thumbnailFileName: attachments.isEmpty ? null : attachments.first.fileName,
+    );
+  }
+
   /// 全部去重键：导入前用它判断哪些行已经存在。
   Future<Set<String>> dedupeKeys() async => {
         for (final row in await _db.select(_db.transactions).get())

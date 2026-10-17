@@ -7,7 +7,7 @@
 
 ## 2. 数据层：读取单笔与编辑
 
-- [ ] 2.1 新增 `TransactionRepository.byId(id)` 返回 `TransactionRow?`；用例覆盖命中与不存在（返回 null）
+- [x] 2.1 新增 `TransactionRepository.byId(id)` 返回 `TransactionRow?`；用例覆盖命中与不存在（返回 null）
 - [ ] 2.2 新增 `TransactionEdit` 输入与 `update()`：字段更新 + 标签重建（同名标签复用）；用例验证改金额/分类/账户/备注/标签后重新读取为新值
 - [ ] 2.3 `update()` 在金额/时间/备注变化时重算去重键，并排除自身冲突；用例：改成与另一笔同时间同金额同备注被拒绝且两笔都不变
 - [ ] 2.4 `update()` 只改分类/账户/标签时沿用原去重键；用例断言键未变、保存成功
