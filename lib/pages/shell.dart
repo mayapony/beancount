@@ -73,7 +73,12 @@ class _ShellPageState extends State<ShellPage> {
     ),
     InsightsPage(repository: _insightsRepo),
     AssetsPage(repository: _accountRepo),
-    SettingsPage(importer: _importService, exporter: _exportService),
+    SettingsPage(
+      importer: _importService,
+      exporter: _exportService,
+      categories: _categoryRepo,
+      accounts: _accountRepo,
+    ),
   ];
 
   /// 分类与账户是数据，面板打开前刷新一次（导入后可能新增）。

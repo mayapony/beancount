@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/repositories/account_repository.dart';
+import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import 'accounts_page.dart';
+import 'categories_page.dart';
 import 'design_showcase_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
@@ -13,10 +17,14 @@ class SettingsPage extends StatelessWidget {
     super.key,
     required this.importer,
     required this.exporter,
+    required this.categories,
+    required this.accounts,
   });
 
   final ImportService importer;
   final ExportService exporter;
+  final CategoryRepository categories;
+  final AccountRepository accounts;
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +112,30 @@ class SettingsPage extends StatelessWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
+                  _SettingTile(
+                    icon: Icons.category_rounded,
+                    color: BeanColors.beanGreen,
+                    title: '分类',
+                    subtitle: '新建、改名、排序与删除（删除可迁移）',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CategoriesPage(repository: categories),
+                      ),
+                    ),
+                  ),
+                  _divider(palette),
+                  _SettingTile(
+                    icon: Icons.account_balance_wallet_rounded,
+                    color: const Color(0xFF0EA5E9),
+                    title: '账户',
+                    subtitle: '名称、类型与期初余额',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AccountsPage(repository: accounts),
+                      ),
+                    ),
+                  ),
+                  _divider(palette),
                   _SettingTile(
                     icon: Icons.move_to_inbox_rounded,
                     color: BeanColors.goldDeep,

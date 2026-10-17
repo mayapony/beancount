@@ -50,19 +50,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  testWidgets('设置页有导入入口，点开进入导入页', (tester) async {
-    await pump(
-      tester,
-      Scaffold(
+  /// 设置页需要四个依赖，多个用例共用。
+  Widget settingsPage() => Scaffold(
         body: SettingsPage(
           importer: service,
           exporter: ExportService(
             transactions: TransactionRepository(db),
             attachments: attachments,
           ),
+          categories: CategoryRepository(db),
+          accounts: AccountRepository(db),
         ),
-      ),
-    );
+      );
+
+  testWidgets('设置页有导入入口，点开进入导入页', (tester) async {
+    await pump(tester, settingsPage());
 
     expect(find.text('从 BeeCount 导入'), findsOneWidget);
     await tester.tap(find.text('从 BeeCount 导入'));
@@ -73,18 +75,7 @@ void main() {
   });
 
   testWidgets('设置页有导出入口，点开进入导出页', (tester) async {
-    await pump(
-      tester,
-      Scaffold(
-        body: SettingsPage(
-          importer: service,
-          exporter: ExportService(
-            transactions: TransactionRepository(db),
-            attachments: attachments,
-          ),
-        ),
-      ),
-    );
+    await pump(tester, settingsPage());
 
     expect(find.text('导出'), findsOneWidget);
     await tester.tap(find.text('导出'));
@@ -92,6 +83,20 @@ void main() {
 
     expect(find.text('导出 CSV'), findsOneWidget);
     expect(find.text('完整备份 zip'), findsOneWidget);
+  });
+
+  testWidgets('设置页有分类与账户入口', (tester) async {
+    await pump(tester, settingsPage());
+
+    await tester.tap(find.text('分类'));
+    await tester.pumpAndSettle();
+    expect(find.text('支出分类'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('账户'));
+    await tester.pumpAndSettle();
+    expect(find.text('默认账户'), findsOneWidget);
   });
 
   testWidgets('给一份 CSV：预览数字与文件一致', (tester) async {
