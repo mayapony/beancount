@@ -352,6 +352,12 @@ class TransactionRepository {
     );
   }
 
+  /// 全部标签名（按名称排序）：搜索页的标签筛选用。
+  Future<List<String>> allTagNames() async {
+    final rows = await _db.select(_db.tags).get();
+    return [for (final tag in rows) tag.name]..sort();
+  }
+
   /// 某分类的子分类（搜索时「餐饮」要能带出「餐饮/外卖」）。
   Future<List<Category>> childrenOfCategory(String parentId) {
     return (_db.select(_db.categories)
