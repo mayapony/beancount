@@ -2,6 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/dedupe.dart';
+import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -230,6 +231,54 @@ void main() {
     // 不指定月份时仍走 500 条上限（「看全部」类旧调用）
     final all = await repo.dayGroups();
     expect(all.fold<int>(0, (sum, g) => sum + g.items.length), 500);
+  });
+
+  test('update 改写金额/类型/分类/账户/备注/标签', () async {
+    final account = (await AccountRepository(db).all()).first;
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: await foodId(),
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '午餐',
+        tags: ['出差'],
+      ),
+    );
+
+    await repo.update(
+      created.transactionId,
+      TransactionEdit(
+        type: EntryType.income,
+        amountCents: 4500,
+        categoryId:
+            (await categories.findByName('工资', CategoryType.income))!.id,
+        happenedAt: DateTime(2026, 10, 18, 8, 15),
+        accountId: account.id,
+        note: '退款',
+        tags: ['报销', '家庭'],
+      ),
+    );
+
+    final row = await repo.byId(created.transactionId);
+    expect(row, isNotNull);
+    expect(row!.amountCents, 4500);
+    expect(row.isIncome, isTrue);
+    expect(row.category.name, '工资');
+    expect(row.account?.id, account.id);
+    expect(row.transaction.note, '退款');
+    expect(row.transaction.happenedAt, DateTime(2026, 10, 18, 8, 15));
+
+    final links = await (db.select(db.transactionTags)
+          ..where((t) => t.transactionId.equals(created.transactionId)))
+        .get();
+    final tagNames = <String>[];
+    for (final link in links) {
+      final tag = await (db.select(db.tags)..where((t) => t.id.equals(link.tagId)))
+          .getSingle();
+      tagNames.add(tag.name);
+    }
+    expect(tagNames, unorderedEquals(['报销', '家庭']), reason: '旧标签关联整体替换');
   });
 
   test('byId 命中时带出分类与账户，不存在时返回 null', () async {

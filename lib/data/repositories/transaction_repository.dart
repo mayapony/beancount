@@ -27,6 +27,38 @@ class NewTransaction {
   final EntrySource source;
 }
 
+/// 编辑一笔交易时可改的字段（金额已是整数分）；id 与去重键由仓储维护。
+class TransactionEdit {
+  const TransactionEdit({
+    required this.type,
+    required this.amountCents,
+    required this.categoryId,
+    required this.happenedAt,
+    this.accountId,
+    this.note = '',
+    this.tags = const <String>[],
+  });
+
+  final EntryType type;
+  final int amountCents;
+  final String categoryId;
+  final DateTime happenedAt;
+  final String? accountId;
+  final String note;
+  final List<String> tags;
+}
+
+/// 编辑后会与另一笔交易的去重键相撞：拒绝保存，原记录保持不变。
+class DuplicateTransactionException implements Exception {
+  const DuplicateTransactionException(this.conflictingTransactionId);
+
+  /// 撞上的那一笔的 id，便于调用方提示。
+  final String conflictingTransactionId;
+
+  @override
+  String toString() => '已存在相同时间、金额与备注的记录';
+}
+
 /// 写入结果：`inserted=false` 表示命中去重键，库里已有这一笔。
 class CreateResult {
   const CreateResult({required this.inserted, required this.transactionId});
@@ -233,6 +265,45 @@ class TransactionRepository {
     yield* _db.tableUpdates().asyncMap(
           (_) => dayGroups(year: year, month: month, limit: limit),
         );
+  }
+
+  /// 编辑一笔交易：更新字段并重建标签关联（同名标签复用，旧关联整体替换）。
+  ///
+  /// 附件不在这里处理——图片的增删是独立能力，编辑只改交易自身的字段。
+  Future<void> update(String id, TransactionEdit input) async {
+    if (input.amountCents <= 0) {
+      throw ArgumentError.value(input.amountCents, 'amountCents', '金额必须大于 0');
+    }
+    final note = input.note.trim();
+
+    await _db.transaction(() async {
+      await (_db.update(_db.transactions)..where((t) => t.id.equals(id))).write(
+        TransactionsCompanion(
+          type: Value(input.type),
+          amountCents: Value(input.amountCents),
+          categoryId: Value(input.categoryId),
+          accountId: Value(input.accountId),
+          note: Value(note),
+          happenedAt: Value(input.happenedAt),
+        ),
+      );
+
+      await (_db.delete(_db.transactionTags)
+            ..where((t) => t.transactionId.equals(id)))
+          .go();
+      for (final tagName in input.tags) {
+        final name = tagName.trim();
+        if (name.isEmpty) continue;
+        final tagId = await _ensureTag(name);
+        await _db.into(_db.transactionTags).insert(
+              TransactionTagsCompanion.insert(
+                transactionId: id,
+                tagId: tagId,
+              ),
+              mode: InsertMode.insertOrIgnore,
+            );
+      }
+    });
   }
 
   /// 读单笔明细（详情页用）；不存在时返回 null。
