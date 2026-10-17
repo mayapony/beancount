@@ -13,26 +13,26 @@
 
 ## 3. 补记服务
 
-- [ ] 3.1 `RecurringService.applyDue(now)`：逐规则逐期生成交易（复用 `TransactionRepository.create`），返回 `created / skipped`；用例：起始 7 月、10 月首启补 4 笔
-- [ ] 3.2 幂等：再执行一次 `created = 0`、交易总数不变；暂停的规则不补；用例三条
-- [ ] 3.3 转账规则补记：生成的是转账（两端账户），且不上收支统计；用例一条
-- [ ] 3.4 补记出的交易可正常编辑/删除，规则不受影响；用例：改金额后规则金额不变
+- [x] 3.1 `RecurringService.applyDue(now)`：逐规则逐期生成交易（复用 `TransactionRepository.create`），返回 `created / skipped`；用例：起始 7 月、10 月首启补 4 笔
+- [x] 3.2 幂等：再执行一次 `created = 0`、交易总数不变；暂停的规则不补；用例三条
+- [x] 3.3 转账规则补记：生成的是转账（两端账户），且不上收支统计；用例一条
+- [x] 3.4 补记出的交易可正常编辑/删除，规则不受影响；用例：改金额后规则金额不变
 
 ## 4. 规则管理界面
 
-- [ ] 4.1 `RecurringPage`：列出规则（备注、周期描述、金额、下次执行、暂停标记）；`test/pages/recurring_page_test.dart` 断言渲染与排序
-- [ ] 4.2 新建/编辑面板：类型分段、金额、分类或两端账户、每月几号胶囊（1–28 + 月末）、备注、启用开关；用例覆盖新建一条支出规则
-- [ ] 4.3 暂停/删除：暂停后列表标记变化，删除后消失；两个用例
+- [x] 4.1 `RecurringPage`：列出规则（备注、周期描述、金额、下次执行、暂停标记）；`test/pages/recurring_page_test.dart` 断言渲染与排序
+- [x] 4.2 新建/编辑面板：类型分段、金额、分类或两端账户、每月几号胶囊（1–28 + 月末）、备注、启用开关；用例覆盖新建一条支出规则
+- [x] 4.3 暂停/删除：暂停后列表标记变化，删除后消失；两个用例
 
 ## 5. 备注历史
 
-- [ ] 5.1 `TransactionRepository.recentNotes(limit)`：去重、按最近使用倒序；用例覆盖去重与空账本
-- [ ] 5.2 备注弹窗加「最近用过」胶囊，点选填入；`test/widgets/quick_entry_sheet_test.dart` 用例：有历史时点选生效、无历史不显示
+- [x] 5.1 `TransactionRepository.recentNotes(limit)`：去重、按最近使用倒序；用例覆盖去重与空账本
+- [x] 5.2 备注弹窗加「最近用过」胶囊，点选填入；`test/widgets/quick_entry_sheet_test.dart` 用例：有历史时点选生效、无历史不显示
 
 ## 6. 接线与回归
 
-- [ ] 6.1 设置页新增「循环记账」入口；Shell 启动时执行一次 `applyDue`（不阻塞首帧、失败不影响启动）；用例：入口可点
-- [ ] 6.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 185 + 新增）
+- [x] 6.1 设置页新增「循环记账」入口；Shell 启动时执行一次 `applyDue`（不阻塞首帧、失败不影响启动）；用例：入口可点
+- [x] 6.2 `flutter analyze` 干净、`flutter test` 全绿（不低于 185 + 新增）
 - [ ] 6.3 设备端回归：v2 库升 v3、新建房租规则 → 重启补记 → 明细可见 → 暂停后不再补；结果写入 tasks.md
 
 ## Workflow follow-up

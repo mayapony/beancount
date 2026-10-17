@@ -62,6 +62,7 @@ class QuickEntrySheet extends StatefulWidget {
     this.initialIsIncome = false,
     this.initialAccountId,
     this.initialDraft,
+    this.recentNotes = const <String>[],
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -77,6 +78,9 @@ class QuickEntrySheet extends StatefulWidget {
 
   /// 编辑模式：以这笔交易的现值预填面板。为空时是新增模式，行为不变。
   final QuickEntryDraft? initialDraft;
+
+  /// 最近用过的备注（壳层查好传进来）：备注弹窗里作为一键填充。
+  final List<String> recentNotes;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -321,39 +325,14 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   }
 
   /// 备注：用弹窗编辑，避免系统键盘顶掉自定义数字键盘。
+  ///
+  /// 弹窗里给「最近用过」的备注（来自真实历史），点一下就填上。
   Future<void> _editNote() async {
-    var draft = _note;
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(
-          '备注',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-        ),
-        content: TextFormField(
-          initialValue: _note,
-          autofocus: true,
-          maxLength: 40,
-          maxLines: 2,
-          minLines: 1,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            hintText: '例如：和家人吃晚饭',
-            counterText: '',
-          ),
-          onChanged: (value) => draft = value,
-          onFieldSubmitted: (value) => Navigator.of(ctx).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(draft),
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (_) => _NoteDialog(
+        initial: _note,
+        recentNotes: widget.recentNotes,
       ),
     );
     if (result == null || !mounted) return;
@@ -1672,6 +1651,112 @@ class _TransferAccountChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+/// 备注弹窗：自己持有 TextEditingController（弹窗关闭动画期间还会重建），
+/// 并给出「最近用过」的一键填充。
+class _NoteDialog extends StatefulWidget {
+  const _NoteDialog({required this.initial, required this.recentNotes});
+
+  final String initial;
+  final List<String> recentNotes;
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial)
+        ..selection = TextSelection.collapsed(offset: widget.initial.length);
+  late String _draft = widget.initial;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _use(String note) {
+    setState(() {
+      _draft = note;
+      _controller.text = note;
+      _controller.selection =
+          TextSelection.collapsed(offset: note.length);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    return AlertDialog(
+      title: const Text(
+        '备注',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: 40,
+            maxLines: 2,
+            minLines: 1,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              hintText: '例如：和家人吃晚饭',
+              counterText: '',
+            ),
+            onChanged: (value) => _draft = value,
+            onFieldSubmitted: (value) => Navigator.of(context).pop(value),
+          ),
+          if (widget.recentNotes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              '最近用过',
+              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final note in widget.recentNotes)
+                  GestureDetector(
+                    onTap: () => _use(note),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.neutral.sand,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        note,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_draft),
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

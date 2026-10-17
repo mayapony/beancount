@@ -684,6 +684,16 @@ class TransactionRepository {
         );
   }
 
+  /// 最近用过的备注（去重、按最近使用倒序）：记一笔时作为快捷建议。
+  Future<List<String>> recentNotes({int limit = 8}) async {
+    final rows = await _db.customSelect(
+      'SELECT note, MAX(happened_at) AS latest FROM transactions '
+      "WHERE note <> '' GROUP BY note ORDER BY latest DESC LIMIT ?",
+      variables: [Variable.withInt(limit)],
+    ).get();
+    return [for (final row in rows) row.read<String>('note')];
+  }
+
   /// 某笔交易的标签名（详情页展示用，按标签名排序稳定）。
   Future<List<String>> tagsOf(String transactionId) async {
     final links = await (_db.select(_db.transactionTags)

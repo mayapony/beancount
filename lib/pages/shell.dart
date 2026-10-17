@@ -10,9 +10,11 @@ import '../data/repositories/app_state_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../data/repositories/insights_repository.dart';
+import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/recurring/recurring_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/bean_bottom_nav.dart';
 import '../widgets/bean_fab.dart';
@@ -50,6 +52,7 @@ class _ShellPageState extends State<ShellPage> {
   late final TransactionRepository _transactionRepo =
       TransactionRepository(_db, attachments: _attachmentRepo);
   late final InsightsRepository _insightsRepo = InsightsRepository(_db);
+  late final RecurringRepository _recurringRepo = RecurringRepository(_db);
   late final AttachmentRepository _attachmentRepo =
       widget.attachmentRepository ?? AttachmentRepository(_db);
   late final ImportService _importService = ImportService(
@@ -78,6 +81,7 @@ class _ShellPageState extends State<ShellPage> {
       exporter: _exportService,
       categories: _categoryRepo,
       accounts: _accountRepo,
+      recurring: _recurringRepo,
     ),
   ];
 
@@ -93,6 +97,23 @@ class _ShellPageState extends State<ShellPage> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _runRecurringCatchUp();
+  }
+
+  /// 打开 App 时补记到期的循环规则：不阻塞首帧，失败不影响使用。
+  Future<void> _runRecurringCatchUp() async {
+    try {
+      final service = RecurringService(
+        rules: _recurringRepo,
+        transactions: _transactionRepo,
+      );
+      final result = await service.applyDue();
+      if (result.created > 0) {
+        debugPrint('循环记账补记 ${result.created} 笔（跳过 ${result.skipped} 期）');
+      }
+    } catch (error) {
+      debugPrint('循环记账补记失败：$error');
+    }
   }
 
   @override
@@ -128,6 +149,9 @@ class _ShellPageState extends State<ShellPage> {
   Future<void> _openQuickEntry() async {
     await _refreshChoices();
     if (!mounted) return;
+    // 最近备注：给备注弹窗做一键填充（查不到就空着，不影响记账）
+    final recentNotes = await _transactionRepo.recentNotes();
+    if (!mounted) return;
 
     final palette = BeanPalette.of(context);
     await showModalBottomSheet<void>(
@@ -142,6 +166,7 @@ class _ShellPageState extends State<ShellPage> {
       builder: (_) => QuickEntrySheet(
         categories: _categories,
         accounts: _accounts,
+        recentNotes: recentNotes,
         initialCategoryId: _lastSelection.categoryId,
         initialIsIncome: _lastSelection.isIncome,
         initialAccountId: _lastSelection.accountId,

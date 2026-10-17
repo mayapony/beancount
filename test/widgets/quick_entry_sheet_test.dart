@@ -386,4 +386,92 @@ void main() {
     );
     expect(submitted!.amount, 500);
   });
+  testWidgets('备注弹窗显示「最近用过」，点选后填入', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    recentNotes: const ['房租', '牛肉面'],
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('点击填写备注'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近用过'), findsOneWidget);
+    await tester.tap(find.text('房租'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('房租'), findsWidgets);
+
+    for (final key in ['5', '0']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.note, '房租');
+  });
+
+  testWidgets('没有历史备注时不显示「最近用过」', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    onSubmit: (_) async => null,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('点击填写备注'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('最近用过'), findsNothing);
+  });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repositories/account_repository.dart';
+import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
@@ -9,6 +10,7 @@ import '../widgets/common.dart';
 import 'accounts_page.dart';
 import 'categories_page.dart';
 import 'design_showcase_page.dart';
+import 'recurring_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
 
@@ -19,12 +21,14 @@ class SettingsPage extends StatelessWidget {
     required this.exporter,
     required this.categories,
     required this.accounts,
+    required this.recurring,
   });
 
   final ImportService importer;
   final ExportService exporter;
   final CategoryRepository categories;
   final AccountRepository accounts;
+  final RecurringRepository recurring;
 
   @override
   Widget build(BuildContext context) {
@@ -120,6 +124,22 @@ class SettingsPage extends StatelessWidget {
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => CategoriesPage(repository: categories),
+                      ),
+                    ),
+                  ),
+                  _divider(palette),
+                  _SettingTile(
+                    icon: Icons.event_repeat_rounded,
+                    color: const Color(0xFF8B5CF6),
+                    title: '循环记账',
+                    subtitle: '房租、工资等每月固定收支，打开即补记',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => RecurringPage(
+                          rules: recurring,
+                          categories: categories,
+                          accounts: accounts,
+                        ),
                       ),
                     ),
                   ),

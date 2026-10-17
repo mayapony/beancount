@@ -8,6 +8,7 @@ import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/import_page.dart';
 import 'package:bean_count/pages/settings_page.dart';
+import 'package:bean_count/data/repositories/recurring_repository.dart';
 import 'package:bean_count/services/export/export_service.dart';
 import 'package:bean_count/services/import/import_service.dart';
 import 'package:bean_count/theme/app_theme.dart';
@@ -50,7 +51,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  /// 设置页需要四个依赖，多个用例共用。
+  /// 设置页需要全部依赖，多个用例共用。
   Widget settingsPage() => Scaffold(
         body: SettingsPage(
           importer: service,
@@ -60,6 +61,7 @@ void main() {
           ),
           categories: CategoryRepository(db),
           accounts: AccountRepository(db),
+          recurring: RecurringRepository(db),
         ),
       );
 
@@ -78,6 +80,8 @@ void main() {
     await pump(tester, settingsPage());
 
     expect(find.text('导出'), findsOneWidget);
+    await tester.ensureVisible(find.text('导出'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('导出'));
     await tester.pumpAndSettle();
 
@@ -151,5 +155,17 @@ void main() {
     expect(find.textContaining('新建分类'), findsOneWidget);
     expect(find.text('复制报告'), findsOneWidget);
     expect(await TransactionRepository(db).count(), 9);
+  });
+
+  testWidgets('设置页有循环记账入口', (tester) async {
+    await pump(tester, settingsPage());
+
+    expect(find.text('循环记账'), findsOneWidget);
+    await tester.ensureVisible(find.text('循环记账'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('循环记账'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('还没有循环规则'), findsOneWidget);
   });
 }
