@@ -2,8 +2,8 @@
 
 ## 1. 存储与控制器
 
-- [ ] 1.1 新增 `ThemeRepository`（`app_state.theme_mode = system|light|dark`，非法值回落 system）；`test/data/theme_repository_test.dart` 用例：默认 system、写入后可读、非法值回落
-- [ ] 1.2 新增 `ThemeController extends ChangeNotifier`：`load()`、`setThemeMode()`（写库 + notify）；用例：set 之后 mode 变、notify 触发一次、写库失败仍生效（内存优先）
+- [x] 1.1 新增 `ThemeRepository`（`app_state.theme_mode = system|light|dark`，非法值回落 system）；`test/data/theme_repository_test.dart` 用例：默认 system、写入后可读、非法值回落
+- [x] 1.2 新增 `ThemeController extends ChangeNotifier`：`load()`、`setThemeMode()`（写库 + notify）；用例：set 之后 mode 变、notify 触发一次、写库失败仍生效（内存优先）
 
 ## 2. App 与设置
 
