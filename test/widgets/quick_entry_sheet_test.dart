@@ -2,8 +2,11 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/theme/app_theme.dart';
+import 'package:bean_count/services/attachments/image_picker_service.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 
 Category _cat(String id, String name, CategoryType type, int order, String icon) {
@@ -473,5 +476,151 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('最近用过'), findsNothing);
+  });
+  testWidgets('选图后草稿带一张图，点缩略图可移除', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    var picks = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pickImage: (source) async {
+                      picks++;
+                      return PickedImage(
+                        bytes: Uint8List.fromList(<int>[1, 2, 3]),
+                        fileName: 'picked.png',
+                      );
+                    },
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('从相册添加'));
+    await tester.pumpAndSettle();
+    expect(picks, 1);
+    expect(find.text('1'), findsWidgets, reason: '按钮角标显示数量');
+
+    for (final key in ['5', '0']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.images, hasLength(1));
+    expect(submitted?.images.single.fileName, 'picked.png');
+  });
+
+  testWidgets('取消选图不产生图片；移除后草稿为空', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pickImage: (source) async => null,
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('从相册添加'));
+    await tester.pumpAndSettle();
+    expect(find.text('点缩略图移除'), findsNothing);
+
+    for (final key in ['7', '0']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.images, isEmpty);
+  });
+
+  testWidgets('网页版禁用选图入口', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pickImage: null,
+                    pickEnabled: false,
+                    onSubmit: (_) async => null,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('网页版暂不支持图片附件'), findsWidgets);
+    expect(find.textContaining('已识别'), findsNothing);
   });
 }

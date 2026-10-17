@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../data/db/app_database.dart';
@@ -16,6 +17,8 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/attachments/image_picker_service.dart';
+import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
 import '../theme/tokens.dart';
 import '../widgets/bean_bottom_nav.dart';
@@ -57,6 +60,10 @@ class _ShellPageState extends State<ShellPage> {
   late final RecurringRepository _recurringRepo = RecurringRepository(_db);
   late final NetWorthRepository _netWorthRepo = NetWorthRepository(_db);
   late final LockRepository _lockRepo = LockRepository(_db);
+  late final EntryWriter _entryWriter = EntryWriter(
+    transactions: _transactionRepo,
+    attachments: _attachmentRepo,
+  );
   late final AttachmentRepository _attachmentRepo =
       widget.attachmentRepository ?? AttachmentRepository(_db);
   late final ImportService _importService = ImportService(
@@ -172,25 +179,26 @@ class _ShellPageState extends State<ShellPage> {
         categories: _categories,
         accounts: _accounts,
         recentNotes: recentNotes,
+        pickImage: kIsWeb ? null : systemImagePicker(),
+        pickEnabled: !kIsWeb,
         initialCategoryId: _lastSelection.categoryId,
         initialIsIncome: _lastSelection.isIncome,
         initialAccountId: _lastSelection.accountId,
         onSubmit: (draft) async {
           try {
-            final result = await _transactionRepo.create(
-              NewTransaction(
-                type: draft.isTransfer
-                    ? EntryType.transfer
-                    : (draft.isIncome ? EntryType.income : EntryType.expense),
-                // 金额在面板里是两位小数字符串算出来的 double，这里一次换算成整数分
-                amountCents: (draft.amount * 100).round(),
-                categoryId: draft.isTransfer ? null : draft.category?.id,
-                accountId: draft.account?.id,
-                toAccountId: draft.isTransfer ? draft.toAccount?.id : null,
-                happenedAt: draft.time,
-                note: draft.note,
-                tags: draft.tags,
-              ),
+            final result = await _entryWriter.submit(
+              type: draft.isTransfer
+                  ? EntryType.transfer
+                  : (draft.isIncome ? EntryType.income : EntryType.expense),
+              // 金额在面板里是两位小数字符串算出来的 double，这里一次换算成整数分
+              amountCents: (draft.amount * 100).round(),
+              categoryId: draft.isTransfer ? null : draft.category?.id,
+              accountId: draft.account?.id,
+              toAccountId: draft.isTransfer ? draft.toAccount?.id : null,
+              happenedAt: draft.time,
+              note: draft.note,
+              tags: draft.tags,
+              images: draft.images,
             );
             if (!result.inserted) {
               return '这笔已经记过了（同一秒、同一金额、同一备注）';

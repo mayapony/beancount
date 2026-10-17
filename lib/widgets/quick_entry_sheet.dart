@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../data/db/app_database.dart';
 import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
+import '../services/attachments/image_picker_service.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/money.dart';
@@ -25,6 +26,7 @@ class QuickEntryDraft {
     required this.time,
     this.note = '',
     this.tags = const <String>[],
+    this.images = const <PickedImage>[],
   });
 
   final double amount;
@@ -40,6 +42,9 @@ class QuickEntryDraft {
   final DateTime time;
   final String note;
   final List<String> tags;
+
+  /// 待落盘的图片（选好但还没保存）：保存时才写进附件目录。
+  final List<PickedImage> images;
 }
 
 /// 记一笔面板 —— 金豆按下直接进入，一次点击开始输入。
@@ -63,6 +68,8 @@ class QuickEntrySheet extends StatefulWidget {
     this.initialAccountId,
     this.initialDraft,
     this.recentNotes = const <String>[],
+    this.pickImage,
+    this.pickEnabled = true,
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -81,6 +88,10 @@ class QuickEntrySheet extends StatefulWidget {
 
   /// 最近用过的备注（壳层查好传进来）：备注弹窗里作为一键填充。
   final List<String> recentNotes;
+
+  /// 选图实现（测试可注入）；为空或 [pickEnabled] 为假时入口禁用。
+  final ImagePickFn? pickImage;
+  final bool pickEnabled;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -221,8 +232,11 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   /// 保存失败原因，显示在金额卡的操作行位置
   String? _errorText;
 
-  /// 图片识别中
-  bool _recognizing = false;
+  /// 已选图片（还没落盘，保存时才写进附件目录）
+  final List<PickedImage> _images = <PickedImage>[];
+
+  /// 选图中（防重复点）
+  bool _picking = false;
 
   /// 「再记」后的内联反馈（SnackBar 会被 modal sheet 挡住，所以自己画）
   late final AnimationController _toast;
@@ -304,24 +318,29 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     });
   }
 
-  /// 图片入口：上传即识别（当前为交互骨架，M7 替换为真实视觉模型）
-  Future<void> _recognizeBill() async {
-    setState(() => _recognizing = true);
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (!mounted) return;
-    setState(() {
-      _recognizing = false;
-      _amount = '38.50';
-      _categoryId = null;
-      _isIncome = false;
-      _left = null;
-      _op = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已识别：¥38.50 · 餐饮（M7 接入真实视觉模型）'),
-      ),
-    );
+  /// 选图：先留在内存里（待落盘），保存时才写进附件目录。
+  Future<void> _pick(ImagePickSource source) async {
+    final picker = widget.pickImage;
+    if (picker == null || !widget.pickEnabled || _picking) return;
+    setState(() => _picking = true);
+    try {
+      final picked = await picker(source);
+      if (!mounted) return;
+      if (picked != null) {
+        setState(() => _images.add(picked));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            source == ImagePickSource.camera ? '无法打开相机，请检查权限' : '无法打开相册，请检查权限',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
   }
 
   /// 备注：用弹窗编辑，避免系统键盘顶掉自定义数字键盘。
@@ -420,6 +439,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       time: _time,
       note: _note,
       tags: List<String>.unmodifiable(_tags),
+      images: List<PickedImage>.unmodifiable(_images),
     );
     HapticFeedback.lightImpact();
     setState(() {
@@ -794,7 +814,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                           ),
                         ),
                       ),
-                      if (_recognizing)
+                      if (_picking)
                         const Padding(
                           padding: EdgeInsets.only(right: 4),
                           child: SizedBox(
@@ -809,13 +829,16 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                       else ...[
                         _NoteAction(
                           icon: Icons.image_outlined,
-                          tooltip: '从相册识别',
-                          onTap: _recognizeBill,
+                          tooltip: widget.pickEnabled ? '从相册添加' : '网页版暂不支持图片附件',
+                          badge: _images.isEmpty ? null : '${_images.length}',
+                          enabled: widget.pickEnabled && widget.pickImage != null,
+                          onTap: () => _pick(ImagePickSource.gallery),
                         ),
                         _NoteAction(
                           icon: Icons.photo_camera_outlined,
-                          tooltip: '拍照识别',
-                          onTap: _recognizeBill,
+                          tooltip: widget.pickEnabled ? '拍照添加' : '网页版暂不支持图片附件',
+                          enabled: widget.pickEnabled && widget.pickImage != null,
+                          onTap: () => _pick(ImagePickSource.camera),
                         ),
                         _NoteAction(
                           icon: Icons.sell_outlined,
@@ -825,6 +848,48 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                         ),
                       ],
                     ],
+                  ),
+                  if (_images.isNotEmpty)
+                    Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _images.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GestureDetector(
+                              onTap: () => setState(() => _images.removeAt(i)),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 40,
+                                  height: 40,
+                                  child: Image.memory(
+                                    _images[i].bytes,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: neutral.sand,
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 16,
+                                        color: palette.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Text(
+                          '点缩略图移除',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1243,28 +1308,61 @@ class _NoteAction extends StatelessWidget {
     required this.tooltip,
     required this.onTap,
     this.highlighted = false,
+    this.enabled = true,
+    this.badge,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final bool highlighted;
+  final bool enabled;
+
+  /// 右下角的小角标（已选图片数量）。
+  final String? badge;
 
   @override
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
-    final color = highlighted ? BeanColors.goldDeep : palette.textSecondary;
+    final color = !enabled
+        ? palette.textSecondary.withValues(alpha: 0.35)
+        : (highlighted ? BeanColors.goldDeep : palette.textSecondary);
     return SizedBox(
       width: 44,
       height: 44,
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onTap,
-        icon: Icon(icon, size: 20),
-        color: color,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-        splashRadius: 22,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            tooltip: tooltip,
+            onPressed: enabled ? onTap : null,
+            icon: Icon(icon, size: 20),
+            color: color,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            splashRadius: 22,
+          ),
+          if (badge != null)
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: BeanColors.goldDeep,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  badge!,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
