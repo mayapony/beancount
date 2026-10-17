@@ -17,8 +17,20 @@
 ## 3. 回归
 
 - [x] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 241 + 新增）
-- [ ] 3.2 设备端回归：导入一份支付宝格式账单 → 预览数字正确 → 落库后分类/账户正确；结果写入 tasks.md
+- [x] 3.2 设备端回归：导入一份支付宝格式账单 → 预览数字正确 → 落库后分类/账户正确；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found；`flutter test`：**253 通过**（上一轮 241 + 本次 12）
+- 设备端 `integration_test/statement_import_flow_test.dart -d emulator-5554`：通过
+  - 支付宝账单（UTF-8）在真实 sqlite 上解析 → 计划 → 落库：2 笔，账户都是「支付宝」，金额 3850/12000
+- 覆盖到的真实格式细节：
+  - 支付宝前面有 3 行说明文字 + 一行 `-----` 分隔，表头在第 5 行 → 前 30 行内扫描
+  - `不计收支` 与 `交易关闭` 行被跳过，报告里带行号与原因
+  - 微信 `金额(元)` 带 `¥`、`/`（转账）与「已全额退款」行按规则跳过
+  - 支付宝 Windows 导出是 **GBK**：UTF-8 严格解码失败后回退 GBK，中文分类与备注都能读对
+  - `.xlsx` 走 `excel` 读第一个工作表，BeeCount 表头与支付宝表头都能识别
+- 未做的部分（明确写在这里）：PDF 账单、招行/工行等银行流水专用列、多工作表合并
 ## Workflow follow-up
 
 - 归档 change：`openspec archive template-import --yes`
