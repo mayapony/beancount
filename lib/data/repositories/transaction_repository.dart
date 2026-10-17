@@ -412,6 +412,20 @@ class TransactionRepository {
         );
   }
 
+  /// 某笔交易的标签名（详情页展示用，按标签名排序稳定）。
+  Future<List<String>> tagsOf(String transactionId) async {
+    final links = await (_db.select(_db.transactionTags)
+          ..where((t) => t.transactionId.equals(transactionId)))
+        .get();
+    if (links.isEmpty) return const [];
+    final ids = links.map((l) => l.tagId).toSet();
+    final tags = await (_db.select(_db.tags)
+          ..where((t) => t.id.isIn(ids)))
+        .get();
+    final names = tags.map((t) => t.name).toList()..sort();
+    return names;
+  }
+
   /// 全部去重键：导入前用它判断哪些行已经存在。
   Future<Set<String>> dedupeKeys() async => {
         for (final row in await _db.select(_db.transactions).get())
