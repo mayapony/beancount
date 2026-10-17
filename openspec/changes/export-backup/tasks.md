@@ -7,9 +7,9 @@
 
 ## 2. CSV 写出
 
-- [ ] 2.1 新增 `beeCountCsvWriter.buildBeeCountCsv(rows)`：表头/列序/BOM/两位小数/时间格式与导入端一致；`test/services/export_csv_test.dart` 断言表头与单行取值
-- [ ] 2.2 往返用例：写 CSV → `parseBeeCountCsv` 读回，断言笔数/金额/分类/二级分类/账户/备注/标签一致
-- [ ] 2.3 边界用例：无标签无附件的行两列为空；导出空账本只得到表头
+- [x] 2.1 新增 `beeCountCsvWriter.buildBeeCountCsv(rows)`：表头/列序/BOM/两位小数/时间格式与导入端一致；`test/services/export_csv_test.dart` 断言表头与单行取值
+- [x] 2.2 往返用例：写 CSV → `parseBeeCountCsv` 读回，断言笔数/金额/分类/二级分类/账户/备注/标签一致
+- [x] 2.3 边界用例：无标签无附件的行两列为空；导出空账本只得到表头
 
 ## 3. 备份打包
 
