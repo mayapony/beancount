@@ -7,13 +7,16 @@ import 'attachment_repository.dart';
 import 'ledger_filter.dart';
 
 /// 新建一笔交易需要的全部信息（金额已是整数分）。
+///
+/// 转账：`type = transfer`，`accountId` 为转出、`toAccountId` 为转入，`categoryId` 为空。
 class NewTransaction {
   const NewTransaction({
     required this.type,
     required this.amountCents,
-    required this.categoryId,
+    this.categoryId,
     required this.happenedAt,
     this.accountId,
+    this.toAccountId,
     this.note = '',
     this.tags = const <String>[],
     this.source = EntrySource.manual,
@@ -21,12 +24,17 @@ class NewTransaction {
 
   final EntryType type;
   final int amountCents;
-  final String categoryId;
+  final String? categoryId;
   final DateTime happenedAt;
   final String? accountId;
+
+  /// 仅转账使用：转入账户。
+  final String? toAccountId;
   final String note;
   final List<String> tags;
   final EntrySource source;
+
+  bool get isTransfer => type == EntryType.transfer;
 }
 
 /// 编辑一笔交易时可改的字段（金额已是整数分）；id 与去重键由仓储维护。
@@ -34,18 +42,22 @@ class TransactionEdit {
   const TransactionEdit({
     required this.type,
     required this.amountCents,
-    required this.categoryId,
+    this.categoryId,
     required this.happenedAt,
     this.accountId,
+    this.toAccountId,
     this.note = '',
     this.tags = const <String>[],
   });
 
   final EntryType type;
   final int amountCents;
-  final String categoryId;
+  final String? categoryId;
   final DateTime happenedAt;
   final String? accountId;
+
+  /// 仅转账使用：转入账户。
+  final String? toAccountId;
   final String note;
   final List<String> tags;
 }
@@ -92,15 +104,21 @@ class DayGroup {
 class TransactionRow {
   const TransactionRow({
     required this.transaction,
-    required this.category,
+    this.category,
     this.account,
+    this.toAccount,
     this.attachmentCount = 0,
     this.thumbnailFileName,
   });
 
   final Transaction transaction;
-  final Category category;
+
+  /// 转账没有分类，所以这里可空。
+  final Category? category;
   final Account? account;
+
+  /// 仅转账：转入账户。
+  final Account? toAccount;
   final int attachmentCount;
 
   /// 第一张附件的文件名（没有图时为 null），列表用它画 32×32 缩略图。
@@ -108,6 +126,18 @@ class TransactionRow {
 
   int get amountCents => transaction.amountCents;
   bool get isIncome => transaction.type == EntryType.income;
+  bool get isExpense => transaction.type == EntryType.expense;
+  bool get isTransfer => transaction.type == EntryType.transfer;
+
+  /// 列表标题：备注优先；转账没有备注时用「A → B」。
+  String get title {
+    final note = transaction.note.trim();
+    if (note.isNotEmpty) return note;
+    if (isTransfer) {
+      return '${account?.name ?? '账户'} → ${toAccount?.name ?? '账户'}';
+    }
+    return category?.name ?? '未分类';
+  }
 }
 
 /// 明细页一次渲染所需的全部数据。
@@ -129,15 +159,19 @@ class ExportRow {
     required this.transaction,
     required this.categoryPath,
     this.accountName,
+    this.toAccountName,
     this.tags = const <String>[],
     this.attachmentNames = const <String>[],
   });
 
   final Transaction transaction;
 
-  /// 长度 1 表示只有一级分类；长度 2 是「一级, 二级」。
+  /// 长度 1 表示只有一级分类；长度 2 是「一级, 二级」；转账为空。
   final List<String> categoryPath;
   final String? accountName;
+
+  /// 仅转账：转入账户名。
+  final String? toAccountName;
   final List<String> tags;
   final List<String> attachmentNames;
 }
@@ -170,18 +204,26 @@ class TransactionRepository {
   /// 新建交易。
   ///
   /// - 金额已经是整数分（调用方负责从用户输入精确换算）；
+  /// - 转账必须给两端账户且互不相同、不需要分类；支出/收入必须有分类；
   /// - 计算去重键，命中已有记录时**不写入**并返回那笔的 id；
   /// - 标签自动创建（同名复用），与交易在同一事务里写入。
   Future<CreateResult> create(NewTransaction input) async {
     if (input.amountCents <= 0) {
       throw ArgumentError.value(input.amountCents, 'amountCents', '金额必须大于 0');
     }
+    _validateShape(
+      type: input.type,
+      categoryId: input.categoryId,
+      accountId: input.accountId,
+      toAccountId: input.toAccountId,
+    );
 
     final note = input.note.trim();
     final dedupeKey = dedupeKeyFor(
       happenedAt: input.happenedAt,
       amountCents: input.amountCents,
       note: note,
+      toAccountId: input.isTransfer ? input.toAccountId : null,
     );
 
     final existing = await (_db.select(_db.transactions)
@@ -199,8 +241,9 @@ class TransactionRepository {
               id: id,
               type: input.type,
               amountCents: input.amountCents,
-              categoryId: input.categoryId,
+              categoryId: Value(input.categoryId),
               accountId: Value(input.accountId),
+              toAccountId: Value(input.toAccountId),
               note: Value(note),
               happenedAt: input.happenedAt,
               dedupeKey: dedupeKey,
@@ -223,6 +266,27 @@ class TransactionRepository {
     });
 
     return CreateResult(inserted: true, transactionId: id);
+  }
+
+  /// 收支/转账的字段约束：转账两端俱在且不同，收支必须有分类。
+  void _validateShape({
+    required EntryType type,
+    required String? categoryId,
+    required String? accountId,
+    required String? toAccountId,
+  }) {
+    if (type == EntryType.transfer) {
+      if (accountId == null || toAccountId == null) {
+        throw ArgumentError('转账必须指定转出与转入账户');
+      }
+      if (accountId == toAccountId) {
+        throw ArgumentError('转出与转入不能是同一个账户');
+      }
+      return;
+    }
+    if (categoryId == null) {
+      throw ArgumentError('支出/收入必须有分类');
+    }
   }
 
   /// 按天分组读取（倒序），用于明细页。
@@ -325,13 +389,16 @@ class TransactionRepository {
     var matched = keyword.isEmpty
         ? rows
         : rows.where((row) {
-            final parentName =
-                categoryNames[row.category.parentId] ?? '';
+            final category = row.category;
+            final parentName = category?.parentId == null
+                ? ''
+                : (categoryNames[category!.parentId] ?? '');
             final haystack = <String>[
               row.transaction.note,
-              row.category.name,
+              category?.name ?? '',
               parentName,
               row.account?.name ?? '',
+              row.toAccount?.name ?? '',
               ...?tagByTransaction[row.transaction.id],
             ].join('\u0000').toLowerCase();
             return haystack.contains(keyword);
@@ -401,11 +468,15 @@ class TransactionRepository {
 
     return [
       for (final tx in transactions)
-        if (categories[tx.categoryId] != null)
+        if (tx.type == EntryType.transfer ||
+            categories[tx.categoryId] != null)
           TransactionRow(
             transaction: tx,
-            category: categories[tx.categoryId]!,
+            category:
+                tx.categoryId == null ? null : categories[tx.categoryId],
             account: tx.accountId == null ? null : accounts[tx.accountId],
+            toAccount:
+                tx.toAccountId == null ? null : accounts[tx.toAccountId],
             attachmentCount: attachmentCounts[tx.id] ?? 0,
             thumbnailFileName: thumbnails[tx.id],
           ),
@@ -413,6 +484,8 @@ class TransactionRepository {
   }
 
   /// 按天分组（倒序），并算好当天收支小计。
+  ///
+  /// 转账不是收支：它出现在分组里，但**不进** `expenseCents` / `incomeCents`。
   List<DayGroup> _groupByDay(List<TransactionRow> rows) {
     final byDay = <DateTime, List<TransactionRow>>{};
     for (final row in rows) {
@@ -427,7 +500,7 @@ class TransactionRepository {
           date: day,
           items: byDay[day]!,
           expenseCents: byDay[day]!
-              .where((r) => !r.isIncome)
+              .where((r) => r.isExpense)
               .fold(0, (sum, r) => sum + r.amountCents),
           incomeCents: byDay[day]!
               .where((r) => r.isIncome)
@@ -460,6 +533,12 @@ class TransactionRepository {
     if (input.amountCents <= 0) {
       throw ArgumentError.value(input.amountCents, 'amountCents', '金额必须大于 0');
     }
+    _validateShape(
+      type: input.type,
+      categoryId: input.categoryId,
+      accountId: input.accountId,
+      toAccountId: input.toAccountId,
+    );
     final note = input.note.trim();
 
     await _db.transaction(() async {
@@ -474,6 +553,7 @@ class TransactionRepository {
         happenedAt: input.happenedAt,
         amountCents: input.amountCents,
         note: note,
+        toAccountId: input.type == EntryType.transfer ? input.toAccountId : null,
       );
       final sameKey = await (_db.select(_db.transactions)
             ..where((t) => t.dedupeKey.equals(dedupeKey)))
@@ -488,6 +568,7 @@ class TransactionRepository {
           amountCents: Value(input.amountCents),
           categoryId: Value(input.categoryId),
           accountId: Value(input.accountId),
+          toAccountId: Value(input.toAccountId),
           note: Value(note),
           happenedAt: Value(input.happenedAt),
           dedupeKey: Value(dedupeKey),
@@ -529,16 +610,21 @@ class TransactionRepository {
         .getSingleOrNull();
     if (tx == null) return null;
 
-    final category = await (_db.select(_db.categories)
-          ..where((c) => c.id.equals(tx.categoryId)))
-        .getSingleOrNull();
-    if (category == null) return null;
-
-    final accountId = tx.accountId;
-    final account = accountId == null
+    final categoryId = tx.categoryId;
+    final category = categoryId == null
         ? null
-        : await (_db.select(_db.accounts)..where((a) => a.id.equals(accountId)))
+        : await (_db.select(_db.categories)..where((c) => c.id.equals(categoryId)))
             .getSingleOrNull();
+    if (categoryId != null && category == null) return null;
+
+    Future<Account?> accountOf(String? accountId) async => accountId == null
+        ? null
+        : await (_db.select(_db.accounts)
+              ..where((a) => a.id.equals(accountId)))
+            .getSingleOrNull();
+
+    final account = await accountOf(tx.accountId);
+    final toAccount = await accountOf(tx.toAccountId);
 
     final attachments = await (_db.select(_db.attachments)
           ..where((a) => a.transactionId.equals(id))
@@ -549,6 +635,7 @@ class TransactionRepository {
       transaction: tx,
       category: category,
       account: account,
+      toAccount: toAccount,
       attachmentCount: attachments.length,
       thumbnailFileName: attachments.isEmpty ? null : attachments.first.fileName,
     );
@@ -638,6 +725,9 @@ class TransactionRepository {
           accountName: transaction.accountId == null
               ? null
               : accounts[transaction.accountId!]?.name,
+          toAccountName: transaction.toAccountId == null
+              ? null
+              : accounts[transaction.toAccountId!]?.name,
           tags: tagsByTransaction[transaction.id] ?? const [],
           attachmentNames:
               attachmentsByTransaction[transaction.id] ?? const [],
@@ -646,9 +736,10 @@ class TransactionRepository {
   }
 
   List<String> _categoryPath(
-    String categoryId,
+    String? categoryId,
     Map<String, Category> byId,
   ) {
+    if (categoryId == null) return const [];
     final category = byId[categoryId];
     if (category == null) return const ['未分类'];
     final parentId = category.parentId;

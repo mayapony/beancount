@@ -9,6 +9,8 @@ class AccountBalance {
     required this.account,
     required this.expenseCents,
     required this.incomeCents,
+    this.transferOutCents = 0,
+    this.transferInCents = 0,
     this.count = 0,
   });
 
@@ -16,11 +18,20 @@ class AccountBalance {
   final int expenseCents;
   final int incomeCents;
 
-  /// 关联的交易笔数（展示用）。
+  /// 转出/转入合计（转账不计入收支，但会改变余额）。
+  final int transferOutCents;
+  final int transferInCents;
+
+  /// 关联的交易笔数（展示用；转账两端都算一笔）。
   final int count;
 
-  /// 余额 = 初始余额 + 收入 − 支出。**不单独存**，永远不会漂移。
-  int get balanceCents => account.initialBalanceCents + incomeCents - expenseCents;
+  /// 余额 = 初始余额 + 收入 − 支出 − 转出 + 转入。**不单独存**，永远不会漂移。
+  int get balanceCents =>
+      account.initialBalanceCents +
+      incomeCents -
+      expenseCents -
+      transferOutCents +
+      transferInCents;
 }
 
 /// 账户被交易引用时抛出：删除会被拒绝，并告诉调用方有多少笔。
@@ -86,16 +97,41 @@ class AccountRepository {
 
     final expense = <String, int>{};
     final income = <String, int>{};
+    final transferOut = <String, int>{};
     final counts = <String, int>{};
     for (final row in rows) {
       final id = row.read<String>('account_id');
       final total = row.read<int>('total');
-      counts.update(id, (v) => v + row.read<int>('n'), ifAbsent: () => row.read<int>('n'));
-      if (row.read<String>('type') == EntryType.income.name) {
-        income.update(id, (v) => v + total, ifAbsent: () => total);
-      } else {
-        expense.update(id, (v) => v + total, ifAbsent: () => total);
+      final count = row.read<int>('n');
+      counts.update(id, (v) => v + count, ifAbsent: () => count);
+      switch (row.read<String>('type')) {
+        case 'income':
+          income.update(id, (v) => v + total, ifAbsent: () => total);
+        case 'expense':
+          expense.update(id, (v) => v + total, ifAbsent: () => total);
+        case 'transfer':
+          transferOut.update(id, (v) => v + total, ifAbsent: () => total);
       }
+    }
+
+    // 转账的「转入侧」：同一个账户可能是别人转进来的那一端
+    final incoming = await _db
+        .customSelect(
+          '''
+          SELECT to_account_id, SUM(amount_cents) AS total, COUNT(*) AS n
+          FROM transactions
+          WHERE to_account_id IS NOT NULL
+          GROUP BY to_account_id
+          ''',
+        )
+        .get();
+    final transferIn = <String, int>{};
+    for (final row in incoming) {
+      final id = row.read<String>('to_account_id');
+      transferIn.update(id, (v) => v + row.read<int>('total'),
+          ifAbsent: () => row.read<int>('total'));
+      counts.update(id, (v) => v + row.read<int>('n'),
+          ifAbsent: () => row.read<int>('n'));
     }
 
     return [
@@ -104,6 +140,8 @@ class AccountRepository {
           account: account,
           expenseCents: expense[account.id] ?? 0,
           incomeCents: income[account.id] ?? 0,
+          transferOutCents: transferOut[account.id] ?? 0,
+          transferInCents: transferIn[account.id] ?? 0,
           count: counts[account.id] ?? 0,
         ),
     ];
@@ -205,8 +243,12 @@ class AccountRepository {
 
   Future<int> usageCount(String accountId) async {
     final row = await _db.customSelect(
-      'SELECT COUNT(*) AS c FROM transactions WHERE account_id = ?',
-      variables: [Variable.withString(accountId)],
+      'SELECT COUNT(*) AS c FROM transactions '
+      'WHERE account_id = ? OR to_account_id = ?',
+      variables: [
+        Variable.withString(accountId),
+        Variable.withString(accountId),
+      ],
     ).getSingle();
     return row.read<int>('c');
   }

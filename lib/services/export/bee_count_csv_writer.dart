@@ -38,15 +38,21 @@ Uint8List buildBeeCountCsv(List<ExportRow> rows) {
 List<String> _cellsOf(ExportRow row) {
   final transaction = row.transaction;
   final path = row.categoryPath;
+  final isTransfer = transaction.type == EntryType.transfer;
   return [
-    transaction.type == EntryType.income ? '收入' : '支出',
-    path.isNotEmpty ? path.first : '未分类',
+    switch (transaction.type) {
+      EntryType.income => '收入',
+      EntryType.expense => '支出',
+      EntryType.transfer => '转账',
+    },
+    isTransfer ? '' : (path.isNotEmpty ? path.first : '未分类'),
     path.length > 1 ? path[1] : '',
     formatCents(transaction.amountCents),
     'CNY',
-    row.accountName ?? '',
-    '', // 转出账户：转账不在本次范围，占位保持列对齐
-    '', // 转入账户
+    isTransfer ? '' : (row.accountName ?? ''),
+    // 转账：账户列留空，转出/转入各占一列（与 BeeCount 的列语义一致）
+    isTransfer ? (row.accountName ?? '') : '',
+    isTransfer ? (row.toAccountName ?? '') : '',
     transaction.note,
     formatBeeCountTime(transaction.happenedAt),
     row.tags.join(','),

@@ -303,7 +303,11 @@ class _QuickFilters extends StatelessWidget {
           ),
           for (final type in EntryType.values)
             _Chip(
-              label: type == EntryType.expense ? '支出' : '收入',
+              label: switch (type) {
+                EntryType.expense => '支出',
+                EntryType.income => '收入',
+                EntryType.transfer => '转账',
+              },
               selected: filter.type == type,
               onTap: () => onChanged(
                 LedgerFilter(

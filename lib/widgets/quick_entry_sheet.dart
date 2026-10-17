@@ -18,8 +18,10 @@ class QuickEntryDraft {
   const QuickEntryDraft({
     required this.amount,
     required this.isIncome,
-    required this.category,
-    required this.account,
+    this.isTransfer = false,
+    this.category,
+    this.account,
+    this.toAccount,
     required this.time,
     this.note = '',
     this.tags = const <String>[],
@@ -28,9 +30,13 @@ class QuickEntryDraft {
   final double amount;
   final bool isIncome;
 
-  /// 选中的分类记录（一级或二级），落库时直接取 `id`。
-  final Category category;
+  /// 转账：没有分类，`account` 为转出、`toAccount` 为转入。
+  final bool isTransfer;
+
+  /// 选中的分类记录（一级或二级），落库时直接取 `id`；转账时为 null。
+  final Category? category;
   final Account? account;
+  final Account? toAccount;
   final DateTime time;
   final String note;
   final List<String> tags;
@@ -111,9 +117,12 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     with SingleTickerProviderStateMixin {
   late bool _isIncome = widget.initialDraft?.isIncome ?? widget.initialIsIncome;
 
+  /// 转账模式：分类网格换成「从 / 到」两个账户。
+  late bool _isTransfer = widget.initialDraft?.isTransfer ?? false;
+
   /// 当前选中的分类 id；为空或与当前类型不匹配时回落到第一个可见分类。
   late String? _categoryId =
-      widget.initialDraft?.category.id ?? widget.initialCategoryId;
+      widget.initialDraft?.category?.id ?? widget.initialCategoryId;
 
   /// 面板只展示一级分类，并按当前收支类型过滤。
   List<Category> get _visibleCategories => [
@@ -158,6 +167,23 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     return widget.accounts.isEmpty ? null : widget.accounts.first;
   }
 
+  /// 转账的「到」账户：默认取与「从」不同的第一个账户。
+  AccountBalance? get _selectedToAccount {
+    for (final a in widget.accounts) {
+      if (a.account.id == _toAccountId) return a;
+    }
+    for (final a in widget.accounts) {
+      if (a.account.id != _selectedAccount?.account.id) return a;
+    }
+    return null;
+  }
+
+  bool get _transferAccountsValid {
+    final from = _selectedAccount?.account.id;
+    final to = _selectedToAccount?.account.id;
+    return from != null && to != null && from != to;
+  }
+
   late String _amount = _initialAmountText();
 
   /// 编辑模式下的金额回填：38.50 → '38.5'，45.00 → '45'
@@ -180,6 +206,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   /// 账户与时间：都继承上次值，点胶囊可改。
   late String? _accountId =
       widget.initialDraft?.account?.id ?? widget.initialAccountId;
+
+  /// 转账的转入账户。
+  late String? _toAccountId = widget.initialDraft?.toAccount?.id;
   late DateTime _time = widget.initialDraft?.time ?? DateTime.now();
 
   /// 保存中：按钮暂时禁用，避免重复提交
@@ -221,7 +250,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   double get _finalValue =>
       _op == null ? _value : _apply(_left ?? 0, _op!, _value);
 
-  bool get _canSubmit => _finalValue > 0 && _selectedCategory != null;
+  bool get _canSubmit =>
+      _finalValue > 0 &&
+      (_isTransfer ? _transferAccountsValid : _selectedCategory != null);
 
   double _apply(double a, String op, double b) {
     if (op == '+') return a + b;
@@ -402,9 +433,11 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     if (!_canSubmit || _saving) return;
     final draft = QuickEntryDraft(
       amount: _finalValue,
-      isIncome: _isIncome,
-      category: _selectedCategory!,
+      isIncome: _isTransfer ? false : _isIncome,
+      isTransfer: _isTransfer,
+      category: _isTransfer ? null : _selectedCategory,
       account: _selectedAccount?.account,
+      toAccount: _isTransfer ? _selectedToAccount?.account : null,
       time: _time,
       note: _note,
       tags: List<String>.unmodifiable(_tags),
@@ -428,9 +461,10 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
     setState(() => _saving = false);
     if (keepOpen) {
-      final summary =
-          '已记 ${_isIncome ? '+' : '-'}¥${formatMoney(_finalValue)} · '
-          '${_selectedCategory?.name ?? ''}';
+      final summary = _isTransfer
+          ? '已记 转账 ¥${formatMoney(_finalValue)}'
+          : '已记 ${_isIncome ? '+' : '-'}¥${formatMoney(_finalValue)} · '
+              '${_selectedCategory?.name ?? ''}';
       setState(() {
         _amount = '0';
         _left = null;
@@ -446,8 +480,8 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     }
   }
 
-  /// 账户选择：底部小面板，选中即返回。
-  Future<void> _pickAccount() async {
+  /// 账户选择：底部小面板，选中即返回。[to] 为 true 时选的是转入账户。
+  Future<void> _pickAccount({bool to = false}) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: BeanPalette.of(context).surface,
@@ -456,11 +490,17 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       ),
       builder: (_) => _AccountSheet(
         accounts: widget.accounts,
-        selectedId: _accountId,
+        selectedId: to ? _toAccountId : _accountId,
       ),
     );
     if (picked == null || !mounted) return;
-    setState(() => _accountId = picked);
+    setState(() {
+      if (to) {
+        _toAccountId = picked;
+      } else {
+        _accountId = picked;
+      }
+    });
   }
 
   /// 时间选择：快捷「今天/昨天/前天」+ 日期时间滚轮。
@@ -521,8 +561,14 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                   const SizedBox(width: 12),
                   Expanded(
                     child: _Segmented(
-                      isIncome: _isIncome,
-                      onChanged: (v) => setState(() => _isIncome = v),
+                      mode: _isTransfer ? 2 : (_isIncome ? 1 : 0),
+                      onChanged: (mode) => setState(() {
+                        _isTransfer = mode == 2;
+                        _isIncome = mode == 1;
+                        if (_isTransfer && _toAccountId == null) {
+                          _toAccountId = _selectedToAccount?.account.id;
+                        }
+                      }),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -543,97 +589,125 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
           ),
           const SizedBox(height: 6),
 
-          // ── 分类：4 列网格，首屏 3 行（12 个）；分类更多时内部滚动 ──
-          Flexible(
-            fit: FlexFit.loose,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 222),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final visible = _visibleCategories;
-                  final selected = _highlightCategory;
-                  if (visible.isEmpty) {
-                    return SizedBox(
-                      height: 74,
-                      child: Center(
-                        child: Text(
-                          '还没有分类',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: palette.textSecondary,
+          // ── 转账：没有分类，改成「从 / 到」两个账户 ─────────────
+          if (_isTransfer)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  _TransferAccountChip(
+                    label: '从',
+                    accountName: _selectedAccount?.account.name ?? '选择账户',
+                    onTap: () => _pickAccount(),
+                  ),
+                  const SizedBox(height: 8),
+                  _TransferAccountChip(
+                    label: '到',
+                    accountName: _selectedToAccount?.account.name ?? '选择账户',
+                    onTap: () => _pickAccount(to: true),
+                  ),
+                ],
+              ),
+            )
+          else
+            // ── 分类：4 列网格，首屏 3 行（12 个）；分类更多时内部滚动 ──
+            Flexible(
+              fit: FlexFit.loose,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 222),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final visible = _visibleCategories;
+                    final selected = _highlightCategory;
+                    if (visible.isEmpty) {
+                      return SizedBox(
+                        height: 74,
+                        child: Center(
+                          child: Text(
+                            '还没有分类',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: palette.textSecondary,
+                            ),
                           ),
                         ),
+                      );
+                    }
+                    final rows = (visible.length / 4).ceil();
+                    final grid = SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          for (var row = 0; row < rows; row++)
+                            Row(
+                              children: [
+                                for (var col = 0; col < 4; col++)
+                                  Expanded(
+                                    child: row * 4 + col < visible.length
+                                        ? _CategoryCell(
+                                            category: visible[row * 4 + col],
+                                            selected: selected?.id ==
+                                                visible[row * 4 + col].id,
+                                            onTap: () {
+                                              HapticFeedback.selectionClick();
+                                              setState(() {
+                                                _categoryId =
+                                                    visible[row * 4 + col].id;
+                                              });
+                                            },
+                                          )
+                                        : const SizedBox(height: 74),
+                                  ),
+                              ],
+                            ),
+                        ],
                       ),
                     );
-                  }
-                  final rows = (visible.length / 4).ceil();
-                  final grid = SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        for (var row = 0; row < rows; row++)
-                          Row(
-                            children: [
-                              for (var col = 0; col < 4; col++)
-                                Expanded(
-                                  child: row * 4 + col < visible.length
-                                      ? _CategoryCell(
-                                          category: visible[row * 4 + col],
-                                          selected: selected?.id ==
-                                              visible[row * 4 + col].id,
-                                          onTap: () {
-                                            HapticFeedback.selectionClick();
-                                            setState(() {
-                                              _categoryId =
-                                                  visible[row * 4 + col].id;
-                                            });
-                                          },
-                                        )
-                                      : const SizedBox(height: 74),
-                                ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  );
-                  // 只有分类超过 3 行（需要滚动）时才加底部淡出：
-                  // 提示"还能滑"，而不是看起来被裁掉
-                  if (rows <= 3) return grid;
-                  return ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (rect) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.white, Colors.white, Colors.transparent],
-                      stops: [0.0, 0.93, 1.0],
-                    ).createShader(rect),
-                    child: grid,
-                  );
-                },
+                    // 只有分类超过 3 行（需要滚动）时才加底部淡出：
+                    // 提示"还能滑"，而不是看起来被裁掉
+                    if (rows <= 3) return grid;
+                    return ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent
+                        ],
+                        stops: [0.0, 0.93, 1.0],
+                      ).createShader(rect),
+                      child: grid,
+                    );
+                  },
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 6),
 
-          // ── 元信息：账户 / 时间，44px 高、正向文案、点开即改 ──
+          // ── 元信息：时间（转账时账户已在上面选好）────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Flexible(
-                  child: _MetaChip(
-                    icon: Icons.account_balance_wallet_rounded,
-                    label: _selectedAccount?.account.name ?? '不选账户',
-                    onTap: _pickAccount,
+                if (!_isTransfer) ...[
+                  Flexible(
+                    child: _MetaChip(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: _selectedAccount?.account.name ?? '不选账户',
+                      onTap: () => _pickAccount(),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 8),
+                ],
                 _MetaChip(
                   icon: Icons.schedule_rounded,
                   label: formatEntryTime(_time),
                   onTap: _pickTime,
                 ),
+                if (_isTransfer) const Spacer(),
               ],
             ),
           ),
@@ -696,7 +770,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w600,
-                          color: _isIncome ? palette.income : palette.expense,
+                          color: _isTransfer
+                              ? palette.transfer
+                              : (_isIncome ? palette.income : palette.expense),
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -708,7 +784,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                           fontSize: 42,
                           height: 1.15,
                           fontWeight: FontWeight.w700,
-                          color: _isIncome ? palette.income : palette.expense,
+                          color: _isTransfer
+                              ? palette.transfer
+                              : (_isIncome ? palette.income : palette.expense),
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -904,7 +982,6 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     );
   }
 
-
   Widget _digitKey(String digit) => _SurfaceKey(
         onTap: () => _press(digit),
         child: Text(
@@ -977,14 +1054,16 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 /// 分段控件：类型是"背景状态"，用轻量胶囊，不抢主按钮的语法。
 /// 视觉 34 高、热区 44 高：胶囊够轻，手指够得着，语义（button/selected）也保留在可点层上。
 class _Segmented extends StatelessWidget {
-  const _Segmented({required this.isIncome, required this.onChanged});
+  const _Segmented({required this.mode, required this.onChanged});
 
-  final bool isIncome;
-  final ValueChanged<bool> onChanged;
+  /// 0 = 支出、1 = 收入、2 = 转账。
+  final int mode;
+  final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final neutral = BeanPalette.of(context).neutral;
+    final labels = const ['支出', '收入', '转账'];
     return SizedBox(
       height: 44,
       child: Stack(
@@ -1004,11 +1083,11 @@ class _Segmented extends StatelessWidget {
           ),
           Positioned.fill(
             child: Row(
-              // stretch：让两个分段拿到 44 的紧凑高度，胶囊才能正确内缩
+              // stretch：让分段拿到 44 的紧凑高度，胶囊才能正确内缩
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _segment(context, '支出', !isIncome, () => onChanged(false)),
-                _segment(context, '收入', isIncome, () => onChanged(true)),
+                for (var i = 0; i < labels.length; i++)
+                  _segment(context, labels[i], mode == i, () => onChanged(i)),
               ],
             ),
           ),
@@ -1252,7 +1331,6 @@ class _SurfaceKey extends StatelessWidget {
   }
 }
 
-
 /// 选择账户：一行一个，选中打钩；金额带符号（信用卡欠款用警示色）。
 class _AccountSheet extends StatelessWidget {
   const _AccountSheet({required this.accounts, required this.selectedId});
@@ -1372,7 +1450,10 @@ class _AccountDot extends StatelessWidget {
           Icons.account_balance_wallet_rounded
         ),
       AccountType.debit => (const Color(0xFF3B82F6), Icons.credit_card_rounded),
-      AccountType.credit => (const Color(0xFF8B5CF6), Icons.credit_score_rounded),
+      AccountType.credit => (
+          const Color(0xFF8B5CF6),
+          Icons.credit_score_rounded
+        ),
       AccountType.other => (const Color(0xFF64748B), Icons.savings_rounded),
     };
     return Container(
@@ -1531,6 +1612,63 @@ class _DayChip extends StatelessWidget {
               fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               color: selected ? BeanColors.goldDeep : palette.textSecondary,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 转账的「从 / 到」一行：整行可点，右侧显示当前账户。
+class _TransferAccountChip extends StatelessWidget {
+  const _TransferAccountChip({
+    required this.label,
+    required this.accountName,
+    required this.onTap,
+  });
+
+  final String label;
+  final String accountName;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: palette.neutral.lineStrong),
+          ),
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: TextStyle(fontSize: 13, color: palette.textSecondary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  accountName,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.expand_more_rounded,
+                size: 18,
+                color: palette.textSecondary,
+              ),
+            ],
           ),
         ),
       ),

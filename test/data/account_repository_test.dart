@@ -160,4 +160,69 @@ void main() {
     await accounts.delete(empty.id);
     expect(await accounts.byId(empty.id), isNull);
   });
+
+  test('转账让转出账户减、转入账户加，净资产不变', () async {
+    final from = await accounts.create(name: '招商银行卡', type: AccountType.debit);
+    final to = await accounts.create(name: '支付宝');
+    await accounts.update(from.id, initialBalanceCents: 100000);
+    await accounts.update(to.id, initialBalanceCents: 20000);
+
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food.id,
+        accountId: from.id,
+        happenedAt: DateTime(2026, 10, 18, 13),
+        note: '午饭',
+      ),
+    );
+
+    final balances = await accounts.withBalances();
+    final fromBalance = balances.firstWhere((b) => b.account.id == from.id);
+    final toBalance = balances.firstWhere((b) => b.account.id == to.id);
+
+    expect(fromBalance.balanceCents, 100000 - 50000 - 3850);
+    expect(toBalance.balanceCents, 20000 + 50000);
+    expect(fromBalance.count, 2, reason: '支出 + 转出各算一笔');
+    expect(toBalance.count, 1, reason: '转入也算一笔');
+    expect(fromBalance.transferOutCents, 50000);
+    expect(toBalance.transferInCents, 50000);
+
+    // 净资产 = 两端之和，转账不影响合计
+    final net = balances.fold<int>(0, (sum, b) => sum + b.balanceCents);
+    expect(net, 100000 + 20000 - 3850);
+  });
+
+  test('有转账引用的账户不能删除', () async {
+    final from = await accounts.create(name: '招商银行卡');
+    final to = await accounts.create(name: '支付宝');
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 1000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+      ),
+    );
+
+    await expectLater(
+      accounts.delete(to.id),
+      throwsA(isA<AccountInUseException>()),
+      reason: '转入端也算引用',
+    );
+    expect(await accounts.usageCount(to.id), 1);
+  });
 }

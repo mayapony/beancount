@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'dart:io';
 
 import 'package:bean_count/data/db/app_database.dart';
@@ -49,7 +50,7 @@ void main() {
               id: 'tx-bad',
               type: EntryType.expense,
               amountCents: 100,
-              categoryId: 'cat-does-not-exist',
+              categoryId: const Value('cat-does-not-exist'),
               happenedAt: DateTime(2026, 10, 17, 12),
               dedupeKey: 'deadbeef',
             ),

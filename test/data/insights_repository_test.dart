@@ -1,6 +1,7 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
+import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/insights_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
@@ -166,5 +167,44 @@ void main() {
     expect(all.expenseCents, 5000);
     expect(all.trend.first.label, '3月');
     expect(all.trend.first.cents, 3000);
+  });
+
+
+  test('转账不计入支出/收入/分类占比/趋势', () async {
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    final accountRepo = AccountRepository(db);
+    final from = (await accountRepo.all()).first;
+    final to = await accountRepo.ensure(name: '支付宝');
+    final now = DateTime(2026, 10, 18, 12);
+
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food.id,
+        happenedAt: DateTime(2026, 10, 17, 9),
+        note: '早餐',
+      ),
+    );
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 17, 12),
+        note: '转账',
+      ),
+    );
+
+    final result = await insights.load(period: InsightsPeriod.month, now: now);
+    expect(result.expenseCents, 3850, reason: '转账不算支出');
+    expect(result.incomeCents, 0);
+    expect(
+      result.categories.fold<int>(0, (sum, c) => sum + c.cents),
+      3850,
+      reason: '分类占比里没有转账',
+    );
+    expect(result.trend.fold<int>(0, (sum, p) => sum + p.cents), 3850);
   });
 }

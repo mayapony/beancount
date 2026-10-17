@@ -121,7 +121,7 @@ void main() {
 
     // 库里也是新值
     final stored = await repo.byId(created.transactionId);
-    expect(stored!.category.name, '交通');
+    expect(stored!.category?.name, '交通');
     expect(stored.amountCents, 3850);
   });
 

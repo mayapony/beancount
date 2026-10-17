@@ -7,6 +7,7 @@ import 'package:bean_count/data/dedupe.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
+import 'package:bean_count/data/repositories/ledger_filter.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -530,7 +531,7 @@ void main() {
     expect(row, isNotNull);
     expect(row!.amountCents, 4500);
     expect(row.isIncome, isTrue);
-    expect(row.category.name, '工资');
+    expect(row.category?.name, '工资');
     expect(row.account?.id, account.id);
     expect(row.transaction.note, '退款');
     expect(row.transaction.happenedAt, DateTime(2026, 10, 18, 8, 15));
@@ -561,7 +562,7 @@ void main() {
     final row = await repo.byId(created.transactionId);
     expect(row, isNotNull);
     expect(row!.amountCents, 3850);
-    expect(row.category.name, '餐饮');
+    expect(row.category?.name, '餐饮');
     expect(row.isIncome, isFalse);
 
     expect(await repo.byId('tx-不存在'), isNull);
@@ -635,5 +636,199 @@ void main() {
       note: '聚餐',
     );
     expect(c, isNot(a));
+  });
+
+
+  test('转账：写入成功、无需分类、两端账户都记下来', () async {
+    final accounts = await AccountRepository(db).all();
+    final from = accounts.first;
+    final to = await AccountRepository(db).ensure(name: '支付宝');
+
+    final result = await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+    expect(result.inserted, isTrue);
+
+    final row = await repo.byId(result.transactionId);
+    expect(row!.isTransfer, isTrue);
+    expect(row.category, isNull);
+    expect(row.account?.id, from.id);
+    expect(row.toAccount?.id, to.id);
+    expect(row.amountCents, 50000);
+  });
+
+  test('转账：同账户被拒、缺账户被拒、收支缺分类被拒', () async {
+    final accounts = await AccountRepository(db).all();
+
+    await expectLater(
+      repo.create(
+        NewTransaction(
+          type: EntryType.transfer,
+          amountCents: 100,
+          accountId: accounts.first.id,
+          toAccountId: accounts.first.id,
+          happenedAt: DateTime(2026, 10, 18, 12),
+        ),
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    await expectLater(
+      repo.create(
+        NewTransaction(
+          type: EntryType.transfer,
+          amountCents: 100,
+          accountId: accounts.first.id,
+          happenedAt: DateTime(2026, 10, 18, 12),
+        ),
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    await expectLater(
+      repo.create(
+        NewTransaction(
+          type: EntryType.expense,
+          amountCents: 100,
+          happenedAt: DateTime(2026, 10, 18, 12),
+        ),
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test('转账不计入当天收支小计，但笔数照算', () async {
+    final accounts = await AccountRepository(db).all();
+    final food = await foodId();
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food,
+        happenedAt: DateTime(2026, 10, 18, 9),
+        note: '早餐',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: accounts.first.id,
+        toAccountId: (await AccountRepository(db).ensure(name: '支付宝')).id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '转出',
+      ),
+    );
+
+    final groups = await repo.dayGroups(year: 2026, month: 10);
+    expect(groups, hasLength(1));
+    expect(groups.single.items, hasLength(2));
+    expect(groups.single.expenseCents, 3850, reason: '转账不算支出');
+    expect(groups.single.incomeCents, 0);
+
+    final snapshot = await repo.ledger(year: 2026, month: 10);
+    expect(snapshot.totalCount, 2, reason: '总笔数含转账');
+  });
+
+  test('转账去重键包含转入账户；非转账键与旧公式一致', () {
+    final at = DateTime(2026, 10, 18, 12, 30);
+    final legacy = dedupeKeyFor(happenedAt: at, amountCents: 50000, note: '转出');
+
+    final seconds =
+        DateTime(2026, 10, 18, 12, 30, 0).millisecondsSinceEpoch ~/ 1000;
+    int poly(String source, int multiplier) {
+      var hash = 0x2F1E;
+      for (final unit in source.codeUnits) {
+        hash = (hash * multiplier + unit) % 0x7FFFFFFF;
+      }
+      return hash;
+    }
+
+    final source = '$seconds|50000|转出';
+    final expected = poly(source, 131).toRadixString(16).padLeft(8, '0') +
+        poly(source, 1000003).toRadixString(16).padLeft(8, '0');
+    expect(legacy, expected, reason: '历史键不能因为转账上线而改变');
+
+    final toA = dedupeKeyFor(
+      happenedAt: at,
+      amountCents: 50000,
+      note: '转出',
+      toAccountId: 'acc-a',
+    );
+    final toB = dedupeKeyFor(
+      happenedAt: at,
+      amountCents: 50000,
+      note: '转出',
+      toAccountId: 'acc-b',
+    );
+    expect(toA, isNot(legacy));
+    expect(toA, isNot(toB), reason: '转入账户不同就是两笔');
+  });
+
+  test('转账导出：分类为空，转出/转入各占一列', () async {
+    final accounts = await AccountRepository(db).all();
+    final toAccount = await AccountRepository(db).ensure(name: '支付宝');
+    await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: accounts.first.id,
+        toAccountId: toAccount.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+
+    final rows = await repo.exportRows();
+    expect(rows.single.categoryPath, isEmpty);
+    expect(rows.single.accountName, accounts.first.name);
+    expect(rows.single.toAccountName, toAccount.name);
+  });
+
+  test('搜索：只看转账 / 按转入账户名命中', () async {
+    final accounts = await AccountRepository(db).all();
+    final toAccount = await AccountRepository(db).ensure(name: '支付宝');
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1000,
+        categoryId: await foodId(),
+        happenedAt: DateTime(2026, 10, 18, 9),
+        note: '早餐',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: accounts.first.id,
+        toAccountId: toAccount.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+
+    final onlyTransfers = await repo.searchLedger(
+      const LedgerFilter(type: EntryType.transfer),
+      now: DateTime(2026, 10, 18),
+    );
+    expect(onlyTransfers.matchedCount, 1);
+    expect(
+      onlyTransfers.groups.single.items.single.transaction.note,
+      '还信用卡',
+    );
+
+    final byAccount = await repo.searchLedger(
+      LedgerFilter(keyword: toAccount.name),
+      now: DateTime(2026, 10, 18),
+    );
+    expect(byAccount.matchedCount, 1, reason: '关键词要匹配转入账户名');
   });
 }

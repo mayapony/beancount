@@ -154,7 +154,7 @@ void main() {
     expect(submitted?.note, '和家人吃晚饭');
     expect(submitted?.account?.name, '招商银行卡');
     expect(submitted?.account?.id, 'acc-cmb');
-    expect(submitted?.category.id, 'cat-food');
+    expect(submitted?.category?.id, 'cat-food');
     expect(submitted?.isIncome, isFalse);
     expect(
       submitted!.time
@@ -278,7 +278,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(submitted?.amount, 38.5);
-    expect(submitted?.category.id, 'cat-transport');
+    expect(submitted?.category?.id, 'cat-transport');
     expect(submitted?.account?.id, 'acc-cmb');
     expect(submitted?.note, '地铁月卡');
     expect(submitted?.tags, containsAll(<String>['出差', '报销']));

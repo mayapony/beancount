@@ -101,6 +101,8 @@ class InsightsRepository {
     final expenseDays = <DateTime>{};
 
     for (final tx in rows) {
+      // 转账不是收支：它只改变账户余额，不进入任何统计
+      if (tx.type == EntryType.transfer) continue;
       if (tx.type == EntryType.income) {
         income += tx.amountCents;
         continue;
@@ -216,7 +218,7 @@ class InsightsRepository {
     }
 
     for (final tx in rows) {
-      if (tx.type == EntryType.income) continue;
+      if (tx.type != EntryType.expense) continue;
       final key = byMonth
           ? DateTime(tx.happenedAt.year, tx.happenedAt.month)
           : DateTime(tx.happenedAt.year, tx.happenedAt.month, tx.happenedAt.day);

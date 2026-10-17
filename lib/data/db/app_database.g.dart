@@ -1074,9 +1074,9 @@ class $TransactionsTable extends Transactions
       const VerificationMeta('categoryId');
   @override
   late final GeneratedColumn<String> categoryId = GeneratedColumn<String>(
-      'category_id', aliasedName, false,
+      'category_id', aliasedName, true,
       type: DriftSqlType.string,
-      requiredDuringInsert: true,
+      requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('REFERENCES categories (id)'));
   static const VerificationMeta _accountIdMeta =
@@ -1084,6 +1084,15 @@ class $TransactionsTable extends Transactions
   @override
   late final GeneratedColumn<String> accountId = GeneratedColumn<String>(
       'account_id', aliasedName, true,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('REFERENCES accounts (id)'));
+  static const VerificationMeta _toAccountIdMeta =
+      const VerificationMeta('toAccountId');
+  @override
+  late final GeneratedColumn<String> toAccountId = GeneratedColumn<String>(
+      'to_account_id', aliasedName, true,
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultConstraints:
@@ -1131,6 +1140,7 @@ class $TransactionsTable extends Transactions
         amountCents,
         categoryId,
         accountId,
+        toAccountId,
         note,
         happenedAt,
         dedupeKey,
@@ -1165,12 +1175,16 @@ class $TransactionsTable extends Transactions
           _categoryIdMeta,
           categoryId.isAcceptableOrUnknown(
               data['category_id']!, _categoryIdMeta));
-    } else if (isInserting) {
-      context.missing(_categoryIdMeta);
     }
     if (data.containsKey('account_id')) {
       context.handle(_accountIdMeta,
           accountId.isAcceptableOrUnknown(data['account_id']!, _accountIdMeta));
+    }
+    if (data.containsKey('to_account_id')) {
+      context.handle(
+          _toAccountIdMeta,
+          toAccountId.isAcceptableOrUnknown(
+              data['to_account_id']!, _toAccountIdMeta));
     }
     if (data.containsKey('note')) {
       context.handle(
@@ -1211,9 +1225,11 @@ class $TransactionsTable extends Transactions
       amountCents: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}amount_cents'])!,
       categoryId: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}category_id'])!,
+          .read(DriftSqlType.string, data['${effectivePrefix}category_id']),
       accountId: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}account_id']),
+      toAccountId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}to_account_id']),
       note: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}note'])!,
       happenedAt: attachedDatabase.typeMapping
@@ -1243,8 +1259,11 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   final String id;
   final EntryType type;
   final int amountCents;
-  final String categoryId;
+  final String? categoryId;
   final String? accountId;
+
+  /// 转入账户：仅 `type == transfer` 时非空。
+  final String? toAccountId;
 
   /// 规范化后的备注（trim 过、空串而不是 null），参与去重键计算。
   final String note;
@@ -1256,8 +1275,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       {required this.id,
       required this.type,
       required this.amountCents,
-      required this.categoryId,
+      this.categoryId,
       this.accountId,
+      this.toAccountId,
       required this.note,
       required this.happenedAt,
       required this.dedupeKey,
@@ -1272,9 +1292,14 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           Variable<String>($TransactionsTable.$convertertype.toSql(type));
     }
     map['amount_cents'] = Variable<int>(amountCents);
-    map['category_id'] = Variable<String>(categoryId);
+    if (!nullToAbsent || categoryId != null) {
+      map['category_id'] = Variable<String>(categoryId);
+    }
     if (!nullToAbsent || accountId != null) {
       map['account_id'] = Variable<String>(accountId);
+    }
+    if (!nullToAbsent || toAccountId != null) {
+      map['to_account_id'] = Variable<String>(toAccountId);
     }
     map['note'] = Variable<String>(note);
     map['happened_at'] = Variable<DateTime>(happenedAt);
@@ -1292,10 +1317,15 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       id: Value(id),
       type: Value(type),
       amountCents: Value(amountCents),
-      categoryId: Value(categoryId),
+      categoryId: categoryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(categoryId),
       accountId: accountId == null && nullToAbsent
           ? const Value.absent()
           : Value(accountId),
+      toAccountId: toAccountId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(toAccountId),
       note: Value(note),
       happenedAt: Value(happenedAt),
       dedupeKey: Value(dedupeKey),
@@ -1312,8 +1342,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       type: $TransactionsTable.$convertertype
           .fromJson(serializer.fromJson<String>(json['type'])),
       amountCents: serializer.fromJson<int>(json['amountCents']),
-      categoryId: serializer.fromJson<String>(json['categoryId']),
+      categoryId: serializer.fromJson<String?>(json['categoryId']),
       accountId: serializer.fromJson<String?>(json['accountId']),
+      toAccountId: serializer.fromJson<String?>(json['toAccountId']),
       note: serializer.fromJson<String>(json['note']),
       happenedAt: serializer.fromJson<DateTime>(json['happenedAt']),
       dedupeKey: serializer.fromJson<String>(json['dedupeKey']),
@@ -1330,8 +1361,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       'type': serializer
           .toJson<String>($TransactionsTable.$convertertype.toJson(type)),
       'amountCents': serializer.toJson<int>(amountCents),
-      'categoryId': serializer.toJson<String>(categoryId),
+      'categoryId': serializer.toJson<String?>(categoryId),
       'accountId': serializer.toJson<String?>(accountId),
+      'toAccountId': serializer.toJson<String?>(toAccountId),
       'note': serializer.toJson<String>(note),
       'happenedAt': serializer.toJson<DateTime>(happenedAt),
       'dedupeKey': serializer.toJson<String>(dedupeKey),
@@ -1345,8 +1377,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           {String? id,
           EntryType? type,
           int? amountCents,
-          String? categoryId,
+          Value<String?> categoryId = const Value.absent(),
           Value<String?> accountId = const Value.absent(),
+          Value<String?> toAccountId = const Value.absent(),
           String? note,
           DateTime? happenedAt,
           String? dedupeKey,
@@ -1356,8 +1389,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         id: id ?? this.id,
         type: type ?? this.type,
         amountCents: amountCents ?? this.amountCents,
-        categoryId: categoryId ?? this.categoryId,
+        categoryId: categoryId.present ? categoryId.value : this.categoryId,
         accountId: accountId.present ? accountId.value : this.accountId,
+        toAccountId: toAccountId.present ? toAccountId.value : this.toAccountId,
         note: note ?? this.note,
         happenedAt: happenedAt ?? this.happenedAt,
         dedupeKey: dedupeKey ?? this.dedupeKey,
@@ -1373,6 +1407,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       categoryId:
           data.categoryId.present ? data.categoryId.value : this.categoryId,
       accountId: data.accountId.present ? data.accountId.value : this.accountId,
+      toAccountId:
+          data.toAccountId.present ? data.toAccountId.value : this.toAccountId,
       note: data.note.present ? data.note.value : this.note,
       happenedAt:
           data.happenedAt.present ? data.happenedAt.value : this.happenedAt,
@@ -1390,6 +1426,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('amountCents: $amountCents, ')
           ..write('categoryId: $categoryId, ')
           ..write('accountId: $accountId, ')
+          ..write('toAccountId: $toAccountId, ')
           ..write('note: $note, ')
           ..write('happenedAt: $happenedAt, ')
           ..write('dedupeKey: $dedupeKey, ')
@@ -1401,7 +1438,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
 
   @override
   int get hashCode => Object.hash(id, type, amountCents, categoryId, accountId,
-      note, happenedAt, dedupeKey, source, createdAt);
+      toAccountId, note, happenedAt, dedupeKey, source, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1411,6 +1448,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.amountCents == this.amountCents &&
           other.categoryId == this.categoryId &&
           other.accountId == this.accountId &&
+          other.toAccountId == this.toAccountId &&
           other.note == this.note &&
           other.happenedAt == this.happenedAt &&
           other.dedupeKey == this.dedupeKey &&
@@ -1422,8 +1460,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String> id;
   final Value<EntryType> type;
   final Value<int> amountCents;
-  final Value<String> categoryId;
+  final Value<String?> categoryId;
   final Value<String?> accountId;
+  final Value<String?> toAccountId;
   final Value<String> note;
   final Value<DateTime> happenedAt;
   final Value<String> dedupeKey;
@@ -1436,6 +1475,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.amountCents = const Value.absent(),
     this.categoryId = const Value.absent(),
     this.accountId = const Value.absent(),
+    this.toAccountId = const Value.absent(),
     this.note = const Value.absent(),
     this.happenedAt = const Value.absent(),
     this.dedupeKey = const Value.absent(),
@@ -1447,8 +1487,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     required String id,
     required EntryType type,
     required int amountCents,
-    required String categoryId,
+    this.categoryId = const Value.absent(),
     this.accountId = const Value.absent(),
+    this.toAccountId = const Value.absent(),
     this.note = const Value.absent(),
     required DateTime happenedAt,
     required String dedupeKey,
@@ -1458,7 +1499,6 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   })  : id = Value(id),
         type = Value(type),
         amountCents = Value(amountCents),
-        categoryId = Value(categoryId),
         happenedAt = Value(happenedAt),
         dedupeKey = Value(dedupeKey);
   static Insertable<Transaction> custom({
@@ -1467,6 +1507,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<int>? amountCents,
     Expression<String>? categoryId,
     Expression<String>? accountId,
+    Expression<String>? toAccountId,
     Expression<String>? note,
     Expression<DateTime>? happenedAt,
     Expression<String>? dedupeKey,
@@ -1480,6 +1521,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (amountCents != null) 'amount_cents': amountCents,
       if (categoryId != null) 'category_id': categoryId,
       if (accountId != null) 'account_id': accountId,
+      if (toAccountId != null) 'to_account_id': toAccountId,
       if (note != null) 'note': note,
       if (happenedAt != null) 'happened_at': happenedAt,
       if (dedupeKey != null) 'dedupe_key': dedupeKey,
@@ -1493,8 +1535,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       {Value<String>? id,
       Value<EntryType>? type,
       Value<int>? amountCents,
-      Value<String>? categoryId,
+      Value<String?>? categoryId,
       Value<String?>? accountId,
+      Value<String?>? toAccountId,
       Value<String>? note,
       Value<DateTime>? happenedAt,
       Value<String>? dedupeKey,
@@ -1507,6 +1550,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       amountCents: amountCents ?? this.amountCents,
       categoryId: categoryId ?? this.categoryId,
       accountId: accountId ?? this.accountId,
+      toAccountId: toAccountId ?? this.toAccountId,
       note: note ?? this.note,
       happenedAt: happenedAt ?? this.happenedAt,
       dedupeKey: dedupeKey ?? this.dedupeKey,
@@ -1534,6 +1578,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     }
     if (accountId.present) {
       map['account_id'] = Variable<String>(accountId.value);
+    }
+    if (toAccountId.present) {
+      map['to_account_id'] = Variable<String>(toAccountId.value);
     }
     if (note.present) {
       map['note'] = Variable<String>(note.value);
@@ -1565,6 +1612,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('amountCents: $amountCents, ')
           ..write('categoryId: $categoryId, ')
           ..write('accountId: $accountId, ')
+          ..write('toAccountId: $toAccountId, ')
           ..write('note: $note, ')
           ..write('happenedAt: $happenedAt, ')
           ..write('dedupeKey: $dedupeKey, ')
@@ -2851,26 +2899,6 @@ typedef $$AccountsTableUpdateCompanionBuilder = AccountsCompanion Function({
   Value<int> rowid,
 });
 
-final class $$AccountsTableReferences
-    extends BaseReferences<_$AppDatabase, $AccountsTable, Account> {
-  $$AccountsTableReferences(super.$_db, super.$_table, super.$_typedResult);
-
-  static MultiTypedResultKey<$TransactionsTable, List<Transaction>>
-      _transactionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
-          db.transactions,
-          aliasName:
-              $_aliasNameGenerator(db.accounts.id, db.transactions.accountId));
-
-  $$TransactionsTableProcessedTableManager get transactionsRefs {
-    final manager = $$TransactionsTableTableManager($_db, $_db.transactions)
-        .filter((f) => f.accountId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(_transactionsRefsTable($_db));
-    return ProcessedTableManager(
-        manager.$state.copyWith(prefetchedData: cache));
-  }
-}
-
 class $$AccountsTableFilterComposer
     extends Composer<_$AppDatabase, $AccountsTable> {
   $$AccountsTableFilterComposer({
@@ -2900,27 +2928,6 @@ class $$AccountsTableFilterComposer
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
-
-  Expression<bool> transactionsRefs(
-      Expression<bool> Function($$TransactionsTableFilterComposer f) f) {
-    final $$TransactionsTableFilterComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.transactions,
-        getReferencedColumn: (t) => t.accountId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$TransactionsTableFilterComposer(
-              $db: $db,
-              $table: $db.transactions,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
 }
 
 class $$AccountsTableOrderingComposer
@@ -2978,27 +2985,6 @@ class $$AccountsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  Expression<T> transactionsRefs<T extends Object>(
-      Expression<T> Function($$TransactionsTableAnnotationComposer a) f) {
-    final $$TransactionsTableAnnotationComposer composer = $composerBuilder(
-        composer: this,
-        getCurrentColumn: (t) => t.id,
-        referencedTable: $db.transactions,
-        getReferencedColumn: (t) => t.accountId,
-        builder: (joinBuilder,
-                {$addJoinBuilderToRootComposer,
-                $removeJoinBuilderFromRootComposer}) =>
-            $$TransactionsTableAnnotationComposer(
-              $db: $db,
-              $table: $db.transactions,
-              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-              joinBuilder: joinBuilder,
-              $removeJoinBuilderFromRootComposer:
-                  $removeJoinBuilderFromRootComposer,
-            ));
-    return f(composer);
-  }
 }
 
 class $$AccountsTableTableManager extends RootTableManager<
@@ -3010,9 +2996,9 @@ class $$AccountsTableTableManager extends RootTableManager<
     $$AccountsTableAnnotationComposer,
     $$AccountsTableCreateCompanionBuilder,
     $$AccountsTableUpdateCompanionBuilder,
-    (Account, $$AccountsTableReferences),
+    (Account, BaseReferences<_$AppDatabase, $AccountsTable, Account>),
     Account,
-    PrefetchHooks Function({bool transactionsRefs})> {
+    PrefetchHooks Function()> {
   $$AccountsTableTableManager(_$AppDatabase db, $AccountsTable table)
       : super(TableManagerState(
           db: db,
@@ -3060,33 +3046,9 @@ class $$AccountsTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) =>
-                  (e.readTable(table), $$AccountsTableReferences(db, table, e)))
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({transactionsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (transactionsRefs) db.transactions],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (transactionsRefs)
-                    await $_getPrefetchedData<Account, $AccountsTable,
-                            Transaction>(
-                        currentTable: table,
-                        referencedTable: $$AccountsTableReferences
-                            ._transactionsRefsTable(db),
-                        managerFromTypedResult: (p0) =>
-                            $$AccountsTableReferences(db, table, p0)
-                                .transactionsRefs,
-                        referencedItemsForCurrentItem:
-                            (item, referencedItems) => referencedItems
-                                .where((e) => e.accountId == item.id),
-                        typedResults: items)
-                ];
-              },
-            );
-          },
+          prefetchHooksCallback: null,
         ));
 }
 
@@ -3099,9 +3061,9 @@ typedef $$AccountsTableProcessedTableManager = ProcessedTableManager<
     $$AccountsTableAnnotationComposer,
     $$AccountsTableCreateCompanionBuilder,
     $$AccountsTableUpdateCompanionBuilder,
-    (Account, $$AccountsTableReferences),
+    (Account, BaseReferences<_$AppDatabase, $AccountsTable, Account>),
     Account,
-    PrefetchHooks Function({bool transactionsRefs})>;
+    PrefetchHooks Function()>;
 typedef $$TagsTableCreateCompanionBuilder = TagsCompanion Function({
   required String id,
   required String name,
@@ -3344,8 +3306,9 @@ typedef $$TransactionsTableCreateCompanionBuilder = TransactionsCompanion
   required String id,
   required EntryType type,
   required int amountCents,
-  required String categoryId,
+  Value<String?> categoryId,
   Value<String?> accountId,
+  Value<String?> toAccountId,
   Value<String> note,
   required DateTime happenedAt,
   required String dedupeKey,
@@ -3358,8 +3321,9 @@ typedef $$TransactionsTableUpdateCompanionBuilder = TransactionsCompanion
   Value<String> id,
   Value<EntryType> type,
   Value<int> amountCents,
-  Value<String> categoryId,
+  Value<String?> categoryId,
   Value<String?> accountId,
+  Value<String?> toAccountId,
   Value<String> note,
   Value<DateTime> happenedAt,
   Value<String> dedupeKey,
@@ -3376,9 +3340,9 @@ final class $$TransactionsTableReferences
       db.categories.createAlias(
           $_aliasNameGenerator(db.transactions.categoryId, db.categories.id));
 
-  $$CategoriesTableProcessedTableManager get categoryId {
-    final $_column = $_itemColumn<String>('category_id')!;
-
+  $$CategoriesTableProcessedTableManager? get categoryId {
+    final $_column = $_itemColumn<String>('category_id');
+    if ($_column == null) return null;
     final manager = $$CategoriesTableTableManager($_db, $_db.categories)
         .filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
@@ -3397,6 +3361,21 @@ final class $$TransactionsTableReferences
     final manager = $$AccountsTableTableManager($_db, $_db.accounts)
         .filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_accountIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $AccountsTable _toAccountIdTable(_$AppDatabase db) =>
+      db.accounts.createAlias(
+          $_aliasNameGenerator(db.transactions.toAccountId, db.accounts.id));
+
+  $$AccountsTableProcessedTableManager? get toAccountId {
+    final $_column = $_itemColumn<String>('to_account_id');
+    if ($_column == null) return null;
+    final manager = $$AccountsTableTableManager($_db, $_db.accounts)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_toAccountIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -3497,6 +3476,26 @@ class $$TransactionsTableFilterComposer
     final $$AccountsTableFilterComposer composer = $composerBuilder(
         composer: this,
         getCurrentColumn: (t) => t.accountId,
+        referencedTable: $db.accounts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableFilterComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$AccountsTableFilterComposer get toAccountId {
+    final $$AccountsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.toAccountId,
         referencedTable: $db.accounts,
         getReferencedColumn: (t) => t.id,
         builder: (joinBuilder,
@@ -3628,6 +3627,26 @@ class $$TransactionsTableOrderingComposer
             ));
     return composer;
   }
+
+  $$AccountsTableOrderingComposer get toAccountId {
+    final $$AccountsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.toAccountId,
+        referencedTable: $db.accounts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableOrderingComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
 }
 
 class $$TransactionsTableAnnotationComposer
@@ -3703,6 +3722,26 @@ class $$TransactionsTableAnnotationComposer
     return composer;
   }
 
+  $$AccountsTableAnnotationComposer get toAccountId {
+    final $$AccountsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.toAccountId,
+        referencedTable: $db.accounts,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$AccountsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.accounts,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
   Expression<T> transactionTagsRefs<T extends Object>(
       Expression<T> Function($$TransactionTagsTableAnnotationComposer a) f) {
     final $$TransactionTagsTableAnnotationComposer composer = $composerBuilder(
@@ -3760,6 +3799,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
     PrefetchHooks Function(
         {bool categoryId,
         bool accountId,
+        bool toAccountId,
         bool transactionTagsRefs,
         bool attachmentsRefs})> {
   $$TransactionsTableTableManager(_$AppDatabase db, $TransactionsTable table)
@@ -3776,8 +3816,9 @@ class $$TransactionsTableTableManager extends RootTableManager<
             Value<String> id = const Value.absent(),
             Value<EntryType> type = const Value.absent(),
             Value<int> amountCents = const Value.absent(),
-            Value<String> categoryId = const Value.absent(),
+            Value<String?> categoryId = const Value.absent(),
             Value<String?> accountId = const Value.absent(),
+            Value<String?> toAccountId = const Value.absent(),
             Value<String> note = const Value.absent(),
             Value<DateTime> happenedAt = const Value.absent(),
             Value<String> dedupeKey = const Value.absent(),
@@ -3791,6 +3832,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             amountCents: amountCents,
             categoryId: categoryId,
             accountId: accountId,
+            toAccountId: toAccountId,
             note: note,
             happenedAt: happenedAt,
             dedupeKey: dedupeKey,
@@ -3802,8 +3844,9 @@ class $$TransactionsTableTableManager extends RootTableManager<
             required String id,
             required EntryType type,
             required int amountCents,
-            required String categoryId,
+            Value<String?> categoryId = const Value.absent(),
             Value<String?> accountId = const Value.absent(),
+            Value<String?> toAccountId = const Value.absent(),
             Value<String> note = const Value.absent(),
             required DateTime happenedAt,
             required String dedupeKey,
@@ -3817,6 +3860,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             amountCents: amountCents,
             categoryId: categoryId,
             accountId: accountId,
+            toAccountId: toAccountId,
             note: note,
             happenedAt: happenedAt,
             dedupeKey: dedupeKey,
@@ -3833,6 +3877,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
           prefetchHooksCallback: (
               {categoryId = false,
               accountId = false,
+              toAccountId = false,
               transactionTagsRefs = false,
               attachmentsRefs = false}) {
             return PrefetchHooks(
@@ -3872,6 +3917,16 @@ class $$TransactionsTableTableManager extends RootTableManager<
                         $$TransactionsTableReferences._accountIdTable(db),
                     referencedColumn:
                         $$TransactionsTableReferences._accountIdTable(db).id,
+                  ) as T;
+                }
+                if (toAccountId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.toAccountId,
+                    referencedTable:
+                        $$TransactionsTableReferences._toAccountIdTable(db),
+                    referencedColumn:
+                        $$TransactionsTableReferences._toAccountIdTable(db).id,
                   ) as T;
                 }
 
@@ -3926,6 +3981,7 @@ typedef $$TransactionsTableProcessedTableManager = ProcessedTableManager<
     PrefetchHooks Function(
         {bool categoryId,
         bool accountId,
+        bool toAccountId,
         bool transactionTagsRefs,
         bool attachmentsRefs})>;
 typedef $$TransactionTagsTableCreateCompanionBuilder = TransactionTagsCompanion

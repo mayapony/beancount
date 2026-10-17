@@ -159,12 +159,16 @@ class _EntryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
     final category = row.category;
-    final note = row.transaction.note.trim();
-    final subtitle = <String>[
-      formatClock(row.transaction.happenedAt),
-      category.name,
-      if (row.account != null) row.account!.name,
-    ].join(' · ');
+    final subtitle = row.isTransfer
+        ? [
+            formatClock(row.transaction.happenedAt),
+            '${row.account?.name ?? '账户'} → ${row.toAccount?.name ?? '账户'}',
+          ].join(' · ')
+        : <String>[
+            formatClock(row.transaction.happenedAt),
+            category?.name ?? '未分类',
+            if (row.account != null) row.account!.name,
+          ].join(' · ');
 
     final thumbName = row.thumbnailFileName;
     final thumbFile =
@@ -180,18 +184,33 @@ class _EntryRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            CategoryAvatar(
-              name: category.name,
-              colorValue: category.color,
-              iconKey: category.icon,
-            ),
+            if (row.isTransfer)
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: palette.neutral.sand,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.swap_horiz_rounded,
+                  size: 20,
+                  color: palette.transfer,
+                ),
+              )
+            else
+              CategoryAvatar(
+                name: category?.name ?? '未分类',
+                colorValue: category?.color ?? 0,
+                iconKey: category?.icon ?? 'more_horiz',
+              ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    note.isEmpty ? category.name : note,
+                    row.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -229,6 +248,8 @@ class _EntryRow extends StatelessWidget {
               isIncome: row.isIncome,
               fontSize: 17,
               fontWeight: FontWeight.w500,
+              showSign: !row.isTransfer,
+              color: row.isTransfer ? palette.transfer : null,
             ),
           ],
         ),

@@ -149,11 +149,14 @@ class _ShellPageState extends State<ShellPage> {
           try {
             final result = await _transactionRepo.create(
               NewTransaction(
-                type: draft.isIncome ? EntryType.income : EntryType.expense,
+                type: draft.isTransfer
+                    ? EntryType.transfer
+                    : (draft.isIncome ? EntryType.income : EntryType.expense),
                 // 金额在面板里是两位小数字符串算出来的 double，这里一次换算成整数分
                 amountCents: (draft.amount * 100).round(),
-                categoryId: draft.category.id,
+                categoryId: draft.isTransfer ? null : draft.category?.id,
                 accountId: draft.account?.id,
+                toAccountId: draft.isTransfer ? draft.toAccount?.id : null,
                 happenedAt: draft.time,
                 note: draft.note,
                 tags: draft.tags,
@@ -166,13 +169,16 @@ class _ShellPageState extends State<ShellPage> {
             return '保存失败，请重试';
           }
 
-          final selection = LastEntrySelection(
-            categoryId: draft.category.id,
-            accountId: draft.account?.id,
-            isIncome: draft.isIncome,
-          );
-          setState(() => _lastSelection = selection);
-          unawaited(_appState.saveSelection(selection));
+          // 转账不参与「上次选择」的记忆（它的分类为空）
+          if (!draft.isTransfer) {
+            final selection = LastEntrySelection(
+              categoryId: draft.category?.id,
+              accountId: draft.account?.id,
+              isIncome: draft.isIncome,
+            );
+            setState(() => _lastSelection = selection);
+            unawaited(_appState.saveSelection(selection));
+          }
           return null;
         },
       ),

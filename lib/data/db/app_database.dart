@@ -56,14 +56,22 @@ class Tags extends Table {
 }
 
 /// 交易：金额一律存整数分；`dedupeKey` 唯一，保证导入幂等。
+///
+/// `categoryId` 可空：转账没有分类。`toAccountId` 只在转账时有值——
+/// 记成「一条记录 + 两端账户」而不是两条腿，统计与删除才只有一处逻辑。
 @TableIndex(name: 'idx_transactions_happened_at', columns: {#happenedAt})
 @TableIndex(name: 'idx_transactions_category', columns: {#categoryId})
 class Transactions extends Table {
   TextColumn get id => text()();
   TextColumn get type => textEnum<EntryType>()();
   IntColumn get amountCents => integer()();
-  TextColumn get categoryId => text().references(Categories, #id)();
+  TextColumn get categoryId =>
+      text().nullable().references(Categories, #id)();
   TextColumn get accountId =>
+      text().nullable().references(Accounts, #id)();
+
+  /// 转入账户：仅 `type == transfer` 时非空。
+  TextColumn get toAccountId =>
       text().nullable().references(Accounts, #id)();
 
   /// 规范化后的备注（trim 过、空串而不是 null），参与去重键计算。
@@ -132,7 +140,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -143,7 +151,24 @@ class AppDatabase extends _$AppDatabase {
           await seedDefaults(this);
         },
         onUpgrade: (m, from, to) async {
-          // 目前只有 v1；后续升级必须以迁移步进的形式追加，禁止清表。
+          if (from < 2) {
+            // v2：转账。分类放宽为可空 + 新增转入账户，SQLite 只能重建表。
+            await m.alterTable(
+              TableMigration(
+                transactions,
+                newColumns: [transactions.toAccountId],
+              ),
+            );
+            // 重建表后把索引补回来（drift 的 creating 只重建表本身）
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_happened_at '
+              'ON transactions (happened_at)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_transactions_category '
+              'ON transactions (category_id)',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');

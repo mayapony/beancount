@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
@@ -68,7 +69,7 @@ void main() {
             id: 'tx-1',
             type: EntryType.expense,
             amountCents: 3850,
-            categoryId: food!.id,
+            categoryId: Value(food!.id),
             happenedAt: DateTime(2026, 10, 17, 12, 30),
             dedupeKey: 'k1',
           ),

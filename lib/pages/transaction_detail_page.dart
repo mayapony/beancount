@@ -87,8 +87,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     final draft = QuickEntryDraft(
       amount: transaction.amountCents / 100,
       isIncome: _row.isIncome,
+      isTransfer: _row.isTransfer,
       category: _row.category,
       account: _row.account,
+      toAccount: _row.toAccount,
       time: transaction.happenedAt,
       note: transaction.note,
       tags: _tags,
@@ -107,11 +109,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             await widget.repository.update(
               transaction.id,
               TransactionEdit(
-                type: input.isIncome ? EntryType.income : EntryType.expense,
+                type: input.isTransfer
+                    ? EntryType.transfer
+                    : (input.isIncome ? EntryType.income : EntryType.expense),
                 amountCents: (input.amount * 100).round(),
-                categoryId: input.category.id,
+                categoryId: input.isTransfer ? null : input.category?.id,
                 happenedAt: input.time,
                 accountId: input.account?.id,
+                toAccountId: input.isTransfer ? input.toAccount?.id : null,
                 note: input.note,
                 tags: input.tags,
               ),
@@ -139,7 +144,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除这笔？'),
-        content: Text('${_row.category.name}  $amount\n删除后无法恢复，关联的图片也会一并清理。'),
+        content: Text('${_row.title}  $amount\n删除后无法恢复，关联的图片也会一并清理。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -197,23 +202,39 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                _DetailRow(
-                  label: '分类',
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CategoryAvatar(
-                        name: category.name,
-                        colorValue: category.color,
-                        iconKey: category.icon,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(category.name, style: _valueStyle),
-                    ],
+                if (category != null)
+                  _DetailRow(
+                    label: '分类',
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CategoryAvatar(
+                          name: category.name,
+                          colorValue: category.color,
+                          iconKey: category.icon,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(category.name, style: _valueStyle),
+                      ],
+                    ),
                   ),
-                ),
-                if (account != null)
+                if (_row.isTransfer) ...[
+                  _DetailRow(
+                    label: '从',
+                    child: Text(
+                      _row.account?.name ?? '账户',
+                      style: _valueStyle,
+                    ),
+                  ),
+                  _DetailRow(
+                    label: '到',
+                    child: Text(
+                      _row.toAccount?.name ?? '账户',
+                      style: _valueStyle,
+                    ),
+                  ),
+                ] else if (account != null)
                   _DetailRow(
                     label: '账户',
                     child: Text(account.name, style: _valueStyle),
@@ -330,23 +351,47 @@ class _AmountHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
     final category = row.category;
     return Column(
       children: [
-        CategoryAvatar(
-          name: category.name,
-          colorValue: category.color,
-          iconKey: category.icon,
-          size: 56,
-        ),
+        if (row.isTransfer)
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: palette.neutral.sand,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.swap_horiz_rounded,
+              size: 28,
+              color: palette.transfer,
+            ),
+          )
+        else
+          CategoryAvatar(
+            name: category?.name ?? '未分类',
+            colorValue: category?.color ?? 0,
+            iconKey: category?.icon ?? 'more_horiz',
+            size: 56,
+          ),
         const SizedBox(height: 12),
         AmountText(
           row.amountCents / 100,
           isIncome: row.isIncome,
           fontSize: 34,
           fontWeight: FontWeight.w600,
-          showSign: true,
+          showSign: !row.isTransfer,
+          color: row.isTransfer ? palette.transfer : null,
         ),
+        if (row.isTransfer) ...[
+          const SizedBox(height: 4),
+          Text(
+            '${row.account?.name ?? '账户'} → ${row.toAccount?.name ?? '账户'}',
+            style: TextStyle(fontSize: 13, color: palette.textSecondary),
+          ),
+        ],
       ],
     );
   }

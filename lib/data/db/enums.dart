@@ -5,7 +5,10 @@
 library;
 
 /// 一笔交易的收支方向。
-enum EntryType { expense, income }
+///
+/// `transfer` 是账户之间的资金移动：没有分类，两端账户都必填，
+/// 且不计入收入/支出统计。
+enum EntryType { expense, income, transfer }
 
 /// 分类所属的收支类型（与 [EntryType] 同形，但语义上独立：
 /// 分类的归属不会因为交易方向扩展而变化）。
