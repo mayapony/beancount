@@ -469,4 +469,28 @@ void main() {
     expect(find.text('带图的一笔'), findsOneWidget);
     expect(find.text('没图的一笔'), findsOneWidget);
   });
+
+  testWidgets('转账行显示「A → B」与不带符号的金额', (tester) async {
+    final from = (await accounts.all()).first;
+    final to = await accounts.ensure(name: '支付宝');
+    await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime.now(),
+        note: '还信用卡',
+      ),
+    );
+
+    await pumpPage(tester);
+
+    expect(find.text('还信用卡'), findsOneWidget);
+    expect(find.textContaining('${from.name} → ${to.name}'), findsOneWidget);
+    expect(find.text('500.00'), findsOneWidget);
+    expect(find.text('-500.00'), findsNothing);
+    // 概览：转账不算支出
+    expect(find.text('-0.00'), findsWidgets);
+  });
 }

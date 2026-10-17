@@ -165,4 +165,37 @@ void main() {
 
     expect(find.byType(TransactionDetailPage), findsOneWidget);
   });
+
+  testWidgets('类型筛选「转账」只列出转账', (tester) async {
+    final from = (await accounts.all()).first;
+    final to = await accounts.ensure(name: '支付宝');
+    final food = (await categories.findByName('餐饮', CategoryType.expense))!;
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food.id,
+        happenedAt: DateTime.now(),
+        note: '牛肉面',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime.now(),
+        note: '还信用卡',
+      ),
+    );
+
+    await pumpSearch(tester);
+    await tester.tap(find.text('转账'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('命中 1 笔'), findsOneWidget);
+    expect(find.text('还信用卡'), findsOneWidget);
+    expect(find.text('牛肉面'), findsNothing);
+  });
 }

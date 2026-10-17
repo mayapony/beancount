@@ -352,4 +352,63 @@ void main() {
     expect(find.text('收入'), findsOneWidget);
     expect(find.byType(BeanCard), findsWidgets);
   });
+
+  testWidgets('转账详情：显示从/到、无分类行、金额不带符号', (tester) async {
+    final from = (await accounts.all()).first;
+    final to = await accounts.ensure(name: '支付宝');
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+
+    await pumpDetail(tester, created.transactionId);
+
+    expect(find.text('从'), findsOneWidget);
+    expect(find.text('到'), findsOneWidget);
+    expect(find.text(from.name), findsWidgets);
+    expect(find.text(to.name), findsWidgets);
+    expect(find.text('分类'), findsNothing);
+    expect(find.text('500.00'), findsOneWidget);
+    expect(find.text('-500.00'), findsNothing, reason: '转账不带符号');
+    expect(find.textContaining('→'), findsWidgets);
+  });
+
+  testWidgets('删除转账后两端余额还原', (tester) async {
+    final from = (await accounts.all()).first;
+    final to = await accounts.ensure(name: '支付宝');
+    // 记账前的基准余额
+    final baseline = await accounts.withBalances();
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: from.id,
+        toAccountId: to.id,
+        happenedAt: DateTime(2026, 10, 18, 12),
+        note: '还信用卡',
+      ),
+    );
+
+    await pumpDetail(tester, created.transactionId);
+    await tester.tap(find.text('删除这笔'));
+    await pumpFrames(tester);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(await repo.byId(created.transactionId), isNull);
+    final after = await accounts.withBalances();
+    for (final id in [from.id, to.id]) {
+      expect(
+        after.firstWhere((b) => b.account.id == id).balanceCents,
+        baseline.firstWhere((b) => b.account.id == id).balanceCents,
+        reason: '删除后余额应回到转账前的值',
+      );
+    }
+  });
 }

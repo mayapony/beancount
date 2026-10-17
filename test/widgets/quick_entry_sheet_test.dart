@@ -323,4 +323,67 @@ void main() {
     expect(find.text('0.00'), findsOneWidget);
     expect(find.text('日常钱包'), findsOneWidget);
   });
+
+  testWidgets('转账模式：分类网格消失，出现「从 / 到」两个账户', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('转账'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('从'), findsOneWidget);
+    expect(find.text('到'), findsOneWidget);
+    expect(find.text('餐饮'), findsNothing, reason: '转账没有分类');
+
+    for (final key in ['5', '0', '0']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(submitted, isNotNull);
+    expect(submitted!.isTransfer, isTrue);
+    expect(submitted!.category, isNull);
+    expect(submitted!.account, isNotNull);
+    expect(submitted!.toAccount, isNotNull);
+    expect(
+      submitted!.account!.id,
+      isNot(submitted!.toAccount!.id),
+      reason: '两端不能是同一个账户',
+    );
+    expect(submitted!.amount, 500);
+  });
 }
