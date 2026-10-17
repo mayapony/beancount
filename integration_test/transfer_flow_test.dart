@@ -1,6 +1,5 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
-import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/shell.dart';
