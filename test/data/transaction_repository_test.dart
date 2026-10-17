@@ -182,6 +182,104 @@ void main() {
     expect(groups.last.incomeCents, 500000);
   });
 
+  test('按月查询：跨月边界正确，不吞不溢', () async {
+    final category = await foodId();
+    for (final (time, note) in [
+      (DateTime(2026, 9, 30, 23, 59, 59), '九月末'),
+      (DateTime(2026, 10, 1, 0, 0, 0), '十月一'),
+      (DateTime(2026, 10, 31, 23, 59, 59), '十月末'),
+      (DateTime(2026, 11, 1, 0, 0, 0), '十一月一'),
+    ]) {
+      await repo.create(
+        NewTransaction(
+          type: EntryType.expense,
+          amountCents: 1000,
+          categoryId: category,
+          happenedAt: time,
+          note: note,
+        ),
+      );
+    }
+
+    final october = await repo.dayGroups(year: 2026, month: 10);
+    final notes = [
+      for (final group in october)
+        for (final row in group.items) row.transaction.note,
+    ];
+    expect(notes, unorderedEquals(['十月一', '十月末']));
+  });
+
+  test('按月查询：单月 600 笔不被截断', () async {
+    final category = await foodId();
+    for (var i = 0; i < 600; i++) {
+      final result = await repo.create(
+        NewTransaction(
+          type: EntryType.expense,
+          amountCents: 100 + i,
+          categoryId: category,
+          happenedAt: DateTime(2026, 10, 15, 12),
+          note: '第$i笔',
+        ),
+      );
+      expect(result.inserted, isTrue);
+    }
+
+    final october = await repo.dayGroups(year: 2026, month: 10);
+    expect(october.fold<int>(0, (sum, g) => sum + g.items.length), 600);
+
+    // 不指定月份时仍走 500 条上限（「看全部」类旧调用）
+    final all = await repo.dayGroups();
+    expect(all.fold<int>(0, (sum, g) => sum + g.items.length), 500);
+  });
+
+  test('按月订阅：只发该月数据，新增后自动重发', () async {
+    final category = await foodId();
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1100,
+        categoryId: category,
+        happenedAt: DateTime(2026, 9, 12, 9),
+        note: '九月',
+      ),
+    );
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 2200,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 12, 9),
+        note: '十月',
+      ),
+    );
+
+    final emissions =
+        repo.watchDayGroups(year: 2026, month: 10).take(2).toList();
+    await Future<void>.delayed(Duration.zero);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3300,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 20, 9),
+        note: '十月再来一笔',
+      ),
+    );
+
+    final snapshots = await emissions;
+    int countOf(List<DayGroup> groups) =>
+        groups.fold<int>(0, (sum, g) => sum + g.items.length);
+
+    expect(countOf(snapshots.first), 1, reason: '初次快照只有十月的 1 笔');
+    expect(countOf(snapshots.last), 2, reason: '新增后就地重发，仍是 2 笔十月');
+    expect(
+      snapshots.last
+          .expand((g) => g.items)
+          .every((r) => r.transaction.happenedAt.month == 10),
+      isTrue,
+    );
+  });
+
   test('去重键跨次计算稳定，且时间精确到秒', () {
     final a = dedupeKeyFor(
       happenedAt: DateTime(2026, 10, 17, 12, 30, 0),

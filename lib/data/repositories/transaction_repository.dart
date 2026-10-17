@@ -142,14 +142,32 @@ class TransactionRepository {
 
   /// 按天分组读取（倒序），用于明细页。
   ///
+  /// 给定 `year` + `month` 时只读该自然月（半开区间，避免毫秒精度漏账），
+  /// 且**不施加条数上限**——整月必须完整；不给月份时保留上限，兼容「看全部」的调用。
+  ///
   /// 一次查交易 + 一次查分类 + 一次查账户 + 一次查附件计数，
   /// 分组与求和都在内存里做——单月几百条的量级，比 N+1 次查询划算得多。
-  Future<List<DayGroup>> dayGroups({int limit = 500}) async {
+  Future<List<DayGroup>> dayGroups({
+    int? year,
+    int? month,
+    int limit = 500,
+  }) async {
     final txQuery = _db.select(_db.transactions)
       ..orderBy([
         (t) => OrderingTerm(expression: t.happenedAt, mode: OrderingMode.desc),
-      ])
-      ..limit(limit);
+      ]);
+    if (year != null && month != null) {
+      final start = DateTime(year, month);
+      // DateTime 会把 month=13 规整成次年 1 月，跨年不用特判
+      final end = DateTime(year, month + 1);
+      txQuery.where(
+        (t) =>
+            t.happenedAt.isBiggerOrEqualValue(start) &
+            t.happenedAt.isSmallerThanValue(end),
+      );
+    } else {
+      txQuery.limit(limit);
+    }
     final rows = await txQuery.get();
     if (rows.isEmpty) return const [];
 
@@ -206,11 +224,15 @@ class TransactionRepository {
   ///
   /// 用 `tableUpdates()` 而不是自己维护刷新回调：记账、导入、删附件
   /// 都会经过数据库，页面不需要知道"谁改了数据"。
-  Stream<List<DayGroup>> watchDayGroups({int limit = 500}) async* {
-    yield await dayGroups(limit: limit);
-    yield* _db
-        .tableUpdates()
-        .asyncMap((_) => dayGroups(limit: limit));
+  Stream<List<DayGroup>> watchDayGroups({
+    int? year,
+    int? month,
+    int limit = 500,
+  }) async* {
+    yield await dayGroups(year: year, month: month, limit: limit);
+    yield* _db.tableUpdates().asyncMap(
+          (_) => dayGroups(year: year, month: month, limit: limit),
+        );
   }
 
   /// 全部去重键：导入前用它判断哪些行已经存在。

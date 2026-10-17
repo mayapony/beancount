@@ -2,8 +2,8 @@
 
 ## 1. 数据层：按月查询
 
-- [ ] 1.1 `TransactionRepository.dayGroups` 增加 `year`/`month` 参数，用半开区间查询且月内不设上限；`test/data/transaction_repository_test.dart` 新增「跨月边界」与「单月 600 笔不截断」两条用例并跑绿
-- [ ] 1.2 `watchDayGroups` 透传月份参数，切月后流只发该月数据；用例：写入 9 月与 10 月各一笔，订阅 10 月只收到 1 笔
+- [x] 1.1 `TransactionRepository.dayGroups` 增加 `year`/`month` 参数，用半开区间查询且月内不设上限；`test/data/transaction_repository_test.dart` 新增「跨月边界」与「单月 600 笔不截断」两条用例并跑绿
+- [x] 1.2 `watchDayGroups` 透传月份参数，切月后流只发该月数据；用例：写入 9 月与 10 月各一笔，订阅 10 月只收到 1 笔
 
 ## 2. 数据层：读取单笔与编辑
 
