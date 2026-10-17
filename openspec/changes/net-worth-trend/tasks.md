@@ -16,8 +16,15 @@
 ## 3. 回归
 
 - [x] 3.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 202 + 新增）
-- [ ] 3.2 设备端回归：记两笔账 → 资产页曲线出现 → 切三档点数正确 → 改一笔金额后曲线变化；结果写入 tasks.md
+- [x] 3.2 设备端回归：记两笔账 → 资产页曲线出现 → 切三档点数正确 → 改一笔金额后曲线变化；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**211 通过**（上一轮 202 + 本次 9）
+- 设备端 `integration_test/net_worth_flow_test.dart -d emulator-5554`：通过
+  - 记一笔 5000 收入 + 1200 支出 → 资产页出现折线与「+3,800.00 较 5月」→ 切「全部」仍能画 → 切回近 6 月 → 把支出改成 2000 → 变化额变为「+3,000.00」
+- 说明：「全部时间」从最早一笔所在月开始，只有一个点时变化额恒为 0——这是有意的（没有可比起点），用例里也写明了
 ## Workflow follow-up
 
 - 归档 change：`openspec archive net-worth-trend --yes`
