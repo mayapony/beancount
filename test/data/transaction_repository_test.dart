@@ -236,6 +236,56 @@ void main() {
     expect(all.fold<int>(0, (sum, g) => sum + g.items.length), 500);
   });
 
+  test('delete 回收图片：唯一引用删文件，共享引用保留文件', () async {
+    final dir = await Directory.systemTemp.createTemp('bean_del_files_');
+    addTearDown(() => dir.delete(recursive: true));
+    final attachments = AttachmentRepository(db, directory: dir);
+    await attachments.ensureReady();
+    final repoWithFiles = TransactionRepository(db, attachments: attachments);
+
+    final categoryId = await foodId();
+    Future<CreateResult> make(String note) => repoWithFiles.create(
+          NewTransaction(
+            type: EntryType.expense,
+            amountCents: 1000,
+            categoryId: categoryId,
+            happenedAt: DateTime(2026, 10, 17, 9),
+            note: note,
+          ),
+        );
+
+    final a = await make('共享图 + 独占图');
+    final b = await make('共享图');
+
+    await attachments.add(
+      transactionId: a.transactionId,
+      bytes: const [7, 7, 7],
+      fileName: 'shared.png',
+    );
+    await attachments.add(
+      transactionId: b.transactionId,
+      bytes: const [7, 7, 7],
+      fileName: 'shared.png',
+    );
+    await attachments.add(
+      transactionId: a.transactionId,
+      bytes: const [9, 9, 9],
+      fileName: 'only-a.png',
+    );
+
+    final shared = File('${dir.path}/shared.png');
+    final onlyA = File('${dir.path}/only-a.png');
+    expect(shared.existsSync(), isTrue);
+    expect(onlyA.existsSync(), isTrue);
+
+    await repoWithFiles.delete(a.transactionId);
+    expect(shared.existsSync(), isTrue, reason: '另一笔仍在引用');
+    expect(onlyA.existsSync(), isFalse, reason: '最后一条引用已删除');
+
+    await repoWithFiles.delete(b.transactionId);
+    expect(shared.existsSync(), isFalse, reason: '引用计数归零后回收');
+  });
+
   test('delete 删除交易、标签关联与附件记录', () async {
     final dir = await Directory.systemTemp.createTemp('bean_del_');
     addTearDown(() => dir.delete(recursive: true));

@@ -15,7 +15,7 @@
 ## 3. 数据层：删除
 
 - [x] 3.1 新增 `TransactionRepository.delete(id)`：事务内删交易（标签关联与附件记录随外键级联）；用例：删除后 `byId` 为 null、标签关联为 0、附件记录为 0
-- [ ] 3.2 删除前记录附件文件名，删除后按引用计数回收：唯一引用时文件消失，共享引用时保留；用例同时覆盖两种情形（`test/data/transaction_repository_test.dart` + `attachment_repository_test.dart`）
+- [x] 3.2 删除前记录附件文件名，删除后按引用计数回收：唯一引用时文件消失，共享引用时保留；用例同时覆盖两种情形（`test/data/transaction_repository_test.dart` + `attachment_repository_test.dart`）
 
 ## 4. 明细页：按月浏览
 
