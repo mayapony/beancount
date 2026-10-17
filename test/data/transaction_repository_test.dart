@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/dedupe.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
+import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -231,6 +234,153 @@ void main() {
     // 不指定月份时仍走 500 条上限（「看全部」类旧调用）
     final all = await repo.dayGroups();
     expect(all.fold<int>(0, (sum, g) => sum + g.items.length), 500);
+  });
+
+  test('delete 删除交易、标签关联与附件记录', () async {
+    final dir = await Directory.systemTemp.createTemp('bean_del_');
+    addTearDown(() => dir.delete(recursive: true));
+    final attachments = AttachmentRepository(db, directory: dir);
+    await attachments.ensureReady();
+    final repoWithFiles = TransactionRepository(db, attachments: attachments);
+
+    final created = await repoWithFiles.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: await foodId(),
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '带图',
+        tags: ['出差'],
+      ),
+    );
+    await attachments.add(
+      transactionId: created.transactionId,
+      bytes: const [1, 2, 3],
+      fileName: 'receipt.png',
+    );
+
+    await repoWithFiles.delete(created.transactionId);
+
+    expect(await repoWithFiles.byId(created.transactionId), isNull);
+    expect(
+      await (db.select(db.transactionTags)
+            ..where((t) => t.transactionId.equals(created.transactionId)))
+          .get(),
+      isEmpty,
+    );
+    expect(
+      await (db.select(db.attachments)
+            ..where((t) => t.transactionId.equals(created.transactionId)))
+          .get(),
+      isEmpty,
+    );
+  });
+
+  test('update 撞到另一笔的去重键时被拒绝，两笔都不变', () async {
+    final category = await foodId();
+    final a = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '聚餐',
+      ),
+    );
+    final b = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 17, 12, 31),
+        note: '聚餐',
+      ),
+    );
+
+    await expectLater(
+      repo.update(
+        b.transactionId,
+        TransactionEdit(
+          type: EntryType.expense,
+          amountCents: 3850,
+          categoryId: category,
+          happenedAt: DateTime(2026, 10, 17, 12, 30),
+          note: '聚餐',
+        ),
+      ),
+      throwsA(isA<DuplicateTransactionException>()),
+    );
+
+    final rowB = await repo.byId(b.transactionId);
+    final rowA = await repo.byId(a.transactionId);
+    expect(rowB!.transaction.happenedAt, DateTime(2026, 10, 17, 12, 31));
+    expect(rowB.transaction.note, '聚餐');
+    expect(rowA!.amountCents, 3850);
+    expect(await repo.count(), 2);
+  });
+
+  test('update 改自已的去重键（只动金额/时间/备注）不会误判冲突', () async {
+    final category = await foodId();
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '聚餐',
+      ),
+    );
+
+    await repo.update(
+      created.transactionId,
+      TransactionEdit(
+        type: EntryType.expense,
+        amountCents: 4500,
+        categoryId: category,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '聚餐',
+      ),
+    );
+
+    final row = await repo.byId(created.transactionId);
+    expect(row!.amountCents, 4500);
+    expect(row.transaction.dedupeKey,
+        dedupeKeyFor(
+          happenedAt: DateTime(2026, 10, 17, 12, 30),
+          amountCents: 4500,
+          note: '聚餐',
+        ));
+  });
+
+  test('update 只改分类/账户/标签时去重键不变', () async {
+    final account = (await AccountRepository(db).all()).first;
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: await foodId(),
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '聚餐',
+      ),
+    );
+    final before = (await repo.byId(created.transactionId))!.transaction;
+
+    await repo.update(
+      created.transactionId,
+      TransactionEdit(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: before.categoryId,
+        happenedAt: before.happenedAt,
+        accountId: account.id,
+        note: '聚餐',
+        tags: ['家庭'],
+      ),
+    );
+
+    final after = (await repo.byId(created.transactionId))!.transaction;
+    expect(after.dedupeKey, before.dedupeKey);
+    expect(after.accountId, account.id);
   });
 
   test('update 改写金额/类型/分类/账户/备注/标签', () async {

@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../db/app_database.dart';
 import '../db/enums.dart';
 import '../dedupe.dart';
+import 'attachment_repository.dart';
 
 /// 新建一笔交易需要的全部信息（金额已是整数分）。
 class NewTransaction {
@@ -110,9 +111,13 @@ class TransactionRow {
 
 /// 交易仓储：写库、去重、按天读取。
 class TransactionRepository {
-  TransactionRepository(this._db);
+  TransactionRepository(this._db, {AttachmentRepository? attachments})
+      : _attachments = attachments;
 
   final AppDatabase _db;
+
+  /// 删除交易时用它回收图片；为空时只删数据库记录（文件留给孤儿清理）。
+  final AttachmentRepository? _attachments;
 
   /// 新建交易。
   ///
@@ -269,7 +274,9 @@ class TransactionRepository {
 
   /// 编辑一笔交易：更新字段并重建标签关联（同名标签复用，旧关联整体替换）。
   ///
-  /// 附件不在这里处理——图片的增删是独立能力，编辑只改交易自身的字段。
+  /// 金额/时间/备注变化时按新值重算去重键；若与**另一笔**撞键则抛
+  /// [DuplicateTransactionException]，原记录一字不动。附件不在这里处理——
+  /// 图片的增删是独立能力，编辑只改交易自身的字段。
   Future<void> update(String id, TransactionEdit input) async {
     if (input.amountCents <= 0) {
       throw ArgumentError.value(input.amountCents, 'amountCents', '金额必须大于 0');
@@ -277,6 +284,25 @@ class TransactionRepository {
     final note = input.note.trim();
 
     await _db.transaction(() async {
+      final current = await (_db.select(_db.transactions)
+            ..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+      if (current == null) {
+        throw ArgumentError.value(id, 'id', '交易不存在');
+      }
+
+      final dedupeKey = dedupeKeyFor(
+        happenedAt: input.happenedAt,
+        amountCents: input.amountCents,
+        note: note,
+      );
+      final sameKey = await (_db.select(_db.transactions)
+            ..where((t) => t.dedupeKey.equals(dedupeKey)))
+          .getSingleOrNull();
+      if (sameKey != null && sameKey.id != id) {
+        throw DuplicateTransactionException(sameKey.id);
+      }
+
       await (_db.update(_db.transactions)..where((t) => t.id.equals(id))).write(
         TransactionsCompanion(
           type: Value(input.type),
@@ -285,6 +311,7 @@ class TransactionRepository {
           accountId: Value(input.accountId),
           note: Value(note),
           happenedAt: Value(input.happenedAt),
+          dedupeKey: Value(dedupeKey),
         ),
       );
 
@@ -303,6 +330,16 @@ class TransactionRepository {
               mode: InsertMode.insertOrIgnore,
             );
       }
+    });
+  }
+
+  /// 删除一笔交易：标签关联与附件记录随外键级联消失，
+  /// 图片文件按引用计数回收（仍被别的交易引用则保留）。
+  Future<void> delete(String id) async {
+    await _db.transaction(() async {
+      // 必须在删交易之前回收：级联删掉附件记录后就读不到文件名了
+      await _attachments?.removeForTransaction(id);
+      await (_db.delete(_db.transactions)..where((t) => t.id.equals(id))).go();
     });
   }
 
