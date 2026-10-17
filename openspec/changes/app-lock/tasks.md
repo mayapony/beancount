@@ -25,8 +25,18 @@
 ## 5. 回归
 
 - [x] 5.1 `flutter analyze` 干净、`flutter test` 全绿（不低于 211 + 新增）
-- [ ] 5.2 设备端回归：设置 PIN → 冷启动出现锁屏 → 错误 PIN 被拒 → 正确 PIN 进入 → 关闭后不再拦截；结果写入 tasks.md
+- [x] 5.2 设备端回归：设置 PIN → 冷启动出现锁屏 → 错误 PIN 被拒 → 正确 PIN 进入 → 关闭后不再拦截；结果写入 tasks.md
 
+## 验证记录（2026-10-18）
+
+- `flutter analyze`：No issues found
+- `flutter test`：**229 通过**（上一轮 211 + 本次 18）
+- 设备端 `integration_test/lock_flow_test.dart -d emulator-5554`：通过
+  - 设置 PIN 后挂载闸门 → 锁屏拦住入口（看不到「明细」）→ 输错提示「PIN 不正确」→ 输对进入账本 → 关闭应用锁后重新挂载不再拦截
+- 安全取舍（写在 design 里，也在这里记一笔）：
+  - PIN 只存「随机盐 + SHA-256×10000 摘要」，库里没有明文；但 4 位 PIN 空间只有 1 万，真正的防线是**迭代成本 + 5 次错误锁 30 秒**，不是散列强度
+  - 应用锁拦的是"别人随手打开"，不是"拿到数据库文件的人"；数据库文件加密（SQLCipher）是另一个量级，未做
+  - 忘记 PIN 无找回路径：本地无账号，只能重装（设置页已明示）
 ## Workflow follow-up
 
 - 归档 change：`openspec archive app-lock --yes`
