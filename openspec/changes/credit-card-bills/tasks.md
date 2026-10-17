@@ -2,9 +2,9 @@
 
 ## 1. 数据与仓储
 
-- [ ] 1.1 accounts 加 `billingDay` / `dueDay`（可空），`schemaVersion = 4` + 迁移；`test/data/db_migration_test.dart` 用例：v1→v4 与 v3→v4 都能开、老数据不变
-- [ ] 1.2 `AccountRepository` 透传两列；`create/update` 校验 1–28（越界抛 ArgumentError）；用例：保存后可读回、越界被拒、非信用卡不影响
-- [ ] 1.3 `dueReminders({now})`：只取信用卡+有还款日+有欠款，算下次还款日与天数，按天数升序；`test/data/card_due_test.dart` 用例：本月未到/今天/本月已过跨月、已还清不出现、多卡排序
+- [x] 1.1 accounts 加 `billingDay` / `dueDay`（可空），`schemaVersion = 4` + 迁移；`test/data/db_migration_test.dart` 用例：v1→v4 与 v3→v4 都能开、老数据不变
+- [x] 1.2 `AccountRepository` 透传两列；`create/update` 校验 1–28（越界抛 ArgumentError）；用例：保存后可读回、越界被拒、非信用卡不影响
+- [x] 1.3 `dueReminders({now})`：只取信用卡+有还款日+有欠款，算下次还款日与天数，按天数升序；`test/data/card_due_test.dart` 用例：本月未到/今天/本月已过跨月、已还清不出现、多卡排序
 
 ## 2. 界面
 

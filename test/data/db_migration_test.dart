@@ -126,7 +126,7 @@ void main() {
     );
   }
 
-  test('v1 库一路升到 v3：历史数据不变、索引还在、能写转账', () async {
+  test('v1 库一路升到 v4：历史数据不变、索引还在、能写转账', () async {
     final file = File('${tmp.path}/v1.sqlite');
     final executor = NativeDatabase(
       file,
@@ -162,7 +162,7 @@ void main() {
 
     // 版本号推进到 2
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 3);
+    expect(version.data.values.first, 4);
 
     // 迁移后能写转账：分类为空、两端账户俱在
     await db.into(db.transactions).insert(
@@ -198,6 +198,15 @@ void main() {
     expect(names, contains('to_account_id'));
     expect(names, contains('category_id'));
 
+    // v4：账户上多了账单日 / 还款日
+    final accountColumns = await db.customSelect(
+      "SELECT name FROM pragma_table_info('accounts')",
+    ).get();
+    final accountNames =
+        accountColumns.map((r) => r.read<String>('name')).toSet();
+    expect(accountNames, contains('billing_day'));
+    expect(accountNames, contains('due_day'));
+
     // 新表也直接建好
     final recurring = await db.customSelect(
       "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -206,7 +215,7 @@ void main() {
     expect(recurring, hasLength(1));
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 3);
+    expect(version.data.values.first, 4);
     await db.close();
   });
 }

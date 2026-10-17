@@ -34,6 +34,29 @@ class AccountBalance {
       transferInCents;
 }
 
+/// 一张信用卡的还款提醒。
+class CardDue {
+  const CardDue({
+    required this.account,
+    required this.dueDate,
+    required this.owedCents,
+    required this.daysLeft,
+  });
+
+  final Account account;
+  final DateTime dueDate;
+
+  /// 应还金额（正数）。
+  final int owedCents;
+
+  /// 距还款日的天数：0 表示今天，负数表示已逾期。
+  final int daysLeft;
+
+  bool get isToday => daysLeft == 0;
+  bool get isOverdue => daysLeft < 0;
+  bool get isUrgent => daysLeft <= 3;
+}
+
 /// 账户被交易引用时抛出：删除会被拒绝，并告诉调用方有多少笔。
 class AccountInUseException implements Exception {
   AccountInUseException(this.accountId, this.count);
@@ -184,9 +207,13 @@ class AccountRepository {
     required String name,
     AccountType type = AccountType.wallet,
     int initialBalanceCents = 0,
+    int? billingDay,
+    int? dueDay,
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', '账户名不能为空');
+    _checkDay(billingDay, 'billingDay');
+    _checkDay(dueDay, 'dueDay');
     await _ensureNameFree(trimmed);
 
     final maxOrder = await _db
@@ -199,6 +226,8 @@ class AccountRepository {
             name: trimmed,
             type: Value(type),
             initialBalanceCents: Value(initialBalanceCents),
+            billingDay: Value(billingDay),
+            dueDay: Value(dueDay),
             sortOrder: Value(maxOrder.read<int>('m') + 1),
           ),
         );
@@ -211,7 +240,13 @@ class AccountRepository {
     String? name,
     AccountType? type,
     int? initialBalanceCents,
+    int? billingDay,
+    bool clearBillingDay = false,
+    int? dueDay,
+    bool clearDueDay = false,
   }) async {
+    _checkDay(billingDay, 'billingDay');
+    _checkDay(dueDay, 'dueDay');
     final trimmed = name?.trim();
     if (trimmed != null) {
       if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', '账户名不能为空');
@@ -228,8 +263,59 @@ class AccountRepository {
         initialBalanceCents: initialBalanceCents == null
             ? const Value.absent()
             : Value(initialBalanceCents),
+        billingDay: clearBillingDay
+            ? const Value(null)
+            : (billingDay == null ? const Value.absent() : Value(billingDay)),
+        dueDay: clearDueDay
+            ? const Value(null)
+            : (dueDay == null ? const Value.absent() : Value(dueDay)),
       ),
     );
+  }
+
+  /// 日号只允许 1–28：避开大小月与 2 月的漂移。
+  static void _checkDay(int? day, String field) {
+    if (day == null) return;
+    if (day < 1 || day > 28) {
+      throw ArgumentError.value(day, field, '日期只能是 1–28');
+    }
+  }
+
+  /// 还款提醒：只算「信用卡 + 设了还款日 + 有欠款」的账户。
+  ///
+  /// 顺序按剩余天数升序（同一天再按应还金额降序），最急的排最前。
+  Future<List<CardDue>> dueReminders({DateTime? now}) async {
+    final reference = now ?? DateTime.now();
+    final today = DateTime(reference.year, reference.month, reference.day);
+    final balances = await withBalances();
+
+    final result = <CardDue>[];
+    for (final item in balances) {
+      final dueDay = item.account.dueDay;
+      if (item.account.type != AccountType.credit || dueDay == null) continue;
+      if (item.balanceCents >= 0) continue; // 已还清或多还，不提醒
+
+      var due = DateTime(today.year, today.month, dueDay);
+      if (due.isBefore(today)) {
+        // DateTime 会把 month = 13 规整成次年 1 月，跨年不用特判
+        due = DateTime(today.year, today.month + 1, dueDay);
+      }
+      result.add(
+        CardDue(
+          account: item.account,
+          dueDate: due,
+          owedCents: -item.balanceCents,
+          daysLeft: due.difference(today).inDays,
+        ),
+      );
+    }
+
+    result.sort((a, b) {
+      final byDays = a.daysLeft.compareTo(b.daysLeft);
+      if (byDays != 0) return byDays;
+      return b.owedCents.compareTo(a.owedCents);
+    });
+    return result;
   }
 
   /// 删除账户：被交易引用时拒绝，避免出现"交易指向不存在账户"的记录。

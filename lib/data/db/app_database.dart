@@ -38,6 +38,11 @@ class Accounts extends Table {
   IntColumn get initialBalanceCents =>
       integer().withDefault(const Constant(0))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// 信用卡账单日 / 还款日（1–28）。只对 `type == credit` 有意义；
+  /// 限定到 28 是为了避开大小月与 2 月的漂移——提醒不需要精确到 31 号。
+  IntColumn get billingDay => integer().nullable()();
+  IntColumn get dueDay => integer().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
@@ -178,7 +183,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -226,6 +231,15 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_transactions_category '
               'ON transactions (category_id)',
+            );
+          }
+          if (from < 4) {
+            // v4：信用卡的账单日 / 还款日（可空，老数据不动）
+            await m.alterTable(
+              TableMigration(
+                accounts,
+                newColumns: [accounts.billingDay, accounts.dueDay],
+              ),
             );
           }
         },
