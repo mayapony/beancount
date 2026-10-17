@@ -46,7 +46,8 @@ class _ShellPageState extends State<ShellPage> {
   late final CategoryRepository _categoryRepo = CategoryRepository(_db);
   late final AccountRepository _accountRepo = AccountRepository(_db);
   late final AppStateRepository _appState = AppStateRepository(_db);
-  late final TransactionRepository _transactionRepo = TransactionRepository(_db);
+  late final TransactionRepository _transactionRepo =
+      TransactionRepository(_db, attachments: _attachmentRepo);
   late final InsightsRepository _insightsRepo = InsightsRepository(_db);
   late final AttachmentRepository _attachmentRepo =
       widget.attachmentRepository ?? AttachmentRepository(_db);
@@ -62,6 +63,8 @@ class _ShellPageState extends State<ShellPage> {
     TransactionsPage(
       repository: _transactionRepo,
       attachments: _attachmentRepo,
+      categories: _categoryRepo,
+      accounts: _accountRepo,
     ),
     InsightsPage(repository: _insightsRepo),
     AssetsPage(repository: _accountRepo),

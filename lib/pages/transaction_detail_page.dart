@@ -75,7 +75,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     if (_images.isEmpty) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AttachmentViewerPage(files: _images, initialIndex: index),
+        builder: (_) =>
+            AttachmentViewerPage(files: _images, initialIndex: index),
       ),
     );
   }

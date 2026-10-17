@@ -155,9 +155,8 @@ class _MonthCell extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 15,
-              fontWeight: selected || isThisMonth
-                  ? FontWeight.w600
-                  : FontWeight.w400,
+              fontWeight:
+                  selected || isThisMonth ? FontWeight.w600 : FontWeight.w400,
               color: selected
                   ? Theme.of(context).colorScheme.onPrimary
                   : Theme.of(context).colorScheme.onSurface,

@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../data/db/app_database.dart';
+import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
+import '../data/repositories/category_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
@@ -11,6 +14,7 @@ import '../utils/month.dart';
 import '../widgets/common.dart';
 import '../widgets/month_picker_sheet.dart';
 import 'attachment_viewer_page.dart';
+import 'transaction_detail_page.dart';
 
 /// 明细页：按天分组的交易列表，数据来自本地库（写入后自动刷新）。
 ///
@@ -20,6 +24,8 @@ class TransactionsPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.attachments,
+    this.categories,
+    this.accounts,
     this.initialMonth,
   });
 
@@ -27,6 +33,10 @@ class TransactionsPage extends StatefulWidget {
 
   /// 附件仓储：用来把库里的文件名还原成磁盘路径，画 32×32 缩略图。
   final AttachmentRepository? attachments;
+
+  /// 分类与账户仓储：进详情页编辑时需要完整的候选列表；为空时详情页只读。
+  final CategoryRepository? categories;
+  final AccountRepository? accounts;
 
   /// 初始浏览月份（测试与深链用）；为空时落在当前自然月。
   final LedgerMonth? initialMonth;
@@ -70,6 +80,28 @@ class _TransactionsPageState extends State<TransactionsPage> {
     });
   }
 
+  /// 打开一笔的详情；编辑面板要的候选分类/账户在这里现取，避免列表变旧。
+  Future<void> _openRow(TransactionRow row) async {
+    final categoryList = widget.categories == null
+        ? const <Category>[]
+        : await widget.categories!.allCategories();
+    final accountList = widget.accounts == null
+        ? const <AccountBalance>[]
+        : await widget.accounts!.withBalances();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TransactionDetailPage(
+          row: row,
+          repository: widget.repository,
+          attachments: widget.attachments,
+          categories: categoryList,
+          accounts: accountList,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<LedgerSnapshot>(
@@ -101,7 +133,9 @@ class _TransactionsPageState extends State<TransactionsPage> {
           groups: data.groups,
           attachments: widget.attachments,
           onPickMonth: _showMonth,
-          onSwipeMonth: (delta) => _showMonth(delta > 0 ? _month.next : _month.previous),
+          onOpenRow: _openRow,
+          onSwipeMonth: (delta) =>
+              _showMonth(delta > 0 ? _month.next : _month.previous),
         );
       },
     );
@@ -150,11 +184,13 @@ class _EmptyLedger extends StatelessWidget {
   }
 }
 
-class _Ledger extends StatelessWidget {  const _Ledger({
+class _Ledger extends StatelessWidget {
+  const _Ledger({
     required this.month,
     required this.groups,
     this.attachments,
     required this.onPickMonth,
+    required this.onOpenRow,
     required this.onSwipeMonth,
   });
 
@@ -162,6 +198,9 @@ class _Ledger extends StatelessWidget {  const _Ledger({
   final List<DayGroup> groups;
   final AttachmentRepository? attachments;
   final ValueChanged<LedgerMonth> onPickMonth;
+
+  /// 点一行进入详情。
+  final ValueChanged<TransactionRow> onOpenRow;
 
   /// 左右滑动切月：+1 下个月，-1 上个月。
   final ValueChanged<int> onSwipeMonth;
@@ -198,103 +237,106 @@ class _Ledger extends StatelessWidget {  const _Ledger({
         child: ListView(
           padding: const EdgeInsets.only(bottom: 120),
           children: [
-          // 没有「明细」标题：月份就是标题，底部 tab 已经说明这是哪一页
-          BeanLargeTitle(
-            title: month.title,
-            subtitle: '${month.year}年 · ${expenseCount + incomeCount} 笔收支',
-            actions: [
-              BeanCircleAction(
-                icon: Icons.calendar_month_rounded,
-                tooltip: '切换月份',
-                onTap: () async {
-                  final picked = await MonthPickerSheet.show(
-                    context,
-                    current: month,
-                  );
-                  if (picked != null) onPickMonth(picked);
-                },
-              ),
-            ],
-          ),
+            // 没有「明细」标题：月份就是标题，底部 tab 已经说明这是哪一页
+            BeanLargeTitle(
+              title: month.title,
+              subtitle: '${month.year}年 · ${expenseCount + incomeCount} 笔收支',
+              actions: [
+                BeanCircleAction(
+                  icon: Icons.calendar_month_rounded,
+                  tooltip: '切换月份',
+                  onTap: () async {
+                    final picked = await MonthPickerSheet.show(
+                      context,
+                      current: month,
+                    );
+                    if (picked != null) onPickMonth(picked);
+                  },
+                ),
+              ],
+            ),
 
-          // ── 本月概览 ──────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
-            child: BeanCard(
+            // ── 本月概览 ──────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: BeanCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _Metric(
+                        label: '支出',
+                        child: AmountText(totalExpense / 100, fontSize: 17),
+                      ),
+                    ),
+                    _divider(palette),
+                    Expanded(
+                      child: _Metric(
+                        label: '收入',
+                        child: AmountText(
+                          totalIncome / 100,
+                          isIncome: true,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                    _divider(palette),
+                    Expanded(
+                      child: _Metric(
+                        label: '结余',
+                        child: AmountText(
+                          (totalIncome - totalExpense) / 100,
+                          showSign: false,
+                          fontSize: 17,
+                          color: BeanColors.goldDeep,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 一行细信息：日均 + 笔数（不加卡片，保持轻盈）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                BeanSpace.page,
+                10,
+                BeanSpace.page,
+                0,
+              ),
               child: Row(
                 children: [
-                  Expanded(
-                    child: _Metric(
-                      label: '支出',
-                      child: AmountText(totalExpense / 100, fontSize: 17),
+                  Icon(
+                    Icons.insights_rounded,
+                    size: 14,
+                    color: palette.textSecondary,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '日均支出 ${formatMoney(dailyAvg)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: palette.textSecondary,
                     ),
                   ),
-                  _divider(palette),
-                  Expanded(
-                    child: _Metric(
-                      label: '收入',
-                      child: AmountText(
-                        totalIncome / 100,
-                        isIncome: true,
-                        fontSize: 17,
-                      ),
-                    ),
-                  ),
-                  _divider(palette),
-                  Expanded(
-                    child: _Metric(
-                      label: '结余',
-                      child: AmountText(
-                        (totalIncome - totalExpense) / 100,
-                        showSign: false,
-                        fontSize: 17,
-                        color: BeanColors.goldDeep,
-                      ),
+                  const Spacer(),
+                  Text(
+                    '$expenseCount 笔支出 · $incomeCount 笔收入',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: palette.textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
 
-          // 一行细信息：日均 + 笔数（不加卡片，保持轻盈）
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              BeanSpace.page,
-              10,
-              BeanSpace.page,
-              0,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.insights_rounded,
-                  size: 14,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '日均支出 ${formatMoney(dailyAvg)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.textSecondary,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '$expenseCount 笔支出 · $incomeCount 笔收入',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: BeanSpace.section),
-          ...groups.map((group) => _DaySection(
-                group: group, attachments: attachments)),
+            const SizedBox(height: BeanSpace.section),
+            ...groups.map((group) => _DaySection(
+                  group: group,
+                  attachments: attachments,
+                  onOpenRow: onOpenRow,
+                )),
           ],
         ),
       ),
@@ -309,10 +351,15 @@ class _Ledger extends StatelessWidget {  const _Ledger({
 }
 
 class _DaySection extends StatelessWidget {
-  const _DaySection({required this.group, this.attachments});
+  const _DaySection({
+    required this.group,
+    this.attachments,
+    required this.onOpenRow,
+  });
 
   final DayGroup group;
   final AttachmentRepository? attachments;
+  final ValueChanged<TransactionRow> onOpenRow;
 
   @override
   Widget build(BuildContext context) {
@@ -358,7 +405,11 @@ class _DaySection extends StatelessWidget {
               child: Column(
                 children: [
                   for (var i = 0; i < group.items.length; i++) ...[
-                    _EntryRow(row: group.items[i], attachments: attachments),
+                    _EntryRow(
+                      row: group.items[i],
+                      attachments: attachments,
+                      onTap: () => onOpenRow(group.items[i]),
+                    ),
                     if (i != group.items.length - 1)
                       Divider(
                         height: BeanSpace.hairline,
@@ -401,10 +452,13 @@ class _Metric extends StatelessWidget {
 }
 
 class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.row, this.attachments});
+  const _EntryRow({required this.row, this.attachments, required this.onTap});
 
   final TransactionRow row;
   final AttachmentRepository? attachments;
+
+  /// 点整行进详情；缩略图有自己的热区，点了先被它吃掉。
+  final VoidCallback onTap;
 
   Future<void> _openAttachments(BuildContext context) async {
     final repo = attachments;
@@ -441,67 +495,71 @@ class _EntryRow extends StatelessWidget {
     ].join(' · ');
 
     final thumbName = row.thumbnailFileName;
-    final thumbFile = thumbName == null ? null : attachments?.fileFor(thumbName);
+    final thumbFile =
+        thumbName == null ? null : attachments?.fileFor(thumbName);
 
-    return Padding(
+    return InkWell(
+      onTap: onTap,
       // 行高 56：iOS 列表的节奏，比原来的 64 更紧凑但留白更多
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 11,
-      ),
-      child: Row(
-        children: [
-          CategoryAvatar(
-            name: category.name,
-            colorValue: category.color,
-            iconKey: category.icon,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  note.isEmpty ? category.name : note,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    height: 1.25,
-                    letterSpacing: -0.2,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.2,
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 11,
+        ),
+        child: Row(
+          children: [
+            CategoryAvatar(
+              name: category.name,
+              colorValue: category.color,
+              iconKey: category.icon,
             ),
-          ),
-          const SizedBox(width: 8),
-          // 有图才占位：没图的交易不留空白
-          if (thumbName != null) ...[
-            _AttachmentThumb(
-              file: thumbFile,
-              onTap: () => _openAttachments(context),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    note.isEmpty ? category.name : note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      height: 1.25,
+                      letterSpacing: -0.2,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.2,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 8),
+            // 有图才占位：没图的交易不留空白
+            if (thumbName != null) ...[
+              _AttachmentThumb(
+                file: thumbFile,
+                onTap: () => _openAttachments(context),
+              ),
+              const SizedBox(width: 8),
+            ],
+            AmountText(
+              row.amountCents / 100,
+              isIncome: row.isIncome,
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+            ),
           ],
-          AmountText(
-            row.amountCents / 100,
-            isIncome: row.isIncome,
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -530,8 +588,7 @@ class _AttachmentThumb extends StatelessWidget {
                   file!,
                   fit: BoxFit.cover,
                   cacheWidth: 96,
-                  errorBuilder: (_, __, ___) =>
-                      _placeholder(palette),
+                  errorBuilder: (_, __, ___) => _placeholder(palette),
                 )
               : _placeholder(palette),
         ),

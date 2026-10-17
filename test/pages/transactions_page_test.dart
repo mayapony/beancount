@@ -1,9 +1,12 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
+import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
+import 'package:bean_count/pages/attachment_viewer_page.dart';
+import 'package:bean_count/pages/transaction_detail_page.dart';
 import 'package:bean_count/pages/transactions_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/utils/month.dart';
@@ -18,6 +21,7 @@ void main() {
   late AppDatabase db;
   late TransactionRepository repo;
   late CategoryRepository categories;
+  late AccountRepository accounts;
   late Directory tmp;
   late AttachmentRepository attachments;
 
@@ -25,6 +29,7 @@ void main() {
     db = AppDatabase(openInMemoryConnection());
     repo = TransactionRepository(db);
     categories = CategoryRepository(db);
+    accounts = AccountRepository(db);
     tmp = await Directory.systemTemp.createTemp('bean_page_attachments');
     attachments = AttachmentRepository(db, directory: tmp);
     await db.select(db.transactions).get(); // 建库 + 种子
@@ -43,6 +48,8 @@ void main() {
           body: TransactionsPage(
             repository: repo,
             attachments: attachments,
+            categories: categories,
+            accounts: accounts,
             initialMonth: month,
           ),
         ),
@@ -294,6 +301,77 @@ void main() {
     await tester.fling(find.byType(ListView), const Offset(320, 0), 1200);
     await tester.pumpAndSettle();
     expect(find.text('当月那笔'), findsOneWidget);
+  });
+
+  /// 有多步真实异步（DB / 文件）时 pumpAndSettle 等不到，手动多推几帧。
+  Future<void> pumpFrames(WidgetTester tester) async {
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+  }
+
+  testWidgets('点一行进入详情页', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '牛肉面',
+      ),
+    );
+
+    await pumpPage(tester);
+    await tester.tap(find.text('牛肉面'));
+    await pumpFrames(tester);
+
+    expect(find.byType(TransactionDetailPage), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TransactionDetailPage),
+        matching: find.text('-38.50'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('点缩略图走图片查看，不进详情页', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    final withImage = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '牛肉面',
+      ),
+    );
+    await tester.runAsync(() async {
+      await attachments.ensureReady();
+      await attachments.add(
+        transactionId: withImage.transactionId,
+        bytes: Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
+        fileName: 'thumb.png',
+      );
+    });
+
+    await pumpPage(tester);
+    await tester.tap(find.byType(Image));
+    await pumpFrames(tester);
+
+    expect(find.byType(TransactionDetailPage), findsNothing);
+    expect(find.byType(AttachmentViewerPage), findsOneWidget);
   });
 
   testWidgets('有附件显示缩略图，没有附件不占位', (tester) async {
