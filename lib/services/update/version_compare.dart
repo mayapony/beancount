@@ -24,6 +24,12 @@ List<int>? parseVersion(String raw) {
   return numbers;
 }
 
+/// 把 tag 规范化为 versionName：`v1.2.3` → `1.2.3`；非法返回 null。
+String? normalizeVersion(String raw) {
+  final parts = parseVersion(raw);
+  return parts?.join('.');
+}
+
 /// 比较两个版本号：a < b 返回负数，相等返回 0，a > b 返回正数。
 ///
 /// 任一边非法时按「不可比较」处理，返回 0；调用方不要把非法版本当成新版本。
