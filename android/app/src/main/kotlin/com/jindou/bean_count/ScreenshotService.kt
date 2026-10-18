@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
@@ -61,8 +62,8 @@ class ScreenshotService : Service() {
         }
         flutterEngine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint(
+                FlutterInjector.instance().flutterLoader().findAppBundlePath(),
                 "screenshotEntry",
-                "package:bean_count/screenshot_entry.dart",
             ),
         )
         val methodChannel =

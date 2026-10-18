@@ -8,12 +8,19 @@ import 'data/repositories/app_state_repository.dart';
 import 'data/repositories/lock_repository.dart';
 import 'data/repositories/theme_repository.dart';
 import 'pages/shell.dart';
+// 后台识别入口（headless engine 用）。入口函数必须声明在 root library（main.dart）里，
+// 否则 DartEntrypoint 在 debug 的 kernel 里解析不到它。
+import 'screenshot_entry.dart' as background;
 import 'services/update/app_version.dart';
 import 'services/update/update_controller.dart';
 import 'services/update/update_services.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 import 'widgets/lock_gate.dart';
+
+/// 后台识别入口：由 `ScreenshotService` 的 headless engine 调用。
+@pragma('vm:entry-point')
+void screenshotEntry() => background.screenshotEntry();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
