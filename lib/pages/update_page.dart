@@ -329,10 +329,20 @@ class _StatusCard extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (isPermission)
-          FilledButton(
-            key: const ValueKey('update-permission'),
-            onPressed: controller.openInstallSettings,
-            child: const Text('去设置'),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FilledButton(
+                key: const ValueKey('update-permission'),
+                onPressed: controller.openInstallSettings,
+                child: const Text('去设置'),
+              ),
+              TextButton(
+                key: const ValueKey('update-permission-retry'),
+                onPressed: controller.install,
+                child: const Text('已授权，重试'),
+              ),
+            ],
           )
         else if (isInstallBlocked)
           Wrap(

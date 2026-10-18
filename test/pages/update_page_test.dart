@@ -106,4 +106,23 @@ void main() {
     expect(find.textContaining('未知应用'), findsOneWidget);
     expect(ctx.installer.installCalls, 0);
   });
+
+  testWidgets('授权后点「已授权，重试」继续安装', (tester) async {
+    await ctx.makeAvailable();
+    ctx.installer.canInstallValue = false;
+    await pump(tester);
+
+    await tester.tap(find.byKey(const ValueKey('update-download')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('update-install')));
+    await tester.pumpAndSettle();
+
+    ctx.installer.canInstallValue = true;
+    await tester.tap(find.byKey(const ValueKey('update-permission-retry')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(ctx.installer.installCalls, 1);
+    expect(find.textContaining('正在打开系统安装器'), findsOneWidget);
+  });
 }
