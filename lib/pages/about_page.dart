@@ -97,6 +97,7 @@ class _AboutPageState extends State<AboutPage> {
   bool _canCheck(UpdateController controller) =>
       controller.phase != UpdatePhase.checking &&
       controller.phase != UpdatePhase.downloading &&
+      controller.phase != UpdatePhase.requestingPermission &&
       controller.phase != UpdatePhase.installing;
 
   String _statusText(UpdateController controller) {
@@ -108,10 +109,10 @@ class _AboutPageState extends State<AboutPage> {
         release == null ? '发现新版本' : '发现 v${release.version}',
       UpdatePhase.downloading => '正在下载…',
       UpdatePhase.ready => '下载完成，等待安装',
+      UpdatePhase.requestingPermission => '等待安装权限',
       UpdatePhase.installing => '等待系统安装器',
       UpdatePhase.failed => controller.failure?.message ?? '检查失败',
-      UpdatePhase.idle =>
-        controller.lastCheckedAt == null ? '还没检查过' : '点击检查',
+      UpdatePhase.idle => controller.lastCheckedAt == null ? '还没检查过' : '点击检查',
     };
   }
 
@@ -344,7 +345,8 @@ class _AboutPageState extends State<AboutPage> {
                   trailing: Text(
                     _version?.fullLabel ?? '读取中…',
                     key: const ValueKey('about-version'),
-                    style: TextStyle(fontSize: 15, color: palette.textSecondary),
+                    style:
+                        TextStyle(fontSize: 15, color: palette.textSecondary),
                   ),
                 ),
               ],

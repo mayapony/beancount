@@ -92,7 +92,7 @@ void main() {
     expect(ctx.installer.installCalls, 0);
   });
 
-  testWidgets('未授权未知来源时给出「去设置」', (tester) async {
+  testWidgets('未授权时先自动打开设置，等待授权而不是尝试安装', (tester) async {
     await ctx.makeAvailable();
     ctx.installer.canInstallValue = false;
     await pump(tester);
@@ -102,12 +102,18 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('update-install')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('update-permission')), findsOneWidget);
-    expect(find.textContaining('未知应用'), findsOneWidget);
+    expect(ctx.installer.openedSettings, isTrue);
+    expect(
+        find.byKey(const ValueKey('update-permission-open')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('update-permission-continue')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('请允许金豆安装未知应用'), findsOneWidget);
     expect(ctx.installer.installCalls, 0);
   });
 
-  testWidgets('授权后点「已授权，重试」继续安装', (tester) async {
+  testWidgets('从授权页返回且已授权时自动继续安装', (tester) async {
     await ctx.makeAvailable();
     ctx.installer.canInstallValue = false;
     await pump(tester);
@@ -118,11 +124,32 @@ void main() {
     await tester.pumpAndSettle();
 
     ctx.installer.canInstallValue = true;
-    await tester.tap(find.byKey(const ValueKey('update-permission-retry')));
+    await ctx.controller.onAppResumed();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(ctx.installer.installCalls, 1);
     expect(find.textContaining('正在打开系统安装器'), findsOneWidget);
+  });
+
+  testWidgets('授权页返回但未授权时给出「去设置」和重试', (tester) async {
+    await ctx.makeAvailable();
+    ctx.installer.canInstallValue = false;
+    await pump(tester);
+
+    await tester.tap(find.byKey(const ValueKey('update-download')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('update-install')));
+    await tester.pumpAndSettle();
+
+    await ctx.controller.onAppResumed();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('update-permission')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('update-permission-retry')),
+      findsOneWidget,
+    );
+    expect(ctx.installer.installCalls, 0);
   });
 }

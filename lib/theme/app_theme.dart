@@ -177,6 +177,8 @@ ThemeData buildBeanTheme(Brightness brightness) {
     bottomAppBarTheme: BottomAppBarTheme(color: surface, elevation: 0),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
+      // 底栏中间的金豆向上探出 31px；上移 40px 让 SnackBar 不被加号挡到。
+      insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 48),
       backgroundColor: onSurface,
       contentTextStyle: TextStyle(color: bg, fontSize: 14),
       shape: RoundedRectangleBorder(

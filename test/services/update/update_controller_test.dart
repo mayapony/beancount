@@ -59,8 +59,7 @@ class _FakeDownloader implements ApkDownloader {
 
 class _FakeInstaller implements ApkInstaller {
   bool canInstallValue = true;
-  ApkPreflight preflightResult =
-      const ApkPreflight(ok: true, reason: 'ok');
+  ApkPreflight preflightResult = const ApkPreflight(ok: true, reason: 'ok');
   UpdateFailure? installError;
   int preflightCalls = 0;
   int installCalls = 0;
@@ -282,11 +281,31 @@ void main() {
     expect(controller.downloadPath, isNull);
   });
 
-  test('没有安装未知应用权限时不调用系统安装器', () async {
+  test('没有安装未知应用权限时先打开设置，授权返回后自动安装', () async {
     installer.canInstallValue = false;
     final controller = await withUpdate();
     await controller.download();
     await controller.install();
+
+    expect(controller.phase, UpdatePhase.requestingPermission);
+    expect(installer.openedSettings, isTrue);
+    expect(installer.installCalls, 0);
+
+    installer.canInstallValue = true;
+    await controller.onAppResumed();
+
+    expect(controller.phase, UpdatePhase.installing);
+    expect(installer.installCalls, 1);
+  });
+
+  test('授权页返回但未授权时进入 permission failed', () async {
+    installer.canInstallValue = false;
+    final controller = await withUpdate();
+    await controller.download();
+    await controller.install();
+    expect(controller.phase, UpdatePhase.requestingPermission);
+
+    await controller.onAppResumed();
 
     expect(controller.phase, UpdatePhase.failed);
     expect(controller.failure?.kind, UpdateFailureKind.permission);

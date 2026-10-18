@@ -267,6 +267,53 @@ class _StatusCard extends StatelessWidget {
             ),
           ],
         );
+      case UpdatePhase.requestingPermission:
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.app_settings_alt_rounded,
+                  size: 20,
+                  color: BeanColors.goldDeep,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '请允许金豆安装未知应用',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '已打开系统设置。授权后返回金豆会自动继续安装；如果设置页没有弹出，点下面的按钮。',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: palette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton(
+                  key: const ValueKey('update-permission-open'),
+                  onPressed: controller.openInstallSettings,
+                  child: const Text('打开设置'),
+                ),
+                TextButton(
+                  key: const ValueKey('update-permission-continue'),
+                  onPressed: controller.install,
+                  child: const Text('已授权，继续'),
+                ),
+              ],
+            ),
+          ],
+        );
       case UpdatePhase.installing:
         content = Row(
           children: [

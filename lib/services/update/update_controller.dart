@@ -16,6 +16,7 @@ enum UpdatePhase {
   available,
   downloading,
   ready,
+  requestingPermission,
   installing,
   failed,
 }
@@ -59,6 +60,7 @@ class UpdateController extends ChangeNotifier {
   bool _checking = false;
   CancelToken? _cancelToken;
   String? _installingVersion;
+  bool _awaitingPermission = false;
 
   UpdatePhase get phase => _phase;
   UpdateRelease? get release => _release;
@@ -80,6 +82,7 @@ class UpdateController extends ChangeNotifier {
   bool get isBusy =>
       _phase == UpdatePhase.checking ||
       _phase == UpdatePhase.downloading ||
+      _phase == UpdatePhase.requestingPermission ||
       _phase == UpdatePhase.installing;
 
   /// 启动时读取偏好、处理上次安装结果并清理缓存；可重复调用。
@@ -182,7 +185,8 @@ class UpdateController extends ChangeNotifier {
       // 版本号，会把「有新版本」误判成「已是最新」。
       await _preferences.setEtag(null);
 
-      if (!manual && !await _preferences.shouldPrompt(release.version, _now())) {
+      if (!manual &&
+          !await _preferences.shouldPrompt(release.version, _now())) {
         _phase = UpdatePhase.upToDate;
         notifyListeners();
         return null;
@@ -305,16 +309,13 @@ class UpdateController extends ChangeNotifier {
     }
 
     try {
+      // 先要权限，失败再装：未授权时直接打开系统设置，返回授权后自动继续。
       if (!await _installer.canInstall()) {
-        _failure = const UpdateFailure(
-          UpdateFailureKind.permission,
-          '需要允许金豆安装未知应用',
-        );
-        _phase = UpdatePhase.failed;
-        notifyListeners();
+        await openInstallSettings();
         return;
       }
 
+      _awaitingPermission = false;
       final preflight = await _installer.preflight(
         path,
         expectedVersion: release.version,
@@ -345,10 +346,35 @@ class UpdateController extends ChangeNotifier {
     }
   }
 
-  Future<void> openInstallSettings() => _installer.openInstallSettings();
+  /// 打开系统「安装未知应用」设置；返回授权后由 [onAppResumed] 自动继续。
+  Future<void> openInstallSettings() async {
+    _awaitingPermission = true;
+    _failure = null;
+    _phase = UpdatePhase.requestingPermission;
+    notifyListeners();
+    await _installer.openInstallSettings();
+  }
 
-  /// 从系统安装器返回后调用：版本变了才算成功，否则不假装更新成功。
+  /// 从系统安装器 / 权限设置返回后调用。
   Future<void> onAppResumed() async {
+    if (_awaitingPermission) {
+      final allowed = await _installer.canInstall();
+      if (allowed) {
+        _awaitingPermission = false;
+        _phase = UpdatePhase.ready;
+        notifyListeners();
+        await install();
+      } else {
+        _awaitingPermission = false;
+        _failure = const UpdateFailure(
+          UpdateFailureKind.permission,
+          '需要允许金豆安装未知应用',
+        );
+        _phase = UpdatePhase.failed;
+        notifyListeners();
+      }
+      return;
+    }
     if (_phase != UpdatePhase.installing) return;
     final target = _installingVersion ?? _release?.version;
     if (target == null) return;
