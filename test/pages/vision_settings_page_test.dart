@@ -50,7 +50,7 @@ void main() {
       find.byKey(const ValueKey('vision-key-field')),
       value,
     );
-    await tapKey(tester, 'vision-key-save');
+    await tapKey(tester, 'vision-save');
   }
 
   testWidgets('默认关闭，并承诺图片不离开设备', (tester) async {
@@ -117,7 +117,7 @@ void main() {
       find.byKey(const ValueKey('vision-model')),
       'qwen-vl-max',
     );
-    await tapKey(tester, 'vision-advanced-save');
+    await tapKey(tester, 'vision-save');
 
     var saved = await settings.load();
     expect(saved.baseUrl, 'https://example.com/v1');
@@ -135,10 +135,35 @@ void main() {
 
     await tester.enterText(find.byKey(const ValueKey('vision-base-url')), '   ');
     await tester.enterText(find.byKey(const ValueKey('vision-model')), '');
-    await tapKey(tester, 'vision-advanced-save');
+    await tapKey(tester, 'vision-save');
 
     final saved = await settings.load();
     expect(saved.baseUrl, ReceiptVisionSettings.kDefaultBaseUrl);
     expect(saved.model, ReceiptVisionSettings.kDefaultModel);
+  });
+
+  testWidgets('一次保存同时写入 Key 与高级设置', (tester) async {
+    await pump(tester);
+    await toggle(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('vision-key-field')),
+      'sk-secret',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('vision-base-url')),
+      'https://example.com/v1',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('vision-model')),
+      'qwen-vl-max',
+    );
+    await tapKey(tester, 'vision-save');
+
+    expect(await keys.read(), 'sk-secret');
+    final saved = await settings.load();
+    expect(saved.baseUrl, 'https://example.com/v1');
+    expect(saved.model, 'qwen-vl-max');
+    expect(saved.enabled, isTrue);
   });
 }

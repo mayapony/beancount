@@ -81,21 +81,38 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
         : '已关闭：图片不会离开设备');
   }
 
-  Future<void> _saveKey() async {
+  Future<void> _saveAll() async {
     final key = _keyController.text.trim();
-    if (key.isEmpty) {
-      _notify('先粘贴 API Key');
-      return;
+    if (key.isNotEmpty) {
+      await widget.keys.write(key);
+      if (!mounted) return;
+      setState(() {
+        _keyController.clear();
+        _hasKey = true;
+      });
     }
-    await widget.keys.write(key);
+
+    final next = _settings.copyWith(
+      baseUrl: _baseUrlController.text,
+      model: _modelController.text,
+    );
+    await widget.settings.save(next);
     if (!mounted) return;
     setState(() {
-      _keyController.clear();
-      _hasKey = true;
+      _settings = next;
+      _baseUrlController.text = next.normalizedBaseUrl;
+      _modelController.text = next.normalizedModel;
     });
-    _notify(
-      _settings.enabled ? 'API Key 已保存，识别已生效' : 'API Key 已保存，记得打开开关',
-    );
+
+    if (key.isNotEmpty) {
+      _notify(
+        _settings.enabled ? '设置已保存，识别已生效' : '设置已保存，记得打开开关',
+      );
+    } else if (_settings.enabled && !_hasKey) {
+      _notify('设置已保存；还没有 API Key，识别不会生效');
+    } else {
+      _notify('设置已保存');
+    }
   }
 
   Future<void> _clearKey() async {
@@ -108,21 +125,6 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
       _settings = next;
     });
     _notify('已清除 API Key，识别已关闭');
-  }
-
-  Future<void> _saveAdvanced() async {
-    final next = _settings.copyWith(
-      baseUrl: _baseUrlController.text,
-      model: _modelController.text,
-    );
-    await widget.settings.save(next);
-    if (!mounted) return;
-    setState(() {
-      _settings = next;
-      _baseUrlController.text = next.normalizedBaseUrl;
-      _modelController.text = next.normalizedModel;
-    });
-    _notify('服务地址与模型已保存');
   }
 
   Future<void> _resetAdvanced() async {
@@ -247,23 +249,20 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          FilledButton(
-                            key: const ValueKey('vision-key-save'),
-                            onPressed: _saveKey,
-                            child: const Text('保存 Key'),
-                          ),
-                          if (_hasKey) ...[
-                            const SizedBox(width: 10),
-                            TextButton(
-                              key: const ValueKey('vision-key-clear'),
-                              onPressed: _clearKey,
-                              child: const Text('清除'),
+                      if (_hasKey)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            key: const ValueKey('vision-key-clear'),
+                            onPressed: _clearKey,
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 32),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                          ],
-                        ],
-                      ),
+                            child: const Text('清除已保存的 Key'),
+                          ),
+                        ),
                       const SizedBox(height: 8),
                       Text(
                         'Key 只存在系统安全存储（Android Keystore / iOS Keychain），'
@@ -306,20 +305,18 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          FilledButton(
-                            key: const ValueKey('vision-advanced-save'),
-                            onPressed: _saveAdvanced,
-                            child: const Text('保存'),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          key: const ValueKey('vision-advanced-reset'),
+                          onPressed: _resetAdvanced,
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          const SizedBox(width: 10),
-                          TextButton(
-                            key: const ValueKey('vision-advanced-reset'),
-                            onPressed: _resetAdvanced,
-                            child: const Text('恢复默认'),
-                          ),
-                        ],
+                          child: const Text('恢复默认'),
+                        ),
                       ),
                     ],
                   ),
@@ -335,6 +332,24 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
                   ),
                 ),
               ],
+            ),
+      bottomNavigationBar: _loading
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.fromLTRB(
+                BeanSpace.page,
+                8,
+                BeanSpace.page,
+                16,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const ValueKey('vision-save'),
+                  onPressed: _saveAll,
+                  child: const Text('保存设置'),
+                ),
+              ),
             ),
     );
   }
