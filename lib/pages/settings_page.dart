@@ -8,6 +8,7 @@ import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../services/ocr/receipt_vision_settings.dart';
+import '../services/update/update_controller.dart';
 import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
@@ -33,6 +34,7 @@ class SettingsPage extends StatelessWidget {
     required this.lock,
     required this.visionSettings,
     required this.visionKeys,
+    this.updateController,
   });
 
   /// 主题控制器；为空时主题行只展示「跟随系统」且不可点。
@@ -48,6 +50,9 @@ class SettingsPage extends StatelessWidget {
   /// 截图记账的视觉模型配置与 API Key 存储（设置页只负责入口与状态）。
   final ReceiptVisionSettingsStore visionSettings;
   final ReceiptApiKeyStore visionKeys;
+
+  /// 更新控制器；为空时（Web/iOS/测试）关于页只展示版本与链接。
+  final UpdateController? updateController;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +247,9 @@ class SettingsPage extends StatelessWidget {
                     subtitle: '版本、仓库与检查更新',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const AboutPage(),
+                        builder: (_) => AboutPage(
+                          controller: updateController,
+                        ),
                       ),
                     ),
                   ),
