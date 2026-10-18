@@ -12,7 +12,7 @@
 
 - [x] 2.1 `version_compare.dart`：解析 `v1.2.3`、按数字段比较、忽略 build/预发布后缀与非法输入；验证 `flutter test test/services/update/version_compare_test.dart` 覆盖 `1.0.10 > 1.0.9`、`1.0 == 1.0.0`、`v` 前缀与坏值
 - [x] 2.2 `UpdateSource` 与 GitHub 实现：请求头、ETag/304、200 解析 `tag_name` / `body` / `assets` / `digest`，并覆盖 404、403、5xx、畸形 JSON、缺 APK、`SHA256SUMS.txt` 回退；验证 `flutter test test/services/update/github_update_source_test.dart` 全绿（使用 `MockClient`，不发真实网络）
-- [ ] 2.3 `UpdatePreferences`：`auto` / `last_check` / `etag` / `skipped` / `dismissed` / `pending` 的读写与 24 小时判定；验证 `flutter test test/services/update/update_preferences_test.dart` 用内存 drift 覆盖默认值与往返
+- [x] 2.3 `UpdatePreferences`：`auto` / `last_check` / `etag` / `skipped` / `dismissed` / `pending` 的读写与 24 小时判定；验证 `flutter test test/services/update/update_preferences_test.dart` 用内存 drift 覆盖默认值与往返
 - [ ] 2.4 `release_notes.dart`：从 release body 提取 `## 变更`，只保留 `feat` / `fix` / `perf` 条目，支持截断与展开；验证 `flutter test test/services/update/release_notes_test.dart` 覆盖正常、无段落、全为 docs/test 三类输入
 
 ## 3. APK 下载与校验
