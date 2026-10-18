@@ -40,7 +40,7 @@
 ## 6. 文档、联调与真机验收
 
 - [x] 6.1 更新 `docs/PRODUCT_PLAN.md`（把「应用内自更新」移出 Out of Scope、更新 §8/§13）、`README.md`（第一次带更新器的版本需手动安装）、`RELEASING.md`（versionCode 规则、仓库公开、签名一致）；验证 `git diff --check` 通过，三份文档均能检索到对应说明
-- [ ] 6.2 增加 `--dart-define=UPDATE_API_BASE` 覆盖点与 `tools/mock_update_feed.ps1`（本地 serve `releases/latest` 形状的 JSON + APK，仅 debug 放行 override host）；验证指向本地 feed 能检查到测试版本，且 release 构建仍只接受 GitHub 域名
+- [x] 6.2 增加 `--dart-define=UPDATE_API_BASE` 覆盖点与 `tools/mock_update_feed.ps1`（本地 serve `releases/latest` 形状的 JSON + APK，仅 debug 放行 override host）；验证指向本地 feed 能检查到测试版本，且 release 构建仍只接受 GitHub 域名
 - [ ] 6.3 真机端到端：用同一签名构建 `1.0.2/200` 与 `1.0.3/201`，先装 1.0.2，再用本地 feed 完成检查、下载、安装、重启提示；另测未授权未知来源、versionCode 回退、签名不一致三种拦截；验证三类拦截均可复现且不会卸载应用
 - [ ] 6.4 全量校验：`flutter analyze`、`flutter test`、`flutter build apk --debug`、`openspec validate --all --strict` 全部通过；验证四条命令均以 0 退出
 
