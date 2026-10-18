@@ -2,7 +2,9 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/pages/vision_settings_page.dart';
+import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
+import 'package:bean_count/services/ocr/vision_probe.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,11 +23,11 @@ void main() {
 
   tearDown(() async => db.close());
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {VisionProbeRunner? probe}) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildBeanTheme(Brightness.light),
-        home: VisionSettingsPage(settings: settings, keys: keys),
+        home: VisionSettingsPage(settings: settings, keys: keys, probe: probe),
       ),
     );
     await tester.pumpAndSettle();
@@ -142,8 +144,7 @@ void main() {
     expect(saved.model, ReceiptVisionSettings.kDefaultModel);
   });
 
-  testWidgets('一次保存同时写入 Key 与高级设置', (tester) async {
-    await pump(tester);
+  testWidgets('一次保存同时写入 Key 与高级设置', (tester) async {    await pump(tester);
     await toggle(tester);
 
     await tester.enterText(
@@ -165,5 +166,104 @@ void main() {
     expect(saved.baseUrl, 'https://example.com/v1');
     expect(saved.model, 'qwen-vl-max');
     expect(saved.enabled, isTrue);
+  });
+
+  group('测试识别', () {
+    testWidgets('用表单里刚填的 Key 测试，不先落库', (tester) async {
+      var calls = 0;
+      String? usedKey;
+      String? usedBaseUrl;
+      String? usedModel;
+      await pump(
+        tester,
+        probe: ({required baseUrl, required model, required apiKey}) async {
+          calls++;
+          usedKey = apiKey;
+          usedBaseUrl = baseUrl;
+          usedModel = model;
+          return const VisionProbeResult.success(
+            ReceiptGuess(amountCents: 1234),
+          );
+        },
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vision-base-url')),
+        'https://example.com/v1/',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('vision-model')),
+        'qwen-vl-max',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('vision-key-field')),
+        'sk-typed',
+      );
+      await tapKey(tester, 'vision-probe');
+
+      expect(calls, 1);
+      expect(usedKey, 'sk-typed');
+      expect(usedBaseUrl, 'https://example.com/v1');
+      expect(usedModel, 'qwen-vl-max');
+      expect(await keys.read(), isNull, reason: '测试不保存 Key');
+      expect(
+        find.text('识别正常：测试小票 ¥12.34'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('已保存的 Key 也能直接测', (tester) async {
+      await keys.write('sk-saved');
+      String? usedKey;
+      await pump(
+        tester,
+        probe: ({required baseUrl, required model, required apiKey}) async {
+          usedKey = apiKey;
+          return const VisionProbeResult.success(
+            ReceiptGuess(amountCents: 1234),
+          );
+        },
+      );
+
+      await tapKey(tester, 'vision-probe');
+      expect(usedKey, 'sk-saved');
+    });
+
+    testWidgets('失败时把原因写在页面上', (tester) async {
+      await pump(
+        tester,
+        probe: ({required baseUrl, required model, required apiKey}) async =>
+            const VisionProbeResult.failure('API Key 无效或没有权限'),
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vision-key-field')),
+        'sk-wrong',
+      );
+      await tapKey(tester, 'vision-probe');
+
+      expect(
+        find.text('测试失败：API Key 无效或没有权限'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('没填也没存的 Key：不调用测试，先提示', (tester) async {
+      var calls = 0;
+      await pump(
+        tester,
+        probe: ({required baseUrl, required model, required apiKey}) async {
+          calls++;
+          return const VisionProbeResult.success(
+            ReceiptGuess(amountCents: 1234),
+          );
+        },
+      );
+
+      await tapKey(tester, 'vision-probe');
+
+      expect(calls, 0);
+      expect(find.text('先填一个 API Key 再测试'), findsOneWidget);
+    });
   });
 }

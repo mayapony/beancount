@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../services/ocr/receipt_vision_settings.dart';
+import '../services/ocr/vision_probe.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
 
@@ -14,10 +15,14 @@ class VisionSettingsPage extends StatefulWidget {
     super.key,
     required this.settings,
     required this.keys,
+    this.probe,
   });
 
   final ReceiptVisionSettingsStore settings;
   final ReceiptApiKeyStore keys;
+
+  /// 测试入口；测试里注入假实现，线上走 [probeVision]。
+  final VisionProbeRunner? probe;
 
   @override
   State<VisionSettingsPage> createState() => _VisionSettingsPageState();
@@ -31,6 +36,9 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
   ReceiptVisionSettings _settings = const ReceiptVisionSettings();
   bool _hasKey = false;
   bool _loading = true;
+  bool _probing = false;
+  String? _probeMessage;
+  bool _probeOk = false;
 
   @override
   void initState() {
@@ -125,6 +133,45 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
       _settings = next;
     });
     _notify('已清除 API Key，识别已关闭');
+  }
+
+  /// 用当前表单里的地址/模型/Key（不保存）发一张合成小票，验证链路通不通。
+  Future<void> _testVision() async {
+    if (_probing) return;
+    final typed = _keyController.text.trim();
+    final apiKey = typed.isNotEmpty ? typed : await widget.keys.read();
+    if (!mounted) return;
+    if (apiKey == null || apiKey.trim().isEmpty) {
+      setState(() {
+        _probeOk = false;
+        _probeMessage = '先填一个 API Key 再测试';
+      });
+      return;
+    }
+
+    final baseUrl =
+        ReceiptVisionSettings.normalizeBaseUrl(_baseUrlController.text);
+    final model = ReceiptVisionSettings.normalizeModel(_modelController.text);
+    setState(() {
+      _probing = true;
+      _probeMessage = null;
+    });
+
+    final runner = widget.probe ?? probeVision;
+    final result = await runner(
+      baseUrl: baseUrl,
+      model: model,
+      apiKey: apiKey,
+    );
+    if (!mounted) return;
+    final cents = result.guess?.amountCents;
+    setState(() {
+      _probing = false;
+      _probeOk = result.ok;
+      _probeMessage = result.ok
+          ? '识别正常：测试小票 ¥${((cents ?? 0) / 100).toStringAsFixed(2)}'
+          : '测试失败：${result.message ?? '未知原因'}';
+    });
   }
 
   Future<void> _resetAdvanced() async {
@@ -273,6 +320,40 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
                           color: palette.textSecondary,
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      // Web 直连第三方端点会被 CORS 拦，不提供假承诺
+                      if (!kIsWeb)
+                        OutlinedButton.icon(
+                          key: const ValueKey('vision-probe'),
+                          onPressed: _probing ? null : _testVision,
+                          icon: _probing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.wifi_tethering_rounded,
+                                  size: 18,
+                                ),
+                          label: Text(_probing ? '测试中…' : '测试识别'),
+                        ),
+                      if (_probeMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _probeMessage!,
+                          key: const ValueKey('vision-probe-result'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: _probeOk
+                                ? BeanColors.beanGreen
+                                : BeanColors.alertRed,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -323,8 +404,8 @@ class _VisionSettingsPageState extends State<VisionSettingsPage> {
                 ),
                 const SizedBox(height: BeanSpace.section),
                 Text(
-                  '识别只把图片换成文字，金额、分类、日期仍由本地规则解析，'
-                  '入账前一定让你确认。识别失败不影响保存。',
+                  '识别直接给出金额、商家、分类与时间；入账前一定让你确认，'
+                  '认错了可以当场改。识别失败不影响保存。',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.5,
