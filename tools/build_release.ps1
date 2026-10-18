@@ -46,10 +46,15 @@ if (-not $SkipTests) {
     Invoke-Step '测试' { flutter test }
 }
 
-$buildArgs = @('build', 'apk', '--release')
+$buildArgs = @(
+    'build', 'apk', '--release',
+    '--target-platform=android-arm64',
+    '--android-project-arg=beanOnlyAbi=arm64-v8a',
+    '--android-project-arg=beanCompressLibs=true'
+)
 if ($BuildName) { $buildArgs += "--build-name=$BuildName" }
 if ($BuildNumber) { $buildArgs += "--build-number=$BuildNumber" }
-Invoke-Step "构建 release APK（$($BuildName ?? 'pubspec')+$($BuildNumber ?? 'pubspec')）" { flutter @buildArgs }
+Invoke-Step "构建 release APK（$($BuildName ?? 'pubspec')+$($BuildNumber ?? 'pubspec')，arm64 / 压缩原生库）" { flutter @buildArgs }
 
 $apk = Join-Path $root 'build/app/outputs/flutter-apk/app-release.apk'
 if (-not (Test-Path $apk)) {

@@ -44,6 +44,15 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 发布包只带一个 ABI 时，用 -PbeanOnlyAbi=arm64-v8a 把插件 AAR 里
+        // 其它 ABI 的 jniLibs 也裁掉；`--target-platform` 只裁 Flutter 自己的
+        // 引擎与 Dart 快照，管不到 sqlite3 等插件带来的原生库。
+        if (project.hasProperty('beanOnlyAbi')) {
+            ndk {
+                abiFilters = [project.property('beanOnlyAbi')]
+            }
+        }
     }
 
     signingConfigs {
@@ -65,6 +74,14 @@ android {
             // 发布流水线会校验产物不是 debug 签名（见 .github/workflows/release.yml）。
             signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // 原生库默认不压缩（Flutter 为启动速度保留 mmap）。开启后 APK 从 ~23MB
+    // 降到 ~10MB，代价是安装时解压，下载小、安装后占用略大。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = project.hasProperty('beanCompressLibs')
         }
     }
 }

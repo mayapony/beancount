@@ -94,9 +94,15 @@ jobs:
 
       - name: 构建 release APK
         run: |
+          # 只发 arm64：通用包会带 3 套 Flutter 引擎 + Dart 快照（约 64MB）。
+          # beanOnlyAbi 同时裁掉插件 AAR 里其它 ABI 的原生库（如 sqlite3）；
+          # beanCompressLibs 让原生库在 APK 里压缩（安装时解压，下载从 ~23MB 降到 ~10MB）。
           flutter build apk --release \
             --build-name="${{ steps.version.outputs.version }}" \
-            --build-number="${{ steps.version.outputs.version_code }}"
+            --build-number="${{ steps.version.outputs.version_code }}" \
+            --target-platform android-arm64 \
+            --android-project-arg=beanOnlyAbi=arm64-v8a \
+            --android-project-arg=beanCompressLibs=true
 
       - name: 校验签名不是 debug
         run: |
@@ -139,7 +145,7 @@ jobs:
           {
             echo "金豆 ${VERSION}"
             echo
-            echo "安装：下载 \`app-release.apk\` 直接安装（Android 6.0+）。"
+            echo "安装：下载 \`app-release.apk\` 直接安装（Android 6.0+，arm64 设备）。"
             echo "校验：\`sha256sum -c SHA256SUMS.txt\`。"
             echo
             echo "## 变更"

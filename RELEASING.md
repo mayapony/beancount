@@ -66,14 +66,32 @@ git push origin v1.0.1
 
 1. `flutter pub get` → `flutter analyze` → `flutter test`（**任何一步红就不发布**）
 2. 从 Secrets 还原 keystore，写 `android/key.properties`（不打印内容）
-3. `flutter build apk --release --build-name=<tag 去掉 v> --build-number=<git rev-list --count HEAD>`
+3. `flutter build apk --release --build-name=<tag 去掉 v> --build-number=<git rev-list --count HEAD> --target-platform android-arm64 --android-project-arg=beanOnlyAbi=arm64-v8a --android-project-arg=beanCompressLibs=true`
 4. `apksigner verify --print-certs`，证书里含 `Android Debug` 就失败
 5. 生成 `SHA256SUMS.txt`，创建 GitHub Release（附 APK + 校验和，notes 自动列出上次 tag 以来的提交）
 
 > versionCode 统一取 `git rev-list --count HEAD`，CI 与本机 `tools/build_release.ps1` 用的是同一个数。
 > 不要改回按 Release 工作流计数的运行序号：那个数比本机包小，覆盖安装会被 Android 判成版本回退。
 
-跑完在 Releases 页就能下载。安装：`app-release.apk` 直接侧载（Android 6.0+）。
+### 包体积：arm64 单架构 + 压缩原生库
+
+通用 APK 会同时打包 `arm64-v8a / armeabi-v7a / x86_64` 三套 Flutter 引擎 + Dart 快照，约 **64 MB**。
+发布包现在固定：
+
+| 配置 | 体积 | 说明 |
+|---|---|---|
+| 三架构通用（旧） | ~64 MB | 任何设备都能装 |
+| arm64 单架构 | ~23 MB | 现代手机；32 位设备与 x86 模拟器装不了 |
+| arm64 + 压缩原生库（当前） | **~10 MB** | 安装时解压；安装后占用约 32 MB（APK 10 MB + 解压后 lib 22 MB） |
+
+- `--target-platform android-arm64` 只裁 Flutter 自己的引擎/Dart 快照；
+  `-PbeanOnlyAbi=arm64-v8a` 再把插件 AAR（如 sqlite3）里其它 ABI 的原生库裁掉。
+- `-PbeanCompressLibs=true` 打开 `useLegacyPackaging`，让 `libapp.so` / `libflutter.so` 在 APK 里 deflate。
+  下载体积大幅下降，代价是安装时解压、安装后磁盘占用略大；运行性能不变（解压后的 so 仍然 mmap）。
+- 要在 x86_64 模拟器上跑 release：`--target-platform android-x64 --android-project-arg=beanOnlyAbi=x86_64`。
+- 想临时给 32 位设备出包：去掉上面三个参数，回到通用 APK（体积回到 ~64 MB）。
+
+跑完在 Releases 页就能下载。安装：`app-release.apk` 直接侧载（Android 6.0+，arm64 设备）。
 
 ### 应用内更新（v1.0.2 起）
 
@@ -128,6 +146,7 @@ keyPassword=你的密码
 | App 里检查更新提示「更新源不可用」 | 仓库转私有或网络不可达；确认仓库公开并检查手机网络 |
 | App 内安装提示「版本低于当前」 | versionCode 回退；确认 CI 与本机都取提交数，且安装的是更大的版本 |
 | tag 推上去了但没跑 | 确认 tag 是 `v` 开头（`v1.0.1`，不是 `1.0.1`） |
+| `app-release.apk` 安装失败（解析包 / NO_MATCHING_ABIS） | 发布包是 arm64 单架构；32 位设备或 x86 模拟器需要按「包体积」一节重新出对应 ABI 的包 |
 | Release 建了但附件缺失 | 构建步骤失败；看 run 日志里的 `构建 release APK` 步骤 |
 
 ---
