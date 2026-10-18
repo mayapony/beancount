@@ -6,7 +6,7 @@
 - [x] 1.2 新增 `AppVersion` 值对象与 `loadAppVersion()`（读 `PackageInfo.fromPlatform()`，失败回落 unknown）；验证 `flutter test test/services/update/app_version_test.dart` 覆盖正常值与读取失败
 - [x] 1.3 设置页「关于金豆」改为进入 `AboutPage`，页面显示 `v<version>`、GitHub 仓库链接与隐私说明，删除 `v0.0.1` 硬编码；验证 `flutter test test/pages/about_page_test.dart` 断言真实版本且不出现 `v0.0.1`
 - [x] 1.4 CI `release.yml` 与本机 `tools/build_release.ps1` 统一用 `git rev-list --count HEAD` 作为 versionCode，删除 `github.run_number`，并同步 `RELEASING.md`；验证 `Select-String` 确认两处无 `run_number`，且 `pwsh -File tools/build_release.ps1 -SkipTests` 构建出的 APK versionCode 等于当前提交数
-- [ ] 1.5 主清单显式声明 `INTERNET`；验证 `flutter build apk --debug` 成功，合并清单与 `aapt dump permissions` 均包含 `android.permission.INTERNET`
+- [x] 1.5 主清单显式声明 `INTERNET`；验证 `flutter build apk --debug` 成功，合并清单与 `aapt dump permissions` 均包含 `android.permission.INTERNET`
 
 ## 2. 更新源、偏好与说明解析
 
