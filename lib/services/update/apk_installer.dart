@@ -14,7 +14,7 @@ class ApkPreflight {
 
   final bool ok;
 
-  /// `ok` / `parse` / `downgrade` / `signature` / `versionName` / `noInstaller`
+  /// `ok` / `parse` / `downgrade` / `signature` / `versionName`
   final String reason;
 
   final int? apkVersionCode;

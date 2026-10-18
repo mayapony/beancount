@@ -132,7 +132,7 @@ MethodChannel：`com.jindou.bean_count/update`
 | `preflight` | map | 解析 APK 的 versionCode / versionName / 签名摘要，与当前包比较 |
 | `install` | void | `ACTION_VIEW` + `application/vnd.android.package-archive`，带读权限 |
 
-`preflight` 的返回：`{ok: bool, reason: 'ok'|'parse'|'downgrade'|'signature'|'versionName'|'noInstaller', apkVersionCode, currentVersionCode, apkVersionName}`。
+`preflight` 的返回：`{ok: bool, reason: 'ok'|'parse'|'downgrade'|'signature'|'versionName', apkVersionCode, currentVersionCode, apkVersionName}`；`noInstaller` 由真正的 `install`（带 content URI）判断。
 
 实现要点：
 

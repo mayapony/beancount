@@ -118,10 +118,6 @@ class UpdateInstaller(private val activity: Activity) : MethodChannel.MethodCall
                 map["ok"] = false
                 map["reason"] = "signature"
             }
-            !hasInstaller() -> {
-                map["ok"] = false
-                map["reason"] = "noInstaller"
-            }
         }
         result.success(map)
     }
@@ -176,11 +172,6 @@ class UpdateInstaller(private val activity: Activity) : MethodChannel.MethodCall
         } catch (_: Exception) {
             null
         }
-    }
-
-    private fun hasInstaller(): Boolean {
-        val intent = Intent(Intent.ACTION_VIEW).setType(MIME_APK)
-        return intent.resolveActivity(activity.packageManager) != null
     }
 
     private fun preflightMap(
