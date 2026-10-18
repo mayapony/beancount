@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ApkPath,
     [int]$Port = 8787,
     [string]$Version = '1.0.3',
+    [string]$PublicBase = '',
     [string]$Notes = "## 变更`n`n- feat(update): 本地 mock 更新源`n- fix(android): 验证下载与安装`n"
 )
 
@@ -20,6 +21,7 @@ $apkBytes = [IO.File]::ReadAllBytes($apk)
 $size = $apkBytes.Length
 $sha = (Get-FileHash $apk -Algorithm SHA256).Hash.ToLower()
 $prefix = "http://127.0.0.1:$Port"
+if ([string]::IsNullOrWhiteSpace($PublicBase)) { $PublicBase = $prefix }
 $tag = if ($Version.StartsWith('v')) { $Version } else { "v$Version" }
 $versionName = $tag.TrimStart('v')
 
@@ -33,12 +35,12 @@ $latest = @{
             name                 = 'app-release.apk'
             size                 = $size
             digest               = "sha256:$sha"
-            browser_download_url = "$prefix/app-release.apk"
+            browser_download_url = "$PublicBase/app-release.apk"
         },
         @{
             name                 = 'SHA256SUMS.txt'
             size                 = 0
-            browser_download_url = "$prefix/SHA256SUMS.txt"
+            browser_download_url = "$PublicBase/SHA256SUMS.txt"
         }
     )
 } | ConvertTo-Json -Depth 6 -Compress
@@ -51,6 +53,7 @@ $listener = [System.Net.Sockets.TcpListener]::new(
 )
 $listener.Start()
 Write-Host "Mock feed 已启动：$prefix" -ForegroundColor Green
+Write-Host "  公网/模拟器下载地址：$PublicBase" -ForegroundColor Green
 Write-Host "  GET $prefix/repos/mayapony/beancount/releases/latest"
 Write-Host "  GET $prefix/app-release.apk（$([math]::Round($size / 1MB, 1)) MB）"
 Write-Host "App 侧：flutter run --dart-define=UPDATE_API_BASE=$prefix"
