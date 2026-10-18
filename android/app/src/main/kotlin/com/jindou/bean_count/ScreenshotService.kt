@@ -283,13 +283,27 @@ class ScreenshotService : Service() {
                 val queued = (busyJobs.get() - 1).coerceAtLeast(0)
                 if (map?.get("ok") == true) {
                     val cents = (map["amount_cents"] as? Number)?.toLong() ?: 0L
-                    val rest = (pending - 1 + queued).coerceAtLeast(0)
-                    val suffix = if (rest > 0) {
-                        " · 还有 $rest 张待确认"
+                    if (map["auto_saved"] == true) {
+                        val detail = listOfNotNull(
+                            (map["category"] as? String)?.trim()?.takeIf { it.isNotEmpty() },
+                            (map["account"] as? String)?.trim()?.takeIf { it.isNotEmpty() },
+                        ).joinToString(" · ")
+                        val base = if (map["duplicate"] == true) {
+                            "这笔已经记过了 · ¥${money(cents)}"
+                        } else {
+                            "已自动记账 ¥${money(cents)}" +
+                                if (detail.isEmpty()) "" else " · $detail"
+                        }
+                        showResult("$base${remainingSuffix(pending, queued)}", ok = true)
                     } else {
-                        " · 点击记账"
+                        val rest = (pending - 1 + queued).coerceAtLeast(0)
+                        val suffix = if (rest > 0) {
+                            " · 还有 $rest 张待确认"
+                        } else {
+                            " · 点击记账"
+                        }
+                        showResult("已识别 ¥${money(cents)}$suffix", ok = true)
                     }
-                    showResult("已识别 ¥${money(cents)}$suffix", ok = true)
                 } else {
                     val reason = (map?.get("error") as? String)?.trim().orEmpty()
                     val text = if (reason.isEmpty() || reason.contains("没认出金额")) {
@@ -297,11 +311,10 @@ class ScreenshotService : Service() {
                     } else {
                         reason
                     }
-                    val waiting = pending + queued
-                    val suffix = if (waiting > 0) {
-                        " · 待确认 $waiting 张"
-                    } else {
+                    val suffix = if (pending + queued == 0) {
                         " · 点击手动记"
+                    } else {
+                        remainingSuffix(pending, queued)
                     }
                     showResult("$text$suffix", ok = false)
                 }
@@ -318,6 +331,14 @@ class ScreenshotService : Service() {
                 latch.countDown()
             }
         }
+
+    /** 队列里可能有已识别待确认的，也有还在处理的；分开说清楚。 */
+    private fun remainingSuffix(pending: Int, queued: Int): String {
+        val parts = mutableListOf<String>()
+        if (pending > 0) parts.add("$pending 张待确认")
+        if (queued > 0) parts.add("$queued 张处理中")
+        return if (parts.isEmpty()) "" else " · 还有 " + parts.joinToString("、")
+    }
 
     private fun showProgress() {
         notify(

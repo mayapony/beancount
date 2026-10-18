@@ -11,7 +11,9 @@ import 'services/ocr/receipt_guess.dart';
 import 'services/ocr/receipt_recognizer_factory.dart';
 import 'services/ocr/receipt_recognizer_vision.dart';
 import 'services/ocr/receipt_vision_settings.dart';
+import 'services/screenshot/auto_entry.dart';
 import 'services/screenshot/pending_entry.dart';
+import 'services/screenshot/screenshot_settings.dart';
 
 /// 后台识别入口：由 `ScreenshotService` 里的 headless FlutterEngine 运行。
 ///
@@ -48,12 +50,13 @@ Future<Map<String, Object?>> _recognize(
   final now = DateTime.now();
   final entryId = 'shot-${now.microsecondsSinceEpoch}';
   final recognitionInput = recognitionBytes ?? bytes;
-  String? imagePath;
 
   try {
-    // MediaStore 的 content:// URI 在 UI 引擎里读不了；落一份临时文件随草稿带走。
-    // 落盘用原图（附件保留原图）；模型只收 Kotlin 压好的识别副本。
-    imagePath = await _saveTempImage(bytes, now);
+    final settings = await ScreenshotSettingsStore(state).load();
+    if (!settings.autoEntry) {
+      return {'ok': false, 'error': '截屏自动识别已关闭'};
+    }
+
     debugPrint(
       'screenshotEntry: original=${bytes.length}B '
       'recognition=${recognitionInput.length}B '
@@ -66,13 +69,12 @@ Future<Map<String, Object?>> _recognize(
     );
     if (recognizer == null) {
       const message = '视觉识别未开启，可在设置里配置 API Key';
-      final pendingCount = await store.add(
-        PendingScreenshotEntry(
-          id: entryId,
-          createdAt: now,
-          imagePath: imagePath,
-          error: message,
-        ),
+      final pendingCount = await _addPending(
+        store: store,
+        id: entryId,
+        now: now,
+        bytes: bytes,
+        error: message,
       );
       return {'ok': false, 'error': message, 'pending_count': pendingCount};
     }
@@ -84,51 +86,73 @@ Future<Map<String, Object?>> _recognize(
       await recognizer.close();
     }
 
-    final usable =
-        guess.hasAmount || guess.categoryName != null || guess.note != null;
-    if (!usable) {
-      debugPrint('screenshotEntry: empty guess');
-      const message = '没认出金额，点击手动记';
-      final pendingCount = await store.add(
-        PendingScreenshotEntry(
+    if (guess.hasAmount) {
+      // 识别出金额就直接落库：原图随交易保存，不再让用户打开面板确认。
+      try {
+        final saved = await AutoScreenshotSaver(db: db).save(
+          guess: guess,
+          imageBytes: bytes,
+          fileName: 'screenshot_${now.microsecondsSinceEpoch}.jpg',
+          autoTags: settings.autoTags,
+          now: now,
+        );
+        final pendingCount = await store.count();
+        debugPrint(
+          'screenshotEntry: auto saved amount=${saved.amountCents} '
+          'duplicate=${saved.duplicate} category=${saved.categoryName} '
+          'account=${saved.accountName}',
+        );
+        return {
+          'ok': true,
+          'auto_saved': true,
+          'duplicate': saved.duplicate,
+          'amount_cents': saved.amountCents,
+          'category': saved.categoryName,
+          'account': saved.accountName,
+          'source': url,
+          'pending_count': pendingCount,
+        };
+      } catch (error) {
+        debugPrint('screenshotEntry: auto save failed: $error');
+        final pendingCount = await _addPending(
+          store: store,
           id: entryId,
-          createdAt: now,
-          imagePath: imagePath,
-          error: message,
-        ),
-      );
-      return {'ok': false, 'error': '没认出金额', 'pending_count': pendingCount};
+          now: now,
+          bytes: bytes,
+          guess: guess,
+        );
+        return {
+          'ok': false,
+          'error': '自动记账失败，点击确认',
+          'pending_count': pendingCount,
+        };
+      }
     }
 
-    final pendingCount = await store.add(
-      PendingScreenshotEntry(
-        id: entryId,
-        createdAt: now,
-        guess: guess,
-        imagePath: imagePath,
-      ),
+    // 没金额不能自动记：保留分类/商家预填，让用户只补金额；全空则只提示。
+    final hasFields =
+        guess.categoryName != null || (guess.note ?? '').trim().isNotEmpty;
+    final pendingCount = await _addPending(
+      store: store,
+      id: entryId,
+      now: now,
+      bytes: bytes,
+      guess: hasFields ? guess : null,
+      error: hasFields ? null : '没认出金额，点击手动记',
     );
-    return {
-      'ok': true,
-      'amount_cents': guess.amountCents,
-      'category': guess.categoryName,
-      'note': guess.note,
-      'source': url,
-      'pending_count': pendingCount,
-    };
+    return {'ok': false, 'error': '没认出金额', 'pending_count': pendingCount};
   } catch (error) {
     final message =
         error is ReceiptRecognitionException ? error.message : '识别失败，可以手动记';
     debugPrint('screenshotEntry: failed: $message');
     var pendingCount = 0;
     try {
-      pendingCount = await store.add(
-        PendingScreenshotEntry(
-          id: entryId,
-          createdAt: now,
-          imagePath: imagePath,
-          error: message,
-        ),
+      pendingCount = await _addPending(
+        store: store,
+        id: entryId,
+        now: now,
+        bytes: bytes,
+        error: message,
       );
     } catch (_) {
       // 连 pending 都写不进去时，至少让通知带上真实原因
@@ -137,6 +161,26 @@ Future<Map<String, Object?>> _recognize(
   } finally {
     await db.close();
   }
+}
+
+Future<int> _addPending({
+  required PendingScreenshotEntryStore store,
+  required String id,
+  required DateTime now,
+  required Uint8List bytes,
+  ReceiptGuess? guess,
+  String? error,
+}) async {
+  final imagePath = await _saveTempImage(bytes, now);
+  return store.add(
+    PendingScreenshotEntry(
+      id: id,
+      createdAt: now,
+      guess: guess,
+      imagePath: imagePath,
+      error: error,
+    ),
+  );
 }
 
 Future<String?> _saveTempImage(Uint8List bytes, DateTime now) async {

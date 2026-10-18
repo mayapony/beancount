@@ -4,10 +4,10 @@ import '../services/screenshot/screenshot_settings.dart';
 import '../theme/tokens.dart';
 import 'common.dart';
 
-/// 申请截屏自动识别所需的系统权限；返回 false 表示用户拒绝。
+/// 申请截屏自动记账所需的系统权限；返回 false 表示用户拒绝。
 typedef ScreenshotPermissionRequest = Future<bool> Function();
 
-/// 设置页里的「截屏自动识别」区块。
+/// 设置页里的「截屏自动记账」区块。
 ///
 /// 三个开关都默认关闭；打开总开关时先申请权限，被拒绝就保持关闭并说明原因。
 /// 真正的监听服务由 [onAutoEntryChanged] 的接收方启停（Android 原生侧）。
@@ -64,7 +64,7 @@ class _ScreenshotSettingsSectionState extends State<ScreenshotSettingsSection> {
         setState(() => _busy = false);
         if (!granted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('未授权相册读取或通知，截屏自动识别保持关闭')),
+            const SnackBar(content: Text('未授权相册读取或通知，截屏自动记账保持关闭')),
           );
           widget.onAutoEntryChanged?.call(false);
           return;
@@ -90,11 +90,9 @@ class _ScreenshotSettingsSectionState extends State<ScreenshotSettingsSection> {
               Icons.screenshot_monitor_rounded,
               color: Color(0xFF0EA5E9),
             ),
-            title: const Text('截屏自动识别', style: TextStyle(fontSize: 15)),
+            title: const Text('截屏自动记账', style: TextStyle(fontSize: 15)),
             subtitle: Text(
-              _settings.autoEntry
-                  ? '后台监听截屏，检测到就上传识别'
-                  : '关闭时不监听、不上传',
+              _settings.autoEntry ? '后台监听截屏，识别到金额后自动记账' : '关闭时不监听、不上传',
               style: TextStyle(fontSize: 12, color: palette.textSecondary),
             ),
           ),
@@ -104,7 +102,7 @@ class _ScreenshotSettingsSectionState extends State<ScreenshotSettingsSection> {
               key: const Key('screenshot-permission-hint'),
               padding: const EdgeInsets.fromLTRB(56, 8, 16, 10),
               child: Text(
-                '需要「读取照片」与通知权限；常驻通知说明正在监听，可随时关闭。',
+                '识别到金额会直接记入明细，可在明细里修改或删除；没认出金额时才需要手动确认。\n需要「读取照片」与通知权限；常驻通知说明正在监听，可随时关闭。',
                 style: TextStyle(fontSize: 12, color: palette.textSecondary),
               ),
             ),
