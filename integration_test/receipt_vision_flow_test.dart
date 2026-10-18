@@ -6,7 +6,6 @@ import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/services/attachments/image_picker_service.dart';
-import 'package:bean_count/services/ocr/receipt_recognizer.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:bean_count/theme/app_theme.dart';
@@ -49,7 +48,7 @@ void main() {
               {
                 'message': {
                   'role': 'assistant',
-                  'content': '金豆餐厅消费小票\n牛肉面 ¥38.50\n可乐 ¥6.00\n合计 ¥44.50',
+                  'content': '{"amount_cents": 4450, "merchant": "金豆餐厅", "category": "餐饮", "tags": ["午餐"]}',
                 },
               },
             ],
@@ -60,7 +59,7 @@ void main() {
       }),
     );
 
-    final guess = await recognizeReceipt(recognizer, Uint8List.fromList(pngBytes));
+    final guess = await recognizer.recognize(Uint8List.fromList(pngBytes));
     expect(requested?.path, '/chat/completions', reason: '尾部斜杠被归一化');
     expect(sentBody?['model'], 'deepseek-flash');
     expect(

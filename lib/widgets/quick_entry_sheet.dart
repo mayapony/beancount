@@ -9,7 +9,7 @@ import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/ocr/entry_matching.dart';
-import '../services/ocr/receipt_parser.dart';
+import '../services/ocr/receipt_guess.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/fx.dart';
@@ -529,12 +529,12 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     setState(() => filled = _fillFromGuess(guess!));
 
     if (filled.isEmpty) {
-      _showHint('识别到了文字，但没有可填的空位', error: true);
+      _showHint('认出了内容，但没有可填的空位', error: true);
     } else if (guess.hasAmount) {
       _showHint('已识别 ¥${(guess.amountCents! / 100).toStringAsFixed(2)}，'
           '请确认后保存');
     } else {
-      _showHint('认出了文字，金额没认出来', error: true);
+      _showHint('认出了商家或分类，金额没认出来', error: true);
     }
   }
 

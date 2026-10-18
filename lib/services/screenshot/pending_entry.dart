@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import '../../data/repositories/app_state_repository.dart';
-import '../ocr/receipt_parser.dart';
+import '../ocr/receipt_guess.dart';
 
 /// 后台识别完成、等着用户打开面板的那一笔。
 ///
@@ -59,7 +59,6 @@ class PendingScreenshotEntry {
       accountName: raw['account_name']?.toString(),
       note: raw['note']?.toString(),
       happenedAt: happenedAt,
-      rawText: raw['raw_text']?.toString() ?? '',
       confidence: confidence ?? ReceiptConfidence.none,
     );
 
@@ -80,7 +79,6 @@ class PendingScreenshotEntry {
         if (guess.note != null) 'note': guess.note,
         if (guess.happenedAt != null)
           'happened_at': guess.happenedAt!.toUtc().toIso8601String(),
-        if (guess.rawText.isNotEmpty) 'raw_text': guess.rawText,
         'confidence': guess.confidence.name,
       };
 }

@@ -20,8 +20,7 @@ import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../services/ocr/auto_create_policy.dart';
 import '../services/ocr/entry_matching.dart';
-import '../services/ocr/receipt_parser.dart';
-import '../services/ocr/receipt_recognizer.dart';
+import '../services/ocr/receipt_guess.dart';
 import '../services/ocr/receipt_recognizer_factory.dart';
 import '../services/ocr/receipt_vision_settings.dart';
 import '../services/screenshot/pending_entry.dart';
@@ -435,7 +434,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
           pickImage: kIsWeb ? null : systemImagePicker(),
           recognizeReceipt: recognizer == null
               ? null
-              : (bytes) => recognizeReceipt(recognizer, bytes),
+              : (bytes) => recognizer.recognize(bytes),
           recognitionUnavailableHint:
               kIsWeb ? null : '视觉识别未开启，可在设置里配置 API Key',
           pickEnabled: !kIsWeb,

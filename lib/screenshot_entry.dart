@@ -7,8 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
 import 'data/repositories/app_state_repository.dart';
-import 'services/ocr/receipt_parser.dart';
-import 'services/ocr/receipt_recognizer.dart';
+import 'services/ocr/receipt_guess.dart';
 import 'services/ocr/receipt_recognizer_factory.dart';
 import 'services/ocr/receipt_vision_settings.dart';
 import 'services/screenshot/pending_entry.dart';
@@ -61,7 +60,7 @@ Future<Map<String, Object?>> _recognize(Uint8List bytes, String? url) async {
 
     ReceiptGuess guess;
     try {
-      guess = await recognizeReceipt(recognizer, bytes);
+      guess = await recognizer.recognize(bytes);
     } finally {
       await recognizer.close();
     }

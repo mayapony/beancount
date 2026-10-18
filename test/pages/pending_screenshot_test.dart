@@ -2,7 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/lock_repository.dart';
 import 'package:bean_count/pages/shell.dart';
-import 'package:bean_count/services/ocr/receipt_parser.dart';
+import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
 import 'package:bean_count/services/screenshot/pending_entry.dart';
 import 'package:bean_count/services/screenshot/screenshot_settings.dart';

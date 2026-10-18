@@ -5,7 +5,6 @@ import 'package:bean_count/pages/shell.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:bean_count/services/ocr/receipt_recognizer.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
 import 'package:http/http.dart' as http;
@@ -48,7 +47,7 @@ void main() {
               {
                 'message': {
                   'role': 'assistant',
-                  'content': '金豆餐厅消费小票\n牛肉面 ¥38.50\n可乐 ¥6.00\n合计 ¥44.50',
+                  'content': '{"amount_cents": 4450, "merchant": "金豆餐厅", "category": "餐饮", "tags": ["午餐"]}',
                 },
               },
             ],
@@ -58,8 +57,7 @@ void main() {
         );
       }),
     );
-    final guess = await recognizeReceipt(
-      recognizer,
+    final guess = await recognizer.recognize(
       Uint8List.fromList([1, 2, 3]),
     );
     await recognizer.close();

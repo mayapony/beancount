@@ -76,34 +76,6 @@ void main() {
     });
   });
 
-  group('tagCandidates', () {
-    test('已有标签优先复用', () {
-      final tags = tagCandidates(
-        '微信支付 ¥38.50 咖啡',
-        existingNames: ['微信支付'],
-      );
-      expect(tags.first, '微信支付');
-      expect(tags, contains('咖啡'));
-      expect(tags.length, lessThanOrEqualTo(2));
-    });
-
-    test('最多两个候选', () {
-      final tags = tagCandidates('微信支付 咖啡 打车 超市');
-      expect(tags.length, 2);
-    });
-
-    test('同名不重复', () {
-      final tags = tagCandidates('咖啡 拿铁 美式');
-      expect(tags, ['咖啡']);
-    });
-
-    test('没有命中或没有文本返回空', () {
-      expect(tagCandidates('¥12.00'), isEmpty);
-      expect(tagCandidates(''), isEmpty);
-      expect(tagCandidates(null), isEmpty);
-    });
-  });
-
   group('matchAccount', () {
     final accounts = [
       _account('默认账户'),

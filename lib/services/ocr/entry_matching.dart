@@ -34,7 +34,10 @@ String normalizeName(String? raw) {
 bool _isHan(int rune) =>
     (rune >= 0x4E00 && rune <= 0x9FFF) || (rune >= 0x3400 && rune <= 0x4DBF);
 
-/// 解析用的分类关键字表：规范分类名 → 命中词。顺序有意义：更具体的放前面。
+/// 分类词表：规范分类名 → 提示词里给模型的典型关键词。
+///
+/// 顺序有意义：更具体的放前面。识别结果只接受这里的规范名，
+/// 避免模型自创分类；用户自己改过名的分类由 [matchCategory] 按别名匹配。
 const kCategoryKeywords = <String, List<String>>{
   '餐饮': [
     '餐厅', '饭馆', '饭店', '面馆', '小吃', '烧烤', '火锅', '食堂', '咖啡',
@@ -57,7 +60,9 @@ const kCategoryAliases = <String, List<String>>{
   '旅行': ['旅游', '住宿'],
 };
 
-/// 标签词表：标签名 → 命中词。名称固定，避免把商家名变成标签。
+/// 标签词表：标签名 → 提示词里给模型的典型关键词。
+///
+/// 名称固定，避免把商家名变成标签；模型返回的标签只保留词表内的名字。
 const kTagKeywords = <String, List<String>>{
   '微信支付': ['微信支付', '微信'],
   '支付宝': ['支付宝'],
@@ -73,7 +78,9 @@ const kTagKeywords = <String, List<String>>{
   '晚餐': ['晚餐', '晚饭'],
 };
 
-/// 账户线索：识别文本里出现的支付渠道 → 规范名（未与本地账户核对）。
+/// 账户线索的规范名 → 提示词里给模型的典型关键词。
+///
+/// 模型只能从这些规范名里选；真正落到哪个账尸由 [matchAccount] 比对。
 const kAccountHints = <String, List<String>>{
   '微信': ['微信支付', '微信零钱', '微信'],
   '支付宝': ['支付宝', '花呗', '余额宝'],
@@ -117,50 +124,6 @@ Category? matchCategory(
   for (final category in categories) {
     if (category.type != type) continue;
     if (wanted.contains(normalizeName(category.name))) return category;
-  }
-  return null;
-}
-
-/// 从识别文本生成标签候选：已有标签优先复用，其次按词表补充，最多 [limit] 个。
-List<String> tagCandidates(
-  String? text, {
-  Iterable<String> existingNames = const [],
-  int limit = 2,
-}) {
-  if (limit <= 0) return const [];
-  final haystack = normalizeName(text);
-  if (haystack.isEmpty) return const [];
-
-  final existingByKey = <String, String>{};
-  for (final name in existingNames) {
-    final key = normalizeName(name);
-    if (key.isNotEmpty) existingByKey.putIfAbsent(key, () => name);
-  }
-
-  final reused = <String>[];
-  final fresh = <String>[];
-  final seen = <String>{};
-  for (final entry in kTagKeywords.entries) {
-    final key = normalizeName(entry.key);
-    final hit = entry.value.any((word) => haystack.contains(normalizeName(word)));
-    if (!hit || !seen.add(key)) continue;
-    if (existingByKey.containsKey(key)) {
-      reused.add(existingByKey[key]!);
-    } else {
-      fresh.add(entry.key);
-    }
-  }
-  return [...reused, ...fresh].take(limit).toList(growable: false);
-}
-
-/// 从识别文本里提取账户线索（规范名）；没有任何支付渠道线索时返回 null。
-String? accountHint(String? text) {
-  final haystack = normalizeName(text);
-  if (haystack.isEmpty) return null;
-  for (final entry in kAccountHints.entries) {
-    if (entry.value.any((word) => haystack.contains(normalizeName(word)))) {
-      return entry.key;
-    }
   }
   return null;
 }

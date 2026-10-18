@@ -1,7 +1,7 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
-import 'package:bean_count/services/ocr/receipt_parser.dart';
+import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/services/screenshot/pending_entry.dart';
 import 'package:flutter_test/flutter_test.dart';
 

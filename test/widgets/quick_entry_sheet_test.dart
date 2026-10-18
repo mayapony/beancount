@@ -4,7 +4,7 @@ import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/services/attachments/image_picker_service.dart';
-import 'package:bean_count/services/ocr/receipt_parser.dart';
+import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
