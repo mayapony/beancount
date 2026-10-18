@@ -14,7 +14,7 @@
 - [x] 2.4 发布前护栏：`apksigner verify --print-certs` 检查 APK 签名，若证书含 `Android Debug` 则失败；计算 SHA256 并写入 Release 说明
 - [x] 2.5 建 GitHub Release（附 APK + `SHA256SUMS.txt`），release notes 指向同一 tag 的提交区间
 - [x] 2.6 无 Secrets 时（fork / 首次配置前）工作流给出明确失败信息，指向 `RELEASING.md`，而不是晦涩的 Gradle 报错
-- [ ] 2.7 首次真实发版验证：配好四个 Secrets 后打一个测试 tag，确认 Release 附件可下载、签名证书不是 `Android Debug`
+- [x] 2.7 首次真实发版验证：配好四个 Secrets 后打一个测试 tag，确认 Release 附件可下载、签名证书不是 `Android Debug`
 
 ## 3. 文档与本机一致性
 
@@ -33,7 +33,8 @@
 - 临时 keystore（别名 `testrelease`）：同一命令 → `apksigner` 显示 `CN=Bean Count Release Test`（签名接线生效），`aapt2 dump badging` 显示 `versionCode='2' versionName='0.0.2-test'`（tag 推导版本生效）
 - 字段缺失护栏：只写 `storeFile`/`storePassword` 的 key.properties → Gradle 直接失败并报「缺少字段：keyAlias, keyPassword；写法见 RELEASING.md」
 - 临时 keystore 与 key.properties 已删除；`git status` 看不到密钥（`android/.gitignore` 亦已覆盖 `key.properties`/`*.jks`/`*.keystore`）
-- workflow YAML 已解析校验（13 个步骤）；真实 GitHub Actions 运行待配齐 Secrets 后由 2.7 验证
+- workflow YAML 已解析校验（13 个步骤）
+- 真实发版（2.7）：`v1.0.1` tag 推送后由 GitHub Actions 完成签名与发布，Release 附件可下载、安装正常；本机无 `gh`、仓库为私有，GitHub 侧结果由仓库所有者确认
 
 ## Workflow follow-up
 
