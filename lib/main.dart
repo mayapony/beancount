@@ -4,10 +4,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
+import 'data/repositories/app_state_repository.dart';
 import 'data/repositories/lock_repository.dart';
 import 'data/repositories/theme_repository.dart';
 import 'pages/shell.dart';
+import 'services/update/app_version.dart';
 import 'services/update/update_controller.dart';
+import 'services/update/update_services.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 import 'widgets/lock_gate.dart';
@@ -17,7 +20,16 @@ Future<void> main() async {
   // 先把已保存的主题读出来再 runApp：首帧就是正确的亮/暗，不会闪一下
   final controller = ThemeController(repository: ThemeRepository(_db));
   await controller.load();
-  runApp(BeanApp(themeController: controller));
+
+  final version = await loadAppVersion();
+  final update = createUpdateController(
+    appState: AppStateRepository(_db),
+    version: version,
+  );
+
+  runApp(
+    BeanApp(themeController: controller, updateController: update),
+  );
 }
 
 /// 全 App 只有这一个数据库实例：应用锁与账本共享它。

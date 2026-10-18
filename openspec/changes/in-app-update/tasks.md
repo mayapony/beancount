@@ -35,7 +35,7 @@
 - [x] 5.2 `AboutPage` 接入 controller：自动检查开关、检查更新、上次检查时间、检查中/已是最新/失败原因；验证 `flutter test test/pages/about_page_test.dart` 覆盖开关持久化、手动检查三种结果
 - [x] 5.3 更新提示 `BeanSheet` 与 `UpdatePage`：说明折叠、体积/版本、进度/取消/重试、权限提示、预检错误；验证 `flutter test test/pages/update_page_test.dart` 覆盖可更新、下载中、校验失败、签名不一致四种界面
 - [x] 5.4 `ShellPage` 首帧后自动检查并弹提示、`update_pending_version` 启动提示、安装返回后重新读版本；验证 `flutter test test/pages/shell_update_test.dart` 覆盖有更新、已跳过、安装成功后提示三种路径
-- [ ] 5.5 `main.dart` 组装 controller 与 `update_services.dart` 的 conditional import；Web/iOS 返回 null；验证 `flutter build web` 成功，且 Web 产物不含 `dart:io` 相关编译错误
+- [x] 5.5 `main.dart` 组装 controller 与 `update_services.dart` 的 conditional import；Web/iOS 返回 null；验证 `flutter build web` 成功，且 Web 产物不含 `dart:io` 相关编译错误
 
 ## 6. 文档、联调与真机验收
 
