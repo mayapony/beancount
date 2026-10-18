@@ -1,8 +1,8 @@
 import 'package:bean_count/services/ocr/receipt_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 真实 ML Kit 输出（含噪声）：用它当基准，比手写"完美文本"更能反映实际。
-const _mlkitOutput = '''
+/// 真实视觉模型输出（含噪声）：用它当基准，比手写"完美文本"更能反映实际。
+const _visionOutput = '''
 金豆餐厅消费小票
 牛内面 ¥38.50
 可乐
@@ -16,7 +16,7 @@ const _mlkitOutput = '''
 void main() {
   group('金额', () {
     test('合计行优先，不被小计带偏', () {
-      final guess = parseReceiptText(_mlkitOutput);
+      final guess = parseReceiptText(_visionOutput);
       expect(guess.amountCents, 4450, reason: '取 44.50，而不是 38.50');
       expect(guess.confidence, ReceiptConfidence.amount);
     });
@@ -40,7 +40,7 @@ void main() {
 
   group('分类', () {
     test('餐厅 → 餐饮', () {
-      expect(parseReceiptText(_mlkitOutput).categoryName, '餐饮');
+      expect(parseReceiptText(_visionOutput).categoryName, '餐饮');
     });
 
     test('打车 → 交通', () {
@@ -58,7 +58,7 @@ void main() {
 
   group('日期与备注', () {
     test('识别 YYYY-MM-DD', () {
-      final guess = parseReceiptText(_mlkitOutput, now: DateTime(2026, 10, 20, 9));
+      final guess = parseReceiptText(_visionOutput, now: DateTime(2026, 10, 20, 9));
       expect(guess.happenedAt, DateTime(2026, 10, 18, 9));
     });
 
@@ -77,7 +77,7 @@ void main() {
     });
 
     test('备注取店名并去掉"消费小票"', () {
-      final guess = parseReceiptText(_mlkitOutput);
+      final guess = parseReceiptText(_visionOutput);
       expect(guess.note, contains('金豆餐厅'));
       expect(guess.note, isNot(contains('消费小票')));
     });

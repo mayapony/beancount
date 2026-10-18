@@ -25,6 +25,7 @@ import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/services/import/import_service.dart';
+import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +126,7 @@ Future<void> _pumpApp(
         home: ShellPage(
           database: _db,
           attachmentRepository: _attachments,
+          visionKeys: MemoryReceiptApiKeyStore(),
         ),
       ),
     ),

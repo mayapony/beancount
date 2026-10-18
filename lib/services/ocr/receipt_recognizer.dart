@@ -6,7 +6,7 @@ import 'receipt_parser.dart';
 ///
 /// 抽象出来的原因：
 /// - 解析器可以在没有设备的单元测试里跑；
-/// - Web/桌面没有 ML Kit，用空实现即可，不影响记账。
+/// - 没配置视觉模型（Web/未开启/无 Key）时用空实现即可，不影响记账。
 abstract class ReceiptRecognizer {
   /// 返回识别出的整段文字；没有文字时返回 null。
   Future<String?> recognizeText(Uint8List bytes);

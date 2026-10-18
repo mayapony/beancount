@@ -12,6 +12,8 @@ import 'package:bean_count/main.dart';
 import 'package:bean_count/pages/settings_page.dart';
 import 'package:bean_count/services/export/export_service.dart';
 import 'package:bean_count/services/import/import_service.dart';
+import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
+import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/theme/theme_controller.dart';
@@ -50,6 +52,9 @@ void main() {
             accounts: AccountRepository(db),
             recurring: RecurringRepository(db),
             lock: LockRepository(db),
+            visionSettings:
+                ReceiptVisionSettingsStore(AppStateRepository(db)),
+            visionKeys: MemoryReceiptApiKeyStore(),
           ),
         ),
       );

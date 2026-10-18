@@ -2,6 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/pages/shell.dart';
+import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,7 +35,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildBeanTheme(Brightness.light),
-        home: ShellPage(database: db, attachmentRepository: attachments),
+        home: ShellPage(
+          database: db,
+          attachmentRepository: attachments,
+          visionKeys: MemoryReceiptApiKeyStore(),
+        ),
       ),
     );
     await tester.pump();

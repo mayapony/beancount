@@ -7,6 +7,7 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/ocr/receipt_vision_settings.dart';
 import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
@@ -17,6 +18,7 @@ import 'design_showcase_page.dart';
 import 'recurring_page.dart';
 import 'export_page.dart';
 import 'import_page.dart';
+import 'vision_settings_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
@@ -28,6 +30,8 @@ class SettingsPage extends StatelessWidget {
     required this.accounts,
     required this.recurring,
     required this.lock,
+    required this.visionSettings,
+    required this.visionKeys,
   });
 
   /// 主题控制器；为空时主题行只展示「跟随系统」且不可点。
@@ -39,6 +43,10 @@ class SettingsPage extends StatelessWidget {
   final AccountRepository accounts;
   final RecurringRepository recurring;
   final LockRepository lock;
+
+  /// 截图记账的视觉模型配置与 API Key 存储（设置页只负责入口与状态）。
+  final ReceiptVisionSettingsStore visionSettings;
+  final ReceiptApiKeyStore visionKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -109,20 +117,16 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: BeanSpace.section),
 
-          // ── 截图记账（自动触发，无需入口） ────────────────
+          // ── 截图记账（选图后交给视觉模型） ────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
             child: BeanCard(
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  _SettingTile(
-                    icon: Icons.auto_awesome_rounded,
-                    color: BeanColors.beanGreen,
-                    title: '截图记账',
-                    // 视觉识别还没接：与其写「自动」让人以为已经生效，不如标 Backlog
-                    subtitle: '截屏后自动识别（视觉模型待接入）',
-                    trailing: 'Backlog',
+                  _VisionTile(
+                    settings: visionSettings,
+                    keys: visionKeys,
                   ),
                   _divider(palette),
                   _SettingTile(
@@ -315,6 +319,65 @@ class SettingsPage extends StatelessWidget {
         indent: 60,
         color: palette.border,
       );
+}
+
+class _VisionTile extends StatefulWidget {
+  const _VisionTile({required this.settings, required this.keys});
+
+  final ReceiptVisionSettingsStore settings;
+  final ReceiptApiKeyStore keys;
+
+  @override
+  State<_VisionTile> createState() => _VisionTileState();
+}
+
+class _VisionTileState extends State<_VisionTile> {
+  String? _subtitle;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final settings = await widget.settings.load();
+    final key = await widget.keys.read();
+    if (!mounted) return;
+    final hasKey = key != null;
+    setState(() {
+      _subtitle = switch ((settings.enabled, hasKey)) {
+        (true, true) => '视觉识别已开启 · ${settings.normalizedModel}',
+        (true, false) => '已开启，但还没有 API Key',
+        (false, true) => '已保存 Key，识别未开启',
+        (false, false) => '未开启（图片不会离开设备）',
+      };
+    });
+  }
+
+  Future<void> _open() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VisionSettingsPage(
+          settings: widget.settings,
+          keys: widget.keys,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingTile(
+      icon: Icons.auto_awesome_rounded,
+      color: BeanColors.beanGreen,
+      title: '截图记账',
+      subtitle: _subtitle ?? '视觉识别',
+      trailing: '视觉识别',
+      onTap: _open,
+    );
+  }
 }
 
 class _SettingTile extends StatelessWidget {

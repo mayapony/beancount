@@ -21,7 +21,8 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.jindou.bean_count"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 10.x 编译到 SDK 36（向后兼容）
+    compileSdk = Math.max(flutter.compileSdkVersion, 36)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -38,7 +39,8 @@ android {
         applicationId = "com.jindou.bean_count"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // flutter_secure_storage 10.x 要求 minSdk 23（Keystore 的 AES-GCM）
+        minSdk = Math.max(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -62,7 +64,6 @@ android {
             // 配了 key.properties 用发布签名；没配回退 debug，避免本地 `flutter run --release` 挂掉。
             // 发布流水线会校验产物不是 debug 签名（见 .github/workflows/release.yml）。
             signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
-            // ML Kit 插件引用了未打包的其它脚本类，release 的 R8 需要放行
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -70,10 +71,4 @@ android {
 
 flutter {
     source = "../.."
-}
-
-// ML Kit 的中文识别模型不在插件里，必须显式依赖；
-// 少了这一行运行时会 ClassNotFoundException（ChineseTextRecognizerOptions）。
-dependencies {
-    implementation 'com.google.mlkit:text-recognition-chinese:16.0.0'
 }

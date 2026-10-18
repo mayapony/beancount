@@ -1,6 +1,7 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
+import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:bean_count/theme/app_theme.dart';
 import 'package:bean_count/services/attachments/image_picker_service.dart';
 import 'package:bean_count/services/ocr/receipt_parser.dart';
@@ -744,5 +745,104 @@ void main() {
     await tester.pumpAndSettle();
     expect(submitted?.amount, 30, reason: '用户输入优先');
     expect(submitted?.note, '金豆餐厅', reason: '空字段仍可被填充');
+  });
+
+  testWidgets('没配置视觉识别时提示去设置，不阻塞选图', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pickImage: (source) async => PickedImage(
+                      bytes: Uint8List.fromList([1, 2, 3]),
+                      fileName: 'receipt.png',
+                    ),
+                    recognitionUnavailableHint: '视觉识别未开启，可在设置里配置 API Key',
+                    onSubmit: (_) async => null,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('从相册添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('视觉识别未开启'), findsOneWidget);
+  });
+
+  testWidgets('识别抛错时提示可手动填，金额保持原样', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pickImage: (source) async => PickedImage(
+                      bytes: Uint8List.fromList([1, 2, 3]),
+                      fileName: 'receipt.png',
+                    ),
+                    recognizeReceipt: (bytes) async =>
+                        throw const ReceiptRecognitionException('API Key 无效'),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    for (final key in ['1', '2']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.byTooltip('从相册添加'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('视觉识别失败'), findsOneWidget);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.amount, 12, reason: '识别失败不阻塞保存');
   });
 }

@@ -19,6 +19,7 @@ import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../services/ocr/receipt_recognizer.dart';
 import '../services/ocr/receipt_recognizer_factory.dart';
+import '../services/ocr/receipt_vision_settings.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
@@ -38,6 +39,7 @@ class ShellPage extends StatefulWidget {
     this.database,
     this.attachmentRepository,
     this.themeController,
+    this.visionKeys,
   });
 
   /// 单测 / 截图脚本可以注入内存库；App 正常启动时为 null，走文件库。
@@ -48,6 +50,9 @@ class ShellPage extends StatefulWidget {
 
   /// 附件仓储同样可注入（截图脚本需要把图片落到临时目录）。
   final AttachmentRepository? attachmentRepository;
+
+  /// API Key 存储：单测 / 截图脚本注入内存实现，避开平台通道。
+  final ReceiptApiKeyStore? visionKeys;
 
   @override
   State<ShellPage> createState() => _ShellPageState();
@@ -67,7 +72,10 @@ class _ShellPageState extends State<ShellPage> {
   late final RecurringRepository _recurringRepo = RecurringRepository(_db);
   late final NetWorthRepository _netWorthRepo = NetWorthRepository(_db);
   late final LockRepository _lockRepo = LockRepository(_db);
-  late final ReceiptRecognizer? _receiptRecognizer = systemReceiptRecognizer();
+  late final ReceiptVisionSettingsStore _visionSettings =
+      ReceiptVisionSettingsStore(_appState);
+  late final ReceiptApiKeyStore _visionKeys =
+      widget.visionKeys ?? SecureReceiptApiKeyStore();
   late final EntryWriter _entryWriter = EntryWriter(
     transactions: _transactionRepo,
     attachments: _attachmentRepo,
@@ -108,6 +116,8 @@ class _ShellPageState extends State<ShellPage> {
       accounts: _accountRepo,
       recurring: _recurringRepo,
       lock: _lockRepo,
+      visionSettings: _visionSettings,
+      visionKeys: _visionKeys,
     ),
   ];
 
@@ -203,31 +213,40 @@ class _ShellPageState extends State<ShellPage> {
     // 最近备注：给备注弹窗做一键填充（查不到就空着，不影响记账）
     final recentNotes = await _transactionRepo.recentNotes();
     if (!mounted) return;
+    // 每次打开都重读配置：设置里刚改完，下一次记账立即生效
+    final recognizer = await systemReceiptRecognizer(
+      settings: _visionSettings,
+      keys: _visionKeys,
+    );
+    if (!mounted) return;
 
     final palette = BeanPalette.of(context);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      // 拖拽条由面板自己画（暖灰），不用 Material 默认的冷灰
-      showDragHandle: false,
-      backgroundColor: palette.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (_) => QuickEntrySheet(
-        categories: _categories,
-        accounts: _accounts,
-        recentNotes: recentNotes,
-        fxRates: _fxRates,
-        pickImage: kIsWeb ? null : systemImagePicker(),
-        recognizeReceipt: _receiptRecognizer == null
-            ? null
-            : (bytes) => recognizeReceipt(_receiptRecognizer, bytes),
-        pickEnabled: !kIsWeb,
-        initialCategoryId: _lastSelection.categoryId,
-        initialIsIncome: _lastSelection.isIncome,
-        initialAccountId: _lastSelection.accountId,
-        onSubmit: (draft) async {
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        // 拖拽条由面板自己画（暖灰），不用 Material 默认的冷灰
+        showDragHandle: false,
+        backgroundColor: palette.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        builder: (_) => QuickEntrySheet(
+          categories: _categories,
+          accounts: _accounts,
+          recentNotes: recentNotes,
+          fxRates: _fxRates,
+          pickImage: kIsWeb ? null : systemImagePicker(),
+          recognizeReceipt: recognizer == null
+              ? null
+              : (bytes) => recognizeReceipt(recognizer, bytes),
+          recognitionUnavailableHint:
+              kIsWeb ? null : '视觉识别未开启，可在设置里配置 API Key',
+          pickEnabled: !kIsWeb,
+          initialCategoryId: _lastSelection.categoryId,
+          initialIsIncome: _lastSelection.isIncome,
+          initialAccountId: _lastSelection.accountId,
+          onSubmit: (draft) async {
           try {
             final result = await _entryWriter.submit(
               type: draft.isTransfer
@@ -273,6 +292,10 @@ class _ShellPageState extends State<ShellPage> {
         },
       ),
     );
+    } finally {
+      // 识别器持有 HTTP 客户端：面板关了就不再留着连接
+      await recognizer?.close();
+    }
   }
 
   @override

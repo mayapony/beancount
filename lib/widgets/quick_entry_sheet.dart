@@ -82,6 +82,7 @@ class QuickEntrySheet extends StatefulWidget {
     this.pickEnabled = true,
     this.fxRates = const <String, int>{},
     this.recognizeReceipt,
+    this.recognitionUnavailableHint,
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -108,8 +109,11 @@ class QuickEntrySheet extends StatefulWidget {
   /// 各币种上次用过的汇率（ppm），外币账户记账时作为默认值。
   final Map<String, int> fxRates;
 
-  /// 小票识别：图片 bytes → 线索。为空时不启用（Web/测试）。
+  /// 小票识别：图片 bytes → 线索。为空时不启用（未配置/Web/测试）。
   final Future<ReceiptGuess?> Function(Uint8List bytes)? recognizeReceipt;
+
+  /// 选了图但没有识别能力时给一句提示（为空则静默，不干扰记账）。
+  final String? recognitionUnavailableHint;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -438,7 +442,12 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   /// 选图后跑一次识别：只补空字段，不覆盖用户已经输入的内容。
   Future<void> _applyReceipt(PickedImage image) async {
     final recognize = widget.recognizeReceipt;
-    if (recognize == null || !mounted) return;
+    if (!mounted) return;
+    if (recognize == null) {
+      final hint = widget.recognitionUnavailableHint;
+      if (hint != null) _showHint(hint);
+      return;
+    }
 
     setState(() => _recognizingReceipt = true);
     ReceiptGuess? guess;
@@ -446,7 +455,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     try {
       guess = await recognize(image.bytes);
     } catch (_) {
-      error = '识别失败，可以手动填';
+      error = '视觉识别失败，可以手动填';
     } finally {
       if (mounted) setState(() => _recognizingReceipt = false);
     }
