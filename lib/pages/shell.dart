@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -17,9 +18,14 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/ocr/auto_create_policy.dart';
+import '../services/ocr/entry_matching.dart';
+import '../services/ocr/receipt_parser.dart';
 import '../services/ocr/receipt_recognizer.dart';
 import '../services/ocr/receipt_recognizer_factory.dart';
 import '../services/ocr/receipt_vision_settings.dart';
+import '../services/screenshot/pending_entry.dart';
+import '../services/screenshot/screenshot_settings.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
@@ -64,7 +70,7 @@ class ShellPage extends StatefulWidget {
   State<ShellPage> createState() => _ShellPageState();
 }
 
-class _ShellPageState extends State<ShellPage> {
+class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
   int _index = 0;
 
   late final AppDatabase _db =
@@ -80,6 +86,15 @@ class _ShellPageState extends State<ShellPage> {
   late final LockRepository _lockRepo = LockRepository(_db);
   late final ReceiptVisionSettingsStore _visionSettings =
       ReceiptVisionSettingsStore(_appState);
+  late final ScreenshotSettingsStore _screenshotSettings =
+      ScreenshotSettingsStore(_appState);
+  late final PendingScreenshotEntryStore _pendingScreenshots =
+      PendingScreenshotEntryStore(_appState);
+  late final AutoCreatePolicy _autoCreatePolicy =
+      AutoCreatePolicy(_appState);
+
+  /// 防止冷启动与 resume 同时消费同一条待处理识别。
+  bool _consumingPending = false;
   late final ReceiptApiKeyStore _visionKeys =
       widget.visionKeys ?? SecureReceiptApiKeyStore();
   late final EntryWriter _entryWriter = EntryWriter(
@@ -163,12 +178,62 @@ class _ShellPageState extends State<ShellPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadInitialData();
     _loadFxRates();
     _runRecurringCatchUp();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_runUpdateCheck());
+      unawaited(_consumePendingScreenshot());
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从后台回来（例如在别的 App 截完图）时补一次：在锁屏后面也不会弹，
+    // 因为 ShellPage 只有解锁后才会被构建。
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_consumePendingScreenshot());
+    }
+  }
+
+  /// 取出后台识别结果并打开面板；没有待处理项时什么也不做。
+  Future<void> _consumePendingScreenshot() async {
+    if (_consumingPending) return;
+    _consumingPending = true;
+    try {
+      final entry = await _pendingScreenshots.take();
+      if (entry == null || !mounted) return;
+      if (entry.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('截屏识别失败，可以手动记一笔')),
+        );
+        return;
+      }
+      final guess = entry.guess;
+      if (guess == null) return;
+      final image = await _readPendingImage(entry.imagePath);
+      if (!mounted) return;
+      await _openQuickEntry(initialGuess: guess, pendingImage: image);
+    } finally {
+      _consumingPending = false;
+    }
+  }
+
+  Future<PickedImage?> _readPendingImage(String? path) async {
+    if (path == null || kIsWeb) return null;
+    try {
+      final file = File(path);
+      if (!await file.exists()) return null;
+      return PickedImage(
+        bytes: await file.readAsBytes(),
+        fileName: file.uri.pathSegments.isEmpty
+            ? 'screenshot.jpg'
+            : file.uri.pathSegments.last,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 解锁进入主界面后检查更新：失败静默，发现新版本才弹提示。
@@ -214,6 +279,7 @@ class _ShellPageState extends State<ShellPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // 只关闭自己创建的库，注入的库由调用方负责
     if (widget.database == null) _db.close();
     super.dispose();
@@ -242,7 +308,12 @@ class _ShellPageState extends State<ShellPage> {
   }
 
   /// 金豆按下 → 一次点击直接进入金额输入（不再有多级菜单）。
-  Future<void> _openQuickEntry() async {
+  ///
+  /// [initialGuess] / [pendingImage] 来自后台截屏识别，打开面板时直接预填。
+  Future<void> _openQuickEntry({
+    ReceiptGuess? initialGuess,
+    PickedImage? pendingImage,
+  }) async {
     await _refreshChoices();
     if (!mounted) return;
     // 最近备注：给备注弹窗做一键填充（查不到就空着，不影响记账）
@@ -253,6 +324,55 @@ class _ShellPageState extends State<ShellPage> {
       settings: _visionSettings,
       keys: _visionKeys,
     );
+    if (!mounted) return;
+
+    final screenshotSettings = await _screenshotSettings.load();
+    var guess = initialGuess;
+    String? newCategoryCandidate;
+    var autoTagsToMark = const <String>[];
+
+    if (guess != null) {
+      if (screenshotSettings.autoTags && guess.tagNames.isNotEmpty) {
+        final existingTagKeys = (await _transactionRepo.allTagNames())
+            .map(normalizeName)
+            .toSet();
+        final fresh = guess.tagNames
+            .where((tag) => !existingTagKeys.contains(normalizeName(tag)))
+            .toList();
+        final decision = fresh.isEmpty
+            ? const AutoCreateDecision.allow()
+            : await _autoCreatePolicy.checkTag(
+                enabled: true,
+                requested: fresh.length,
+              );
+        final kept = <String>[
+          for (final tag in guess.tagNames)
+            if (existingTagKeys.contains(normalizeName(tag)) || decision.allowed)
+              tag,
+        ];
+        autoTagsToMark = fresh.where(kept.contains).toList(growable: false);
+        guess = guess.copyWith(tagNames: kept);
+      } else {
+        guess = guess.copyWith(tagNames: const []);
+      }
+
+      if (screenshotSettings.autoCreateCategories &&
+          guess.categoryName != null &&
+          matchCategory(
+                guess.categoryName,
+                _categories,
+                CategoryType.expense,
+              ) ==
+              null) {
+        final decision = await _autoCreatePolicy.checkCategory(
+          enabled: true,
+          categoryTotal: _categories.length,
+        );
+        if (decision.allowed) {
+          newCategoryCandidate = guess.categoryName!.trim();
+        }
+      }
+    }
     if (!mounted) return;
 
     final palette = BeanPalette.of(context);
@@ -278,9 +398,30 @@ class _ShellPageState extends State<ShellPage> {
           recognitionUnavailableHint:
               kIsWeb ? null : '视觉识别未开启，可在设置里配置 API Key',
           pickEnabled: !kIsWeb,
-          initialCategoryId: _lastSelection.categoryId,
-          initialIsIncome: _lastSelection.isIncome,
+          initialCategoryId:
+              initialGuess == null ? _lastSelection.categoryId : null,
+          initialIsIncome:
+              initialGuess == null ? _lastSelection.isIncome : false,
           initialAccountId: _lastSelection.accountId,
+          initialGuess: guess,
+          pendingImage: pendingImage,
+          newCategoryCandidate: newCategoryCandidate,
+          autoTagEnabled: screenshotSettings.autoTags,
+          onCreateCategory: newCategoryCandidate == null
+              ? null
+              : (name) async {
+                  final decision = await _autoCreatePolicy.checkCategory(
+                    enabled: screenshotSettings.autoCreateCategories,
+                    categoryTotal: (await _categoryRepo.allCategories()).length,
+                  );
+                  if (!decision.allowed) return null;
+                  final created = await _categoryRepo.ensure(
+                    name: name,
+                    type: CategoryType.expense,
+                  );
+                  await _autoCreatePolicy.markCategoryCreated();
+                  return created;
+                },
           onSubmit: (draft) async {
           try {
             final result = await _entryWriter.submit(
@@ -306,6 +447,11 @@ class _ShellPageState extends State<ShellPage> {
             }
           } catch (_) {
             return '保存失败，请重试';
+          }
+
+          // 自动标签是保存后才算「真的建了」：记一次配额，供 7 天窗口统计
+          for (final _ in autoTagsToMark) {
+            await _autoCreatePolicy.markTagCreated();
           }
 
           // 外币：记住这次用的汇率，下次记同币种时默认用它

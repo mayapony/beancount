@@ -39,6 +39,28 @@ class ReceiptGuess {
   bool get isEmpty => !hasAmount && categoryName == null && (note ?? '').isEmpty;
 
   static const empty = ReceiptGuess();
+
+  ReceiptGuess copyWith({
+    int? amountCents,
+    String? categoryName,
+    List<String>? tagNames,
+    String? accountName,
+    String? note,
+    DateTime? happenedAt,
+    String? rawText,
+    ReceiptConfidence? confidence,
+  }) {
+    return ReceiptGuess(
+      amountCents: amountCents ?? this.amountCents,
+      categoryName: categoryName ?? this.categoryName,
+      tagNames: tagNames ?? this.tagNames,
+      accountName: accountName ?? this.accountName,
+      note: note ?? this.note,
+      happenedAt: happenedAt ?? this.happenedAt,
+      rawText: rawText ?? this.rawText,
+      confidence: confidence ?? this.confidence,
+    );
+  }
 }
 
 /// 金额正则：`¥38.50`、`￥ 38.50`、`38.50元`、`1,234.50`。
