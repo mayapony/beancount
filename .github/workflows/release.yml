@@ -42,7 +42,8 @@ jobs:
 
       # 发布前必须绿：宁可不发，也不要发一个测试挂掉的版本
       - name: 单元与 Widget 测试
-        run: flutter test
+        # 与 ci.yml 一致：截图工具依赖宿主字体、会写 docs/，不在 CI 跑（见 dart_test.yaml）
+        run: flutter test --exclude-tags screenshots
 
       - name: 推导版本号
         id: version
