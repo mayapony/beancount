@@ -137,16 +137,27 @@ class UpdateController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final outcome = await _source.fetchLatest(
-        etag: await _preferences.etag(),
-      );
+      // 手动检查是用户显式要一个结论：不用 ETag 缓存，避免旧缓存让
+      // 服务端回 304（响应里没有版本号）而误报「已是最新」。
+      final cachedEtag = manual ? null : await _preferences.etag();
+      final outcome = await _source.fetchLatest(etag: cachedEtag);
       final checkedAt = _now();
       await _preferences.markChecked(checkedAt);
-      await _preferences.setEtag(outcome.etag);
       _lastCheckedAt = checkedAt;
 
       if (outcome.notModified) {
+        // 304 只说明「最新发布没变」，不代表当前版本就是最新的：
+        // 本次会话已发现的更高版本仍然有效，不能因为 304 就报「已是最新」。
+        final known = _release;
+        if (known != null && _isNewerThanCurrent(known.version)) {
+          await _preferences.setEtag(null);
+          _phase = UpdatePhase.available;
+          notifyListeners();
+          return known;
+        }
+        await _preferences.setEtag(outcome.etag);
         _phase = UpdatePhase.upToDate;
+        notifyListeners();
         return null;
       }
 
@@ -159,13 +170,17 @@ class UpdateController extends ChangeNotifier {
       }
       _release = release;
 
-      final currentVersion = _current.normalized;
-      if (currentVersion == null ||
-          !isNewerVersion(release.version, currentVersion)) {
+      if (!_isNewerThanCurrent(release.version)) {
+        // 已是最新：这时 ETag 才有意义，下次 304 可以继续判成「已是最新」。
+        await _preferences.setEtag(outcome.etag);
         _phase = UpdatePhase.upToDate;
         notifyListeners();
         return null;
       }
+
+      // 还有没装的更高版本时不缓存 ETag：否则下次请求走 304，响应里没有
+      // 版本号，会把「有新版本」误判成「已是最新」。
+      await _preferences.setEtag(null);
 
       if (!manual && !await _preferences.shouldPrompt(release.version, _now())) {
         _phase = UpdatePhase.upToDate;
@@ -192,6 +207,11 @@ class UpdateController extends ChangeNotifier {
     } finally {
       _checking = false;
     }
+  }
+
+  bool _isNewerThanCurrent(String version) {
+    final currentVersion = _current.normalized;
+    return currentVersion != null && isNewerVersion(version, currentVersion);
   }
 
   Future<void> setAutoCheck(bool enabled) async {

@@ -187,6 +187,66 @@ void main() {
     expect(controller.phase, UpdatePhase.upToDate);
   });
 
+  test('304 时不丢掉已发现的新版本，并通知界面刷新', () async {
+    source.outcome = CheckOutcome(release: _release(), etag: 'W/"102"');
+    final controller = make();
+    expect((await controller.checkManually())?.version, '1.0.2');
+
+    var notifyCount = 0;
+    controller.addListener(() => notifyCount++);
+
+    // 未装新版本时服务端不应再收到 If-None-Match，这里模拟最坏情况。
+    source.outcome = const CheckOutcome.notModified(etag: 'W/"102"');
+    final again = await controller.checkManually();
+
+    expect(again?.version, '1.0.2');
+    expect(controller.phase, UpdatePhase.available);
+    expect(notifyCount, greaterThanOrEqualTo(2));
+    expect(await prefs.etag(), isNull);
+  });
+
+  test('有新版本时不缓存 ETag，自动检查下次仍能发现新版本', () async {
+    source.outcome = CheckOutcome(release: _release(), etag: 'W/"102"');
+    final controller = make();
+    await controller.checkManually();
+    expect(await prefs.etag(), isNull);
+
+    await prefs.markChecked(now.subtract(const Duration(hours: 25)));
+    source.outcome = CheckOutcome(release: _release(), etag: 'W/"102"');
+    final again = await controller.autoCheck();
+
+    expect(source.lastEtag, isNull);
+    expect(again?.version, '1.0.2');
+    expect(controller.phase, UpdatePhase.available);
+  });
+
+  test('已是最新时缓存 ETag，自动检查下次带上 If-None-Match', () async {
+    source.outcome = CheckOutcome(
+      release: _release(version: '1.0.1'),
+      etag: 'W/"same"',
+    );
+    final controller = make();
+    await controller.checkManually();
+    expect(await prefs.etag(), 'W/"same"');
+
+    // 自动检查过 24 小时，带上缓存 ETag；304 判为已是最新。
+    await prefs.markChecked(now.subtract(const Duration(hours: 25)));
+    source.outcome = const CheckOutcome.notModified(etag: 'W/"same"');
+    expect(await controller.autoCheck(), isNull);
+    expect(source.lastEtag, 'W/"same"');
+    expect(controller.phase, UpdatePhase.upToDate);
+  });
+
+  test('手动检查不读 ETag 缓存，总能拿到完整发布信息', () async {
+    await prefs.setEtag('W/"stale"');
+    source.outcome = CheckOutcome(release: _release(), etag: 'W/"102"');
+    final controller = make();
+
+    expect((await controller.checkManually())?.version, '1.0.2');
+    expect(source.lastEtag, isNull);
+    expect(controller.phase, UpdatePhase.available);
+  });
+
   test('自动检查失败保持 failed 状态但不抛异常', () async {
     source.error = const UpdateFailure(
       UpdateFailureKind.timeout,

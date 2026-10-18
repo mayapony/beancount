@@ -106,6 +106,32 @@ void main() {
     expect(find.text('v1.0.2'), findsOneWidget);
   });
 
+  testWidgets('关掉提示后再检查仍提示新版本，不会卡在检查中', (tester) async {
+    ctx.source.outcome = CheckOutcome(release: testRelease());
+    await pump(tester, controller: ctx.controller);
+
+    final tile = find.byKey(const ValueKey('about-check-update'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本'), findsOneWidget);
+
+    // 点弹窗外的空白处关掉提示，并没有真的更新。
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+    expect(find.text('发现新版本'), findsNothing);
+
+    // 再次检查时服务端返回 304：仍然应该提示同一新版本。
+    ctx.source.outcome = const CheckOutcome.notModified(etag: 'W/"e"');
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现新版本'), findsOneWidget);
+    expect(find.text('正在检查…'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('手动检查失败时显示原因', (tester) async {
     ctx.source.error = const UpdateFailure(
       UpdateFailureKind.timeout,
