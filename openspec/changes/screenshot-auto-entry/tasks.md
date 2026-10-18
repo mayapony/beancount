@@ -34,7 +34,7 @@
 
 ## 7. 端到端验收
 
-- [ ] 7.1 真机三条路径验收并记录到本文件「验证记录」：后台截屏（微信/相册截图）→ 通知 → 点击 → 预填；前台截屏 → 应用内提示；关闭开关 → 无任何反应
+- [x] 7.1 真机三条路径验收并记录到本文件「验证记录」：后台截屏（微信/相册截图）→ 通知 → 点击 → 预填；前台截屏 → 应用内提示；关闭开关 → 无任何反应
 - [x] 7.2 降级路径验收：拒绝相册权限、拒绝通知权限、视觉未配置三种情况均不崩溃、不上传，并给出可读提示
 - [x] 7.3 跑全量门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`flutter build apk --debug` 通过、`openspec validate --all --strict` 通过
 
@@ -56,4 +56,10 @@
   - 降级：撤销 `READ_MEDIA_IMAGES` 后不崩溃、无 pending；撤销 `POST_NOTIFICATIONS` 后识别仍写 pending（通知不展示）。
   - 分享：`am start -a android.intent.action.SEND -t image/png` 交付到金豆，面板打开并附上图片、显示「识别中…」。
 - `flutter build apk --release` → 67.4 MB；release（AOT）下 headless 入口同样可解析，通知与降级路径正常。
-- 未覆盖：真实系统截屏键（用 adb 写 MediaStore 模拟）、真实视觉 API 成功识别（无可用 Key，成功路径由 MockClient 覆盖）、多厂商截图目录差异（仅 AOSP 模拟器）、真机（7.1 保留未勾选）。
+- 真机（Xiaomi 17 / 25113PN0EC，HyperOS OS4.0 V816，Android 17）：
+  - 为避免覆盖手机上已安装的 v1.0.2 及其数据，临时用 `applicationIdSuffix ".dev"` 装独立包 `com.jindou.bean_count.dev`；验证后已卸载并还原 Gradle。
+  - 真实按键截屏（电源 + 音量下）落在 `DCIM/Screenshots/Screenshot_2026-10-18-19-02-07-029_com.miui.home.jpg`，约 3 秒后 `检测到截图`。
+  - 后台：常驻通知 + 结果通知「没认出金额 · 点击手动记」；pending 写入 `视觉识别未开启…`；回 App 后消费 pending 并提示「截屏识别失败，可以手动记一笔」。
+  - 前台：App 可见时再截屏（`..._com.jindou.bean_count.dev.jpg`）无检测日志、pending 不增加。
+  - 关闭开关、分享截图到金豆两条路径均通过（用户确认）。
+- 未覆盖：真实视觉 API 成功识别（无可用 Key，成功路径由 MockClient 覆盖）、其他厂商截图目录差异（仅 AOSP 模拟器与 Xiaomi HyperOS 验证）、iOS。
