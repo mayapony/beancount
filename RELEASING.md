@@ -125,6 +125,6 @@ keyPassword=你的密码
 | 渠道 | 现状 | 原因 |
 |---|---|---|
 | Google Play | ❌ 未接 | 需要 Play Console 账号、AAB 产物、服务账号 JSON；新账号还有「20 人测试 14 天」门槛。要接时复用同一把 keystore 即可 |
-| F-Droid **主仓库** | ❌ 不可行 | ①`com.google.mlkit:text-recognition-chinese` 是 Google 专有依赖，属 F-Droid 拒绝的 NonFreeDep；②F-Droid 用**自己的**密钥签名并自行构建，我们的签名用不上；③仓库当前无 LICENSE 文件。 |
+| F-Droid **主仓库** | ❌ 不可行 | ①F-Droid 用**自己的**密钥签名并自行构建，我们的签名用不上；②仓库当前无 LICENSE 文件。（原先的 ML Kit 专有依赖已随视觉模型改造移除，不再是阻碍） |
 | F-Droid **自建仓库** | 🟡 可做，未做 | 用自己的签名 + `fdroid` CLI 生成 `index-v2`，托管到 GitHub Pages，用户添加仓库地址即可在 F-Droid 客户端里自动更新。需要额外一个 change（签名复用本文档的 keystore） |
 | iOS / App Store | ❌ 未接 | 需要 macOS runner 与 Apple 开发者账号（$99/年） |

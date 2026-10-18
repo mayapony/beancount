@@ -1,3 +1,3 @@
 # cloud-receipt-vision
 
-DeepSeek 云端视觉识别（OpenAI 兼容，默认关闭）
+截图记账改用视觉模型（OpenAI 兼容，默认关闭）；删除本地 ML Kit OCR
