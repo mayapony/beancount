@@ -25,6 +25,7 @@ import '../services/ocr/receipt_recognizer.dart';
 import '../services/ocr/receipt_recognizer_factory.dart';
 import '../services/ocr/receipt_vision_settings.dart';
 import '../services/screenshot/pending_entry.dart';
+import '../services/screenshot/screenshot_channel.dart';
 import '../services/screenshot/screenshot_settings.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
@@ -95,6 +96,9 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
 
   /// 防止冷启动与 resume 同时消费同一条待处理识别。
   bool _consumingPending = false;
+  bool _consumingShared = false;
+
+  static const ScreenshotChannel _screenshotChannel = ScreenshotChannel();
   late final ReceiptApiKeyStore _visionKeys =
       widget.visionKeys ?? SecureReceiptApiKeyStore();
   late final EntryWriter _entryWriter = EntryWriter(
@@ -139,6 +143,12 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       lock: _lockRepo,
       visionSettings: _visionSettings,
       visionKeys: _visionKeys,
+      screenshotSettings: _screenshotSettings,
+      requestScreenshotPermissions:
+          _screenshotChannel.isSupported ? _requestScreenshotPermissions : null,
+      onScreenshotAutoEntryChanged: _screenshotChannel.isSupported
+          ? (enabled) => unawaited(_screenshotChannel.setEnabled(enabled))
+          : null,
       updateController: widget.updateController,
     ),
   ];
@@ -182,9 +192,12 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     _loadInitialData();
     _loadFxRates();
     _runRecurringCatchUp();
+    _screenshotChannel.setSharedImageListener(_consumeSharedImage);
+    unawaited(_syncScreenshotService());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_runUpdateCheck());
       unawaited(_consumePendingScreenshot());
+      unawaited(_consumeSharedImage());
     });
   }
 
@@ -194,6 +207,34 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     // 因为 ShellPage 只有解锁后才会被构建。
     if (state == AppLifecycleState.resumed) {
       unawaited(_consumePendingScreenshot());
+      unawaited(_consumeSharedImage());
+    }
+  }
+
+  /// 启动时把原生服务的启停与设置对齐（例如重装/被系统杀掉后）。
+  Future<void> _syncScreenshotService() async {
+    if (!_screenshotChannel.isSupported) return;
+    final settings = await _screenshotSettings.load();
+    await _screenshotChannel.setEnabled(settings.autoEntry);
+  }
+
+  Future<bool> _requestScreenshotPermissions() async {
+    if (!_screenshotChannel.isSupported) return true;
+    return _screenshotChannel.requestPermissions();
+  }
+
+  /// 处理系统分享面板发来的截图：与自动检测走同一条识别 → 预填链路。
+  Future<void> _consumeSharedImage() async {
+    if (!_screenshotChannel.isSupported || _consumingShared) return;
+    _consumingShared = true;
+    try {
+      final path = await _screenshotChannel.takeSharedImagePath();
+      if (path == null || !mounted) return;
+      final image = await _readPendingImage(path);
+      if (image == null || !mounted) return;
+      await _openQuickEntry(pendingImage: image);
+    } finally {
+      _consumingShared = false;
     }
   }
 

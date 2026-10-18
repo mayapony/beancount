@@ -18,7 +18,7 @@
 
 ## 4. Android 截屏检测
 
-- [ ] 4.1 `AndroidManifest.xml` 增加 `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE(maxSdk 32)` / `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE(_SPECIAL_USE)`、`specialUse` service 声明与用途属性；`flutter build apk --debug` 通过，`aapt dump permissions` 能看到声明的权限
+- [x] 4.1 `AndroidManifest.xml` 增加 `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE(maxSdk 32)` / `POST_NOTIFICATIONS` / `FOREGROUND_SERVICE(_SPECIAL_USE)`、`specialUse` service 声明与用途属性；`flutter build apk --debug` 通过，`aapt dump permissions` 能看到声明的权限
 - [ ] 4.2 新增 `ScreenshotWatcher.kt`：注册/注销 MediaStore `ContentObserver`，按 `RELATIVE_PATH`（29+）/`DATA`（<29）+ 文件名关键字判定截图，10 秒时间窗 + 指纹去重；设备端用 `adb shell` 触发系统截屏，日志显示只处理一次
 - [ ] 4.3 新增 `ScreenshotService.kt`（前台服务）：`specialUse` 类型、常驻低优先级通知、启停与 `START_STICKY`、开机广播恢复；设备端验证开关打开后通知常驻、关闭后通知消失且不再触发
 - [ ] 4.4 建立平台通道（service ↔ headless engine ↔ UI）：注册 `GeneratedPluginRegistrant`、`screenshot_entry` 命名入口、事件回传与错误兜底；设备端验证通道能收发，`flutter analyze` 干净

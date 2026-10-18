@@ -3,6 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 侧载自更新需要拉起系统安装器；本应用不上架 Google Play。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 截屏自动记账：监听 MediaStore 新截图需要相册读权限；后台监听用前台服务。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:label="金豆"
         android:name="${applicationName}"
@@ -28,7 +37,29 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- 截图后可直接从系统分享面板发给金豆（无后台监听权限时的兜底）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
+        <!-- 截屏监听：specialUse（targetSdk 35 下 dataSync 每天只有 6 小时）。 -->
+        <service
+            android:name=".ScreenshotService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="监听系统截屏，为记账生成待确认的草稿" />
+        </service>
+        <receiver
+            android:name=".ScreenshotBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
         <!-- 只把 cache/update 下的安装包暴露给系统安装器。 -->
         <provider
             android:name="androidx.core.content.FileProvider"
