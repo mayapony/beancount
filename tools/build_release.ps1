@@ -8,6 +8,7 @@
 # 没有时回退 debug 签名并在输出里提示——那种包只能自己装，别分发。
 #
 # 版本号：默认取最近的 git tag（v1.2.3 → 1.2.3）与提交数；也可显式传 -BuildName/-BuildNumber。
+# versionCode 与 .github/workflows/release.yml 一致，都取 git rev-list --count HEAD。
 # 真正的发布不走这个脚本，而是打 tag 让 .github/workflows/release.yml 跑（见 RELEASING.md）。
 
 param(

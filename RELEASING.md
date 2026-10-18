@@ -56,7 +56,7 @@ base64 -w0 android/release-keystore.jks   # macOS 用 base64 -i，不加 -w0
 ## 二、发一次版
 
 ```powershell
-# 1. 版本号：v1.2.3 → versionName 1.2.3，versionCode 由 CI 自增（无需改 pubspec.yaml）
+# 1. 版本号：v1.2.3 → versionName 1.2.3；versionCode = 提交数（无需改 pubspec.yaml）
 # 2. 打 tag 并推上去
 git tag v1.0.1
 git push origin v1.0.1
@@ -66,9 +66,12 @@ git push origin v1.0.1
 
 1. `flutter pub get` → `flutter analyze` → `flutter test`（**任何一步红就不发布**）
 2. 从 Secrets 还原 keystore，写 `android/key.properties`（不打印内容）
-3. `flutter build apk --release --build-name=<tag 去掉 v> --build-number=<run_number>`
+3. `flutter build apk --release --build-name=<tag 去掉 v> --build-number=<git rev-list --count HEAD>`
 4. `apksigner verify --print-certs`，证书里含 `Android Debug` 就失败
 5. 生成 `SHA256SUMS.txt`，创建 GitHub Release（附 APK + 校验和，notes 自动列出上次 tag 以来的提交）
+
+> versionCode 统一取 `git rev-list --count HEAD`，CI 与本机 `tools/build_release.ps1` 用的是同一个数。
+> 不要改回按 Release 工作流计数的运行序号：那个数比本机包小，覆盖安装会被 Android 判成版本回退。
 
 跑完在 Releases 页就能下载。安装：`app-release.apk` 直接侧载（Android 6.0+）。
 

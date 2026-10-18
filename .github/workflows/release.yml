@@ -57,9 +57,13 @@ jobs:
             VERSION="$(sed -n 's/^version: *\([0-9][^+]*\).*/\1/p' pubspec.yaml | head -1)"
             TAG=""
           fi
+          # versionCode 取提交数：本机 tools/build_release.ps1 用同一来源，
+          # 避免装过本机包后 CI 的运行序号更小、覆盖安装被判版本回退。
+          VERSION_CODE="$(git rev-list --count HEAD)"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "构建版本：${VERSION}（tag: ${TAG:-无，演练模式}）"
+          echo "构建版本：${VERSION}（versionCode ${VERSION_CODE}，tag: ${TAG:-无，演练模式}）"
 
       - name: 还原签名密钥
         env:
@@ -92,7 +96,7 @@ jobs:
         run: |
           flutter build apk --release \
             --build-name="${{ steps.version.outputs.version }}" \
-            --build-number="${{ github.run_number }}"
+            --build-number="${{ steps.version.outputs.version_code }}"
 
       - name: 校验签名不是 debug
         run: |
@@ -116,7 +120,7 @@ jobs:
       - name: 上传构建产物（演练模式也留档）
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-${{ steps.version.outputs.version }}-${{ github.run_number }}
+          name: app-release-${{ steps.version.outputs.version }}-${{ github.run_id }}
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             SHA256SUMS.txt
