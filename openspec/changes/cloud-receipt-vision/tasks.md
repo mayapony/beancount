@@ -29,7 +29,8 @@
 
 - [x] 5.1 更新 `docs/PRODUCT_PLAN.md` M7 与 README/DESIGN：识别改为视觉模型（默认关闭），不再提本地 OCR
 - [x] 5.2 `flutter analyze` 零告警、`flutter test` 全绿、`openspec validate cloud-receipt-vision --strict` 通过
-- [ ] 5.3 真机用真实 Key 识别一张支付截图，记录金额/分类是否命中；失败场景（错 Key、断网）确认提示可读且仍能手动保存
+- [x] 5.3 真机用真实 Key 识别一张支付截图，记录金额/分类是否命中；失败场景（错 Key、断网）确认提示可读且仍能手动保存
+  > 验证（2026-10-18，Android 16 模拟器）：真实 Key 识别小票 → ¥44.50 / 餐饮 / 金豆餐厅，已入账；错 Key 显示红色内联「视觉识别失败，可以手动填」；断网后手动保存 3.00 成功。
 
 ## Workflow follow-up
 

@@ -785,9 +785,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('从相册添加'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.textContaining('视觉识别未开启'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('识别抛错时提示可手动填，金额保持原样', (tester) async {
@@ -837,9 +839,11 @@ void main() {
       await tester.pump();
     }
     await tester.tap(find.byTooltip('从相册添加'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.textContaining('视觉识别失败'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
 
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();

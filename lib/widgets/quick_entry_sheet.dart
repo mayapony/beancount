@@ -336,13 +336,14 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   /// 「再记」后的内联反馈（SnackBar 会被 modal sheet 挡住，所以自己画）
   late final AnimationController _toast;
   String _toastText = '';
+  bool _toastError = false;
 
   @override
   void initState() {
     super.initState();
     _toast = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 2400),
     );
     // 播完自动归零，备注行回到「点击填写备注」
     _toast.addStatusListener((status) {
@@ -445,7 +446,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     if (!mounted) return;
     if (recognize == null) {
       final hint = widget.recognitionUnavailableHint;
-      if (hint != null) _showHint(hint);
+      if (hint != null) _showHint(hint, error: true);
       return;
     }
 
@@ -461,11 +462,11 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     }
     if (!mounted) return;
     if (error != null) {
-      _showHint(error);
+      _showHint(error, error: true);
       return;
     }
     if (guess == null || guess.isEmpty) {
-      _showHint('没认出金额，手动填一下');
+      _showHint('没认出金额，手动填一下', error: true);
       return;
     }
 
@@ -500,20 +501,22 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     });
 
     if (filled.isEmpty) {
-      _showHint('识别到了文字，但没有可填的空位');
+      _showHint('识别到了文字，但没有可填的空位', error: true);
     } else if (guess.hasAmount) {
       _showHint('已识别 ¥${(guess.amountCents! / 100).toStringAsFixed(2)}，'
           '请确认后保存');
     } else {
-      _showHint('认出了文字，金额没认出来');
+      _showHint('认出了文字，金额没认出来', error: true);
     }
   }
 
-  void _showHint(String text) {
+  void _showHint(String text, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text), duration: const Duration(seconds: 2)),
-    );
+    setState(() {
+      _toastText = text;
+      _toastError = error;
+    });
+    _toast.forward(from: 0);
   }
 
   /// 备注：用弹窗编辑，避免系统键盘顶掉自定义数字键盘。
@@ -1205,20 +1208,30 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
         return Opacity(
           opacity: fade.clamp(0.0, 1.0),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.check_circle_rounded,
+              Icon(
+                _toastError
+                    ? Icons.error_outline_rounded
+                    : Icons.check_circle_rounded,
                 size: 15,
-                color: BeanColors.beanGreenDeep,
+                color: _toastError
+                    ? BeanColors.alertRed
+                    : BeanColors.beanGreenDeep,
               ),
               const SizedBox(width: 5),
-              Text(
-                _toastText,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: BeanColors.beanGreenDeep,
+              Flexible(
+                child: Text(
+                  _toastText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: _toastError
+                        ? BeanColors.alertRed
+                        : BeanColors.beanGreenDeep,
+                  ),
                 ),
               ),
             ],
