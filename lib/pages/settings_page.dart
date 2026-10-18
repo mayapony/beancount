@@ -14,6 +14,7 @@ import '../widgets/common.dart';
 import 'accounts_page.dart';
 import 'categories_page.dart';
 import 'app_lock_page.dart';
+import 'about_page.dart';
 import 'design_showcase_page.dart';
 import 'recurring_page.dart';
 import 'export_page.dart';
@@ -238,8 +239,12 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.info_outline_rounded,
                     color: BeanColors.gold,
                     title: '关于金豆',
-                    subtitle: '一颗圆豆子，肚子里存金币',
-                    trailing: 'v0.0.1',
+                    subtitle: '版本、仓库与检查更新',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AboutPage(),
+                      ),
+                    ),
                   ),
                 ],
               ),
