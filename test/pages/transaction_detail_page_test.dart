@@ -10,6 +10,7 @@ import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/pages/transaction_detail_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
+import 'package:bean_count/theme/tokens.dart';
 import 'package:bean_count/widgets/common.dart';
 import 'package:bean_count/widgets/quick_entry_sheet.dart';
 import 'package:flutter/material.dart';
@@ -88,6 +89,67 @@ void main() {
     expect(find.text('#出差'), findsOneWidget);
     expect(find.text('#报销'), findsOneWidget);
     expect(find.textContaining('12:30'), findsOneWidget);
+  });
+
+  testWidgets('标签是可辨识的胶囊，不和页面底色融成裸文字', (tester) async {
+    final account = (await accounts.all()).first;
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: (await categories.findByName('餐饮', CategoryType.expense))!
+            .id,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        accountId: account.id,
+        note: '牛肉面',
+        tags: ['出差'],
+      ),
+    );
+
+    await pumpDetail(tester, created.transactionId);
+
+    final chip = tester.widget<DecoratedBox>(
+      find
+          .ancestor(
+            of: find.text('#出差'),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final decoration = chip.decoration as BoxDecoration;
+    expect(
+      decoration.color,
+      isNot(BeanColors.bgLight),
+      reason: '标签底色不能和页面背景相同',
+    );
+    expect(
+      decoration.borderRadius,
+      BorderRadius.circular(BeanRadius.chip),
+      reason: '标签按设计规范是胶囊形',
+    );
+  });
+
+  testWidgets('编辑面板使用不透明表面，不把详情页透出来', (tester) async {
+    final created = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: (await categories.findByName('餐饮', CategoryType.expense))!
+            .id,
+        happenedAt: DateTime(2026, 10, 17, 12, 30),
+        note: '牛肉面',
+        tags: ['出差'],
+      ),
+    );
+
+    await pumpDetail(tester, created.transactionId);
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+
+    final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
+    expect(sheet.backgroundColor, BeanColors.surfaceLight);
+    expect(sheet.backgroundColor?.a, 1.0, reason: '编辑面板不能是半透明的');
+    expect(sheet.shape, isA<RoundedRectangleBorder>());
   });
 
   testWidgets('编辑：改分类后保存，详情与库里的数据一起变', (tester) async {

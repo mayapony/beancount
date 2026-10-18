@@ -41,7 +41,7 @@ class AmountText extends StatelessWidget {
         ? palette.transfer
         : (isIncome ? palette.income : palette.expense);
     final sign = !showSign
-        ? ''
+        ? (value < 0 ? '-' : '')
         : isTransfer
             ? ''
             : (isIncome ? '+' : '-');

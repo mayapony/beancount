@@ -284,6 +284,8 @@ class _Ledger extends StatelessWidget {
             ),
 
             // ── 本月概览 ──────────────────────────────────────
+            // 三列等比宽，数字居中；不加竖分隔线——金额宽度不一，
+            // 分隔线会被长金额（如 +14,519.01）挤到贴字，看起来像错位。
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
               child: BeanCard(
@@ -295,7 +297,6 @@ class _Ledger extends StatelessWidget {
                         child: AmountText(totalExpense / 100, fontSize: 17),
                       ),
                     ),
-                    _divider(palette),
                     Expanded(
                       child: _Metric(
                         label: '收入',
@@ -306,7 +307,6 @@ class _Ledger extends StatelessWidget {
                         ),
                       ),
                     ),
-                    _divider(palette),
                     Expanded(
                       child: _Metric(
                         label: '结余',
@@ -314,7 +314,9 @@ class _Ledger extends StatelessWidget {
                           (totalIncome - totalExpense) / 100,
                           showSign: false,
                           fontSize: 17,
-                          color: BeanColors.goldDeep,
+                          // 负结余是警示（红）；正数回到正文色，金色只做点缀
+                          color:
+                              totalExpense > totalIncome ? palette.alert : null,
                         ),
                       ),
                     ),
@@ -369,13 +371,9 @@ class _Ledger extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _divider(BeanPalette palette) => Container(
-        width: 1,
-        height: 34,
-        color: palette.border,
-      );
-}class _Metric extends StatelessWidget {
+class _Metric extends StatelessWidget {
   const _Metric({required this.label, required this.child});
 
   final String label;

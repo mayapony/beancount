@@ -10,6 +10,7 @@ import 'package:bean_count/pages/search_page.dart';
 import 'package:bean_count/pages/transaction_detail_page.dart';
 import 'package:bean_count/pages/transactions_page.dart';
 import 'package:bean_count/theme/app_theme.dart';
+import 'package:bean_count/theme/tokens.dart';
 import 'package:bean_count/utils/month.dart';
 import 'package:bean_count/widgets/month_picker_sheet.dart';
 import 'package:flutter/material.dart';
@@ -84,9 +85,30 @@ void main() {
     expect(find.text('牛肉面'), findsOneWidget);
     // 分类名出现在副标题里；金额为 38.50，支出带负号
     expect(find.textContaining('餐饮'), findsWidgets);
-    // 概览里的「支出」合计 + 明细行各一处
-    expect(find.text('-38.50'), findsNWidgets(2));
+    // 概览的「支出」「结余」（负结余带负号）+ 明细行各一处
+    expect(find.text('-38.50'), findsNWidgets(3));
     expect(find.textContaining('1 笔支出'), findsOneWidget);
+  });
+
+  testWidgets('负结余带负号并用警示色，不再伪装成正数', (tester) async {
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '只有支出',
+      ),
+    );
+
+    await pumpPage(tester);
+
+    final matches = tester
+        .widgetList<Text>(find.text('-38.50'))
+        .where((t) => t.style?.color == BeanColors.alertRedDeep)
+        .toList();
+    expect(matches, hasLength(1), reason: '结余为负时应是红色的 -38.50');
   });
 
   testWidgets('多天数据按天分组，最近一天在最上面', (tester) async {
@@ -492,5 +514,52 @@ void main() {
     expect(find.text('-500.00'), findsNothing);
     // 概览：转账不算支出
     expect(find.text('-0.00'), findsWidgets);
+  });
+
+  testWidgets('金额位数不同时，缩略图仍对齐在同一列', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final food = await categories.findByName('餐饮', CategoryType.expense);
+    final short = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 3850,
+        categoryId: food!.id,
+        happenedAt: DateTime.now(),
+        note: '短金额',
+      ),
+    );
+    final long = await repo.create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 16090,
+        categoryId: food.id,
+        happenedAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        note: '长金额',
+      ),
+    );
+    await tester.runAsync(() async {
+      await attachments.ensureReady();
+      for (final created in [short, long]) {
+        await attachments.add(
+          transactionId: created.transactionId,
+          bytes: Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
+          fileName: '${created.transactionId}.png',
+        );
+      }
+    });
+
+    await pumpPage(tester);
+
+    final thumbs = find.byType(Image);
+    expect(thumbs, findsNWidgets(2));
+    expect(
+      tester.getTopLeft(thumbs.at(0)).dx,
+      tester.getTopLeft(thumbs.at(1)).dx,
+      reason: '金额列宽固定后，缩略图左边应该一致',
+    );
   });
 }

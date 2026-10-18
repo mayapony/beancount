@@ -201,6 +201,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
   /// 打开预填面板改这一笔；保存成功后刷新本页与明细（明细靠数据流自动刷新）。
   Future<void> _edit() async {
+    final palette = BeanPalette.of(context);
     final transaction = _row.transaction;
     final draft = QuickEntryDraft(
       amount: transaction.amountCents / 100,
@@ -217,7 +218,11 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      // 面板自己不画底：这里必须给不透明表面，否则编辑时详情页会透出来
+      backgroundColor: palette.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (_) => QuickEntrySheet(
         categories: widget.categories,
         accounts: widget.accounts,
@@ -641,14 +646,19 @@ class _TagChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: palette.neutral.sand,
-        borderRadius: BorderRadius.circular(8),
+        // 页面底色是暖灰沙色，标签不能再用 sand 填充，否则和背景同色 → 看起来是裸文字
+        color: palette.neutral.track,
+        borderRadius: BorderRadius.circular(BeanRadius.chip),
       ),
       child: Text(
         '#$label',
-        style: TextStyle(fontSize: 13, color: palette.textSecondary),
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: palette.textSecondary,
+        ),
       ),
     );
   }

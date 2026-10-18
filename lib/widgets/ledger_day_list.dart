@@ -244,39 +244,50 @@ class _EntryRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            if (row.transaction.currency != 'CNY' &&
-                row.transaction.originalAmountCents != null) ...[
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    formatForeign(
-                      row.transaction.originalAmountCents!,
-                      row.transaction.currency,
-                    ),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  Text(
-                    '≈ ¥${formatMoney(row.amountCents / 100)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ],
+            // 金额列固定宽度 + 右对齐：金额位数不同时缩略图仍对齐成一列。
+            // 宽度跟随字号缩放；极端长金额时 FittedBox 等比缩小，不换行不撑破行。
+            SizedBox(
+              width: _kAmountColumnWidth *
+                  MediaQuery.textScalerOf(context).scale(1),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: row.transaction.currency != 'CNY' &&
+                        row.transaction.originalAmountCents != null
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            formatForeign(
+                              row.transaction.originalAmountCents!,
+                              row.transaction.currency,
+                            ),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '≈ ¥${formatMoney(row.amountCents / 100)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      )
+                    : AmountText(
+                        row.amountCents / 100,
+                        isIncome: row.isIncome,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w500,
+                        showSign: !row.isTransfer,
+                        color: row.isTransfer ? palette.transfer : null,
+                      ),
               ),
-            ] else
-            AmountText(
-              row.amountCents / 100,
-              isIncome: row.isIncome,
-              fontSize: 17,
-              fontWeight: FontWeight.w500,
-              showSign: !row.isTransfer,
-              color: row.isTransfer ? palette.transfer : null,
             ),
           ],
         ),
@@ -284,6 +295,10 @@ class _EntryRow extends StatelessWidget {
     );
   }
 }
+
+/// 金额列宽度：固定住，缩略图才能在不同位数金额的行之间对齐。
+/// 实际宽度随系统字号缩放，避免大字号时金额被压小。
+const double _kAmountColumnWidth = 84;
 
 /// 32×32 圆角缩略图：文件还没解析出来时给一块占位，避免行高跳动。
 class _AttachmentThumb extends StatelessWidget {
