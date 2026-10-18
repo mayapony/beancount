@@ -23,11 +23,13 @@ import '../services/ocr/receipt_vision_settings.dart';
 import '../services/attachments/image_picker_service.dart';
 import '../services/entry/entry_writer.dart';
 import '../services/recurring/recurring_service.dart';
+import '../services/update/update_controller.dart';
 import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/bean_bottom_nav.dart';
 import '../widgets/bean_fab.dart';
 import '../widgets/quick_entry_sheet.dart';
+import '../widgets/update_prompt_sheet.dart';
 import 'assets_page.dart';
 import 'insights_page.dart';
 import 'settings_page.dart';
@@ -40,6 +42,7 @@ class ShellPage extends StatefulWidget {
     this.attachmentRepository,
     this.themeController,
     this.visionKeys,
+    this.updateController,
   });
 
   /// 单测 / 截图脚本可以注入内存库；App 正常启动时为 null，走文件库。
@@ -53,6 +56,9 @@ class ShellPage extends StatefulWidget {
 
   /// API Key 存储：单测 / 截图脚本注入内存实现，避开平台通道。
   final ReceiptApiKeyStore? visionKeys;
+
+  /// 更新控制器；为空时（Web/iOS/测试）不联网检查。
+  final UpdateController? updateController;
 
   @override
   State<ShellPage> createState() => _ShellPageState();
@@ -118,6 +124,7 @@ class _ShellPageState extends State<ShellPage> {
       lock: _lockRepo,
       visionSettings: _visionSettings,
       visionKeys: _visionKeys,
+      updateController: widget.updateController,
     ),
   ];
 
@@ -159,6 +166,34 @@ class _ShellPageState extends State<ShellPage> {
     _loadInitialData();
     _loadFxRates();
     _runRecurringCatchUp();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_runUpdateCheck());
+    });
+  }
+
+  /// 解锁进入主界面后检查更新：失败静默，发现新版本才弹提示。
+  Future<void> _runUpdateCheck() async {
+    final controller = widget.updateController;
+    if (controller == null) return;
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+
+      final updatedTo = controller.takeUpdatedTo();
+      if (updatedTo != null) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text('已更新到 v$updatedTo')),
+          );
+      }
+
+      final release = await controller.autoCheck();
+      if (!mounted || release == null) return;
+      await showUpdatePrompt(context, controller);
+    } catch (_) {
+      // 更新检查失败不能影响记账主流程。
+    }
   }
 
   /// 打开 App 时补记到期的循环规则：不阻塞首帧，失败不影响使用。

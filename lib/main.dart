@@ -7,6 +7,7 @@ import 'data/db/connection.dart';
 import 'data/repositories/lock_repository.dart';
 import 'data/repositories/theme_repository.dart';
 import 'pages/shell.dart';
+import 'services/update/update_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 import 'widgets/lock_gate.dart';
@@ -28,6 +29,7 @@ class BeanApp extends StatefulWidget {
     this.database,
     this.lockRepository,
     this.themeController,
+    this.updateController,
   });
 
   /// 测试注入用；为空时用真实的文件库。
@@ -36,6 +38,9 @@ class BeanApp extends StatefulWidget {
 
   /// 主题控制器（main 注入）；测试不传时内部建一个跟随系统的。
   final ThemeController? themeController;
+
+  /// 更新控制器（main 注入）；测试不传时不做更新检查。
+  final UpdateController? updateController;
 
   @override
   State<BeanApp> createState() => _BeanAppState();
@@ -87,6 +92,7 @@ class _BeanAppState extends State<BeanApp> {
         child: ShellPage(
           database: widget.database ?? _db,
           themeController: _controller,
+          updateController: widget.updateController,
         ),
       ),
     );

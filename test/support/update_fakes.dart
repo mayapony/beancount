@@ -135,10 +135,14 @@ class UpdateTestContext {
   static Future<UpdateTestContext> create({
     AppVersion current = testCurrentVersion,
     Future<AppVersion> Function()? versionLoader,
+    String? pendingVersion,
   }) async {
     final db = AppDatabase(openInMemoryConnection());
     final preferences = UpdatePreferences(AppStateRepository(db));
     await db.select(db.appState).get();
+    if (pendingVersion != null) {
+      await preferences.setPendingVersion(pendingVersion);
+    }
     final source = FakeUpdateSource();
     final downloader = FakeApkDownloader();
     final installer = FakeApkInstaller();
