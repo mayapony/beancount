@@ -85,6 +85,45 @@ void main() {
     expect(find.text('记一笔'), findsNothing);
   });
 
+  testWidgets('多条 pending 按顺序逐条打开，关掉一条继续下一条', (tester) async {
+    await pending.add(
+      PendingScreenshotEntry(
+        id: 'shot-a',
+        createdAt: DateTime(2026, 10, 18, 12),
+        guess: const ReceiptGuess(
+          amountCents: 4450,
+          note: '第一张',
+          confidence: ReceiptConfidence.amount,
+        ),
+      ),
+    );
+    await pending.add(
+      PendingScreenshotEntry(
+        id: 'shot-b',
+        createdAt: DateTime(2026, 10, 18, 12, 1),
+        guess: const ReceiptGuess(
+          amountCents: 3002,
+          note: '第二张',
+          confidence: ReceiptConfidence.amount,
+        ),
+      ),
+    );
+
+    await pumpShell(tester);
+    expect(find.text('44.50'), findsWidgets);
+
+    // 关掉第一张：队列自动打开第二张
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('30.02'), findsWidgets);
+    expect(find.text('第二张'), findsWidgets);
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('记一笔'), findsNothing);
+    expect(await pending.count(), 0);
+  });
+
   testWidgets('识别失败时显示真实原因，不打开面板', (tester) async {
     await pending.write(
       PendingScreenshotEntry(

@@ -27,7 +27,33 @@ class ScreenshotWatcher(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var registered = false
-    private var retryRunnable: Runnable? = null
+    private val retries = linkedMapOf<String, RetryTarget>()
+    private var retryScheduled = false
+    private val retryLoop = object : Runnable {
+        override fun run() {
+            retryScheduled = false
+            if (retries.isEmpty()) return
+            val batch = retries.values.toList()
+            for (target in batch) {
+                val result = if (target.recent) {
+                    val row = queryRecentScreenshot()
+                    QueryResult(found = row != null, row = row)
+                } else {
+                    target.uri?.let { queryUri(it) } ?: QueryResult(found = false)
+                }
+                when {
+                    result.row != null -> {
+                        retries.remove(target.key)
+                        emit(result.row)
+                    }
+                    result.found -> retries.remove(target.key) // 行存在但不是截图
+                    target.attempt + 1 >= MAX_RETRIES -> retries.remove(target.key)
+                    else -> target.attempt += 1
+                }
+            }
+            if (retries.isNotEmpty()) scheduleRetryLoop()
+        }
+    }
     private val processed: LinkedHashSet<String> =
         LinkedHashSet(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -37,7 +63,7 @@ class ScreenshotWatcher(
 
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            maybeEmit(uri, attempt = 0)
+            maybeEmit(uri)
         }
     }
 
@@ -56,8 +82,9 @@ class ScreenshotWatcher(
     }
 
     fun stop() {
-        retryRunnable?.let { handler.removeCallbacks(it) }
-        retryRunnable = null
+        handler.removeCallbacks(retryLoop)
+        retryScheduled = false
+        retries.clear()
         if (!registered) return
         try {
             context.contentResolver.unregisterContentObserver(observer)
@@ -71,7 +98,7 @@ class ScreenshotWatcher(
      * [uri] 来自 ContentObserver：通常是新图片的 item URI，也可能是集合 URI。
      * 优先查这条 URI；查不到再退回「最近几秒内新增的截图」，并短重试几次。
      */
-    private fun maybeEmit(uri: Uri?, attempt: Int) {
+    private fun maybeEmit(uri: Uri?) {
         if (ScreenshotRuntime.isAppVisible) return
 
         if (uri != null && isItemUri(uri)) {
@@ -82,8 +109,8 @@ class ScreenshotWatcher(
             }
             // 行已经存在但不是截图（比如用户保存的照片）：不要拿旧截图凑数
             if (result.found) return
-            // 行还没进 MediaStore：继续重试，绝不退回「最新一张」
-            if (attempt < MAX_RETRIES) scheduleRetry(uri, attempt + 1)
+            // 行还没进 MediaStore：加入重试队列，绝不退回「最新一张」
+            scheduleRetry(uri, recent = false)
             return
         }
 
@@ -92,7 +119,7 @@ class ScreenshotWatcher(
             emit(recent)
             return
         }
-        if (attempt < MAX_RETRIES) scheduleRetry(uri, attempt + 1)
+        scheduleRetry(uri, recent = true)
     }
 
     private fun emit(row: MediaRow) {
@@ -103,14 +130,20 @@ class ScreenshotWatcher(
         onScreenshot(row.uri)
     }
 
-    private fun scheduleRetry(uri: Uri?, attempt: Int) {
-        retryRunnable?.let { handler.removeCallbacks(it) }
-        val runnable = Runnable {
-            retryRunnable = null
-            maybeEmit(uri, attempt)
-        }
-        retryRunnable = runnable
-        handler.postDelayed(runnable, RETRY_MS)
+    /**
+     * 重试用队列而不是单个 Runnable：连续截图时，前一张的重试不能被后一张顶掉。
+     * item URI 固定查自己；集合 URI/null 才查最近几秒。
+     */
+    private fun scheduleRetry(uri: Uri?, recent: Boolean) {
+        val key = if (recent || uri == null) "recent" else uri.toString()
+        retries.putIfAbsent(key, RetryTarget(key, uri, recent))
+        scheduleRetryLoop()
+    }
+
+    private fun scheduleRetryLoop() {
+        if (retryScheduled) return
+        retryScheduled = true
+        handler.postDelayed(retryLoop, RETRY_MS)
     }
 
     private fun queryUri(uri: Uri): QueryResult {
@@ -246,6 +279,13 @@ class ScreenshotWatcher(
     private data class MediaRow(val uri: Uri, val name: String)
 
     private data class QueryResult(val found: Boolean, val row: MediaRow? = null)
+
+    private data class RetryTarget(
+        val key: String,
+        val uri: Uri?,
+        val recent: Boolean,
+        var attempt: Int = 0,
+    )
 
     companion object {
         private const val TAG = "ScreenshotWatcher"

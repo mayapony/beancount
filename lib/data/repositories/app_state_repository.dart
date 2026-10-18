@@ -42,6 +42,26 @@ class AppStateRepository {
     await (_db.delete(_db.appState)..where((t) => t.key.equals(key))).go();
   }
 
+  /// 删除单个 key，返回是否真的删掉了。
+  /// 多个 isolate/引擎同时消费队列时，用它做「谁删到谁拿走」的原子抢占。
+  Future<bool> removeIfPresent(String key) async {
+    final deleted =
+        await (_db.delete(_db.appState)..where((t) => t.key.equals(key))).go();
+    return deleted > 0;
+  }
+
+  /// 读取以 [prefix] 开头的键值对（待确认截图队列用）。
+  ///
+  /// app_state 只有几十个键，直接全读后在 Dart 里按前缀过滤；
+  /// 比依赖 drift 的 like 扩展更稳。
+  Future<List<MapEntry<String, String>>> readStartingWith(String prefix) async {
+    final rows = await _db.select(_db.appState).get();
+    return [
+      for (final row in rows)
+        if (row.key.startsWith(prefix)) MapEntry(row.key, row.value),
+    ];
+  }
+
   Future<LastEntrySelection> lastSelection() async {
     final categoryId = await read(kLastCategoryId);
     final accountId = await read(kLastAccountId);

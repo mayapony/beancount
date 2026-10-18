@@ -90,8 +90,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       ScreenshotSettingsStore(_appState);
   late final PendingScreenshotEntryStore _pendingScreenshots =
       PendingScreenshotEntryStore(_appState);
-  late final AutoCreatePolicy _autoCreatePolicy =
-      AutoCreatePolicy(_appState);
+  late final AutoCreatePolicy _autoCreatePolicy = AutoCreatePolicy(_appState);
 
   /// 防止冷启动与 resume 同时消费同一条待处理识别。
   bool _consumingPending = false;
@@ -191,7 +190,10 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     _loadInitialData();
     _loadFxRates();
     _runRecurringCatchUp();
-    _screenshotChannel.setSharedImageListener(_consumeSharedImage);
+    _screenshotChannel.setNativeListeners(
+      onSharedImage: _consumeSharedImage,
+      onPendingAvailable: _consumePendingScreenshot,
+    );
     unawaited(_syncScreenshotService());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_runUpdateCheck());
@@ -237,27 +239,38 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     }
   }
 
-  /// 取出后台识别结果并打开面板；没有待处理项时什么也不做。
+  /// 取出后台识别结果，逐条打开面板；没有待处理项时什么也不做。
+  ///
+  /// 多张连续截图会按识别完成顺序排队：关掉/保存当前这张后，
+  /// 自动接着处理下一条；剩余条目留在库里，下次回到前台继续。
   Future<void> _consumePendingScreenshot() async {
     if (_consumingPending) return;
     _consumingPending = true;
     try {
-      final entry = await _pendingScreenshots.take();
-      if (entry == null || !mounted) return;
-      if (entry.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(entry.error!)),
-        );
-        return;
+      while (mounted && _isForeground) {
+        final entry = await _pendingScreenshots.take();
+        if (entry == null || !mounted) break;
+        if (entry.error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(entry.error!)),
+          );
+          continue;
+        }
+        final guess = entry.guess;
+        if (guess == null) continue;
+        final image = await _readPendingImage(entry.imagePath);
+        if (!mounted) break;
+        await _openQuickEntry(initialGuess: guess, pendingImage: image);
       }
-      final guess = entry.guess;
-      if (guess == null) return;
-      final image = await _readPendingImage(entry.imagePath);
-      if (!mounted) return;
-      await _openQuickEntry(initialGuess: guess, pendingImage: image);
     } finally {
       _consumingPending = false;
     }
+  }
+
+  bool get _isForeground {
+    final state = WidgetsBinding.instance.lifecycleState;
+    // 测试环境可能还没设置 lifecycleState，按前台处理
+    return state == null || state == AppLifecycleState.resumed;
   }
 
   Future<PickedImage?> _readPendingImage(String? path) async {
@@ -373,9 +386,8 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
 
     if (guess != null) {
       if (screenshotSettings.autoTags && guess.tagNames.isNotEmpty) {
-        final existingTagKeys = (await _transactionRepo.allTagNames())
-            .map(normalizeName)
-            .toSet();
+        final existingTagKeys =
+            (await _transactionRepo.allTagNames()).map(normalizeName).toSet();
         final fresh = guess.tagNames
             .where((tag) => !existingTagKeys.contains(normalizeName(tag)))
             .toList();
@@ -387,7 +399,8 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
               );
         final kept = <String>[
           for (final tag in guess.tagNames)
-            if (existingTagKeys.contains(normalizeName(tag)) || decision.allowed)
+            if (existingTagKeys.contains(normalizeName(tag)) ||
+                decision.allowed)
               tag,
         ];
         autoTagsToMark = fresh.where(kept.contains).toList(growable: false);
@@ -435,8 +448,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
           recognizeReceipt: recognizer == null
               ? null
               : (bytes) => recognizer.recognize(bytes),
-          recognitionUnavailableHint:
-              kIsWeb ? null : '视觉识别未开启，可在设置里配置 API Key',
+          recognitionUnavailableHint: kIsWeb ? null : '视觉识别未开启，可在设置里配置 API Key',
           pickEnabled: !kIsWeb,
           initialCategoryId:
               initialGuess == null ? _lastSelection.categoryId : null,
@@ -463,56 +475,57 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
                   return created;
                 },
           onSubmit: (draft) async {
-          try {
-            final result = await _entryWriter.submit(
-              type: draft.isTransfer
-                  ? EntryType.transfer
-                  : (draft.isIncome ? EntryType.income : EntryType.expense),
-              // 金额在面板里是两位小数字符串算出来的 double，这里一次换算成整数分
-              amountCents: (draft.amount * 100).round(),
-              categoryId: draft.isTransfer ? null : draft.category?.id,
-              accountId: draft.account?.id,
-              toAccountId: draft.isTransfer ? draft.toAccount?.id : null,
-              happenedAt: draft.time,
-              note: draft.note,
-              tags: draft.tags,
-              images: draft.images,
-              currency: draft.currency,
-              originalAmountCents:
-                  draft.currency == 'CNY' ? null : (draft.amount * 100).round(),
-              ratePpm: draft.ratePpm,
-            );
-            if (!result.inserted) {
-              return '这笔已经记过了（同一秒、同一金额、同一备注）';
+            try {
+              final result = await _entryWriter.submit(
+                type: draft.isTransfer
+                    ? EntryType.transfer
+                    : (draft.isIncome ? EntryType.income : EntryType.expense),
+                // 金额在面板里是两位小数字符串算出来的 double，这里一次换算成整数分
+                amountCents: (draft.amount * 100).round(),
+                categoryId: draft.isTransfer ? null : draft.category?.id,
+                accountId: draft.account?.id,
+                toAccountId: draft.isTransfer ? draft.toAccount?.id : null,
+                happenedAt: draft.time,
+                note: draft.note,
+                tags: draft.tags,
+                images: draft.images,
+                currency: draft.currency,
+                originalAmountCents: draft.currency == 'CNY'
+                    ? null
+                    : (draft.amount * 100).round(),
+                ratePpm: draft.ratePpm,
+              );
+              if (!result.inserted) {
+                return '这笔已经记过了（同一秒、同一金额、同一备注）';
+              }
+            } catch (_) {
+              return '保存失败，请重试';
             }
-          } catch (_) {
-            return '保存失败，请重试';
-          }
 
-          // 自动标签是保存后才算「真的建了」：记一次配额，供 7 天窗口统计
-          for (final _ in autoTagsToMark) {
-            await _autoCreatePolicy.markTagCreated();
-          }
+            // 自动标签是保存后才算「真的建了」：记一次配额，供 7 天窗口统计
+            for (final _ in autoTagsToMark) {
+              await _autoCreatePolicy.markTagCreated();
+            }
 
-          // 外币：记住这次用的汇率，下次记同币种时默认用它
-          if (draft.currency != 'CNY' && draft.ratePpm != null) {
-            unawaited(_rememberRate(draft.currency, draft.ratePpm!));
-          }
+            // 外币：记住这次用的汇率，下次记同币种时默认用它
+            if (draft.currency != 'CNY' && draft.ratePpm != null) {
+              unawaited(_rememberRate(draft.currency, draft.ratePpm!));
+            }
 
-          // 转账不参与「上次选择」的记忆（它的分类为空）
-          if (!draft.isTransfer) {
-            final selection = LastEntrySelection(
-              categoryId: draft.category?.id,
-              accountId: draft.account?.id,
-              isIncome: draft.isIncome,
-            );
-            setState(() => _lastSelection = selection);
-            unawaited(_appState.saveSelection(selection));
-          }
-          return null;
-        },
-      ),
-    );
+            // 转账不参与「上次选择」的记忆（它的分类为空）
+            if (!draft.isTransfer) {
+              final selection = LastEntrySelection(
+                categoryId: draft.category?.id,
+                accountId: draft.account?.id,
+                isIncome: draft.isIncome,
+              );
+              setState(() => _lastSelection = selection);
+              unawaited(_appState.saveSelection(selection));
+            }
+            return null;
+          },
+        ),
+      );
     } finally {
       // 识别器持有 HTTP 客户端：面板关了就不再留着连接
       await recognizer?.close();

@@ -65,6 +65,13 @@ class ScreenshotPlugin(private val activity: Activity) :
 
     /** 处理系统分享面板发来的图片：复制到 cache，交一次给 Dart。 */
     fun handleIntent(intent: Intent?) {
+        // 点识别结果通知：App 已经在前台时，直接让 Shell 消费待确认队列
+        if (intent?.getBooleanExtra(ScreenshotService.EXTRA_CONSUME_PENDING, false) == true) {
+            intent.removeExtra(ScreenshotService.EXTRA_CONSUME_PENDING)
+            if (ScreenshotRuntime.isAppVisible) {
+                channel?.invokeMethod("pendingAvailable", null)
+            }
+        }
         if (intent?.action != Intent.ACTION_SEND) return
         val type = intent.type ?: return
         if (!type.startsWith("image/")) return

@@ -15,7 +15,8 @@ class ScreenshotChannel {
   Future<bool> setEnabled(bool enabled) async {
     if (!isSupported) return false;
     try {
-      return await _channel.invokeMethod<bool>('setEnabled', {'enabled': enabled}) ??
+      return await _channel
+              .invokeMethod<bool>('setEnabled', {'enabled': enabled}) ??
           false;
     } on PlatformException {
       return false;
@@ -38,7 +39,8 @@ class ScreenshotChannel {
   Future<bool> hasMediaPermission() async {
     if (!isSupported) return false;
     try {
-      final result = await _channel.invokeMapMethod<String, bool>('hasPermissions');
+      final result =
+          await _channel.invokeMapMethod<String, bool>('hasPermissions');
       return result?['media'] ?? false;
     } on PlatformException {
       return false;
@@ -59,12 +61,19 @@ class ScreenshotChannel {
     }
   }
 
-  /// 前台收到分享时原生会主动通知，避免用户已经打开 App 时没反应。
-  void setSharedImageListener(Future<void> Function() listener) {
+  /// 原生主动通知：前台收到分享 / 用户点结果通知要求消费待确认队列。
+  /// MethodChannel 只能挂一个 handler，所以两个事件放在一个监听里。
+  void setNativeListeners({
+    Future<void> Function()? onSharedImage,
+    Future<void> Function()? onPendingAvailable,
+  }) {
     if (!isSupported) return;
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'sharedImageAvailable') {
-        await listener();
+      switch (call.method) {
+        case 'sharedImageAvailable':
+          await onSharedImage?.call();
+        case 'pendingAvailable':
+          await onPendingAvailable?.call();
       }
       return null;
     });

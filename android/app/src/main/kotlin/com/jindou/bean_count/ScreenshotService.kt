@@ -24,8 +24,12 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
 import java.io.ByteArrayOutputStream
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
@@ -42,6 +46,9 @@ class ScreenshotService : Service() {
     private var queuedUri: Uri? = null
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 识别中 + 排队中的任务数；通知里的「还有 N 张」用它算排队项。 */
+    private val busyJobs = AtomicInteger(0)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -106,34 +113,62 @@ class ScreenshotService : Service() {
     }
 
     private fun recognize(uri: Uri) {
-        showProgress()
-        // 读图和压缩都放到后台线程：ContentObserver 的回调在主线程，
-        // 大截图 + Bitmap 压缩直接做会卡住通知栏/服务。
-        ioExecutor.execute {
-            val original = readCompleteImage(uri)
-            if (original == null) {
-                mainHandler.post {
-                    showResult("读取截图失败 · 点击手动记", ok = false)
+        busyJobs.incrementAndGet()
+        try {
+            ioExecutor.execute {
+                try {
+                    processRecognize(uri)
+                } finally {
+                    busyJobs.decrementAndGet()
                 }
-                return@execute
             }
-            val recognition = compressForRecognition(original) ?: original
-            Log.i(
-                TAG,
-                "识别图片：原图 ${original.size / 1024}KB，" +
-                    "识别图 ${recognition.size / 1024}KB（$uri）",
-            )
+        } catch (_: RejectedExecutionException) {
+            busyJobs.decrementAndGet()
+        }
+    }
+
+    private fun processRecognize(uri: Uri) {
+        // 排队时不要提前显示「识别中」：等真正轮到自己再更新，避免 A 的结果
+        // 被 B 的进度覆盖后看不到。
+        mainHandler.post { showProgress() }
+        val original = readCompleteImage(uri)
+        if (original == null) {
             mainHandler.post {
-                val methodChannel = channel ?: return@post
-                methodChannel.invokeMethod(
-                    "recognize",
-                    mapOf(
-                        "bytes" to original,
-                        "recognitionBytes" to recognition,
-                        "path" to uri.toString(),
-                    ),
-                    recognizeResult(),
-                )
+                showResult("读取截图失败 · 点击手动记", ok = false)
+            }
+            return
+        }
+        val recognition = compressForRecognition(original) ?: original
+        Log.i(
+            TAG,
+            "识别图片：原图 ${original.size / 1024}KB，" +
+                "识别图 ${recognition.size / 1024}KB（$uri）",
+        )
+
+        // 单线程 executor + 等回调：一次只跑一个模型请求，避免连拍时
+        // 请求并发、结果乱序和 429。
+        val latch = CountDownLatch(1)
+        val posted = mainHandler.post {
+            val methodChannel = channel
+            if (methodChannel == null) {
+                latch.countDown()
+                return@post
+            }
+            methodChannel.invokeMethod(
+                "recognize",
+                mapOf(
+                    "bytes" to original,
+                    "recognitionBytes" to recognition,
+                    "path" to uri.toString(),
+                ),
+                recognizeResult(latch),
+            )
+        }
+        if (posted) {
+            try {
+                latch.await(RECOGNITION_WAIT_SECONDS, TimeUnit.SECONDS)
+            } catch (_: InterruptedException) {
+                // 服务销毁
             }
         }
     }
@@ -238,31 +273,51 @@ class ScreenshotService : Service() {
         }
     }
 
-    private fun recognizeResult(): MethodChannel.Result = object : MethodChannel.Result {
-        override fun success(result: Any?) {
-            val map = result as? Map<*, *>
-            if (map?.get("ok") == true) {
-                val cents = (map["amount_cents"] as? Number)?.toLong() ?: 0L
-                showResult("已识别 ¥${money(cents)} · 点击记账", ok = true)
-            } else {
-                val reason = (map?.get("error") as? String)?.trim().orEmpty()
-                val text = if (reason.isEmpty() || reason.contains("没认出金额")) {
-                    "没认出金额 · 点击手动记"
+    private fun recognizeResult(latch: CountDownLatch): MethodChannel.Result =
+        object : MethodChannel.Result {
+            override fun success(result: Any?) {
+                val map = result as? Map<*, *>
+                val pending = (map?.get("pending_count") as? Number)
+                    ?.toInt()?.coerceAtLeast(0) ?: 0
+                // busyJobs 包含当前这一条；它之后还在排队的截图也要算给用户
+                val queued = (busyJobs.get() - 1).coerceAtLeast(0)
+                if (map?.get("ok") == true) {
+                    val cents = (map["amount_cents"] as? Number)?.toLong() ?: 0L
+                    val rest = (pending - 1 + queued).coerceAtLeast(0)
+                    val suffix = if (rest > 0) {
+                        " · 还有 $rest 张待确认"
+                    } else {
+                        " · 点击记账"
+                    }
+                    showResult("已识别 ¥${money(cents)}$suffix", ok = true)
                 } else {
-                    "$reason · 点击手动记"
+                    val reason = (map?.get("error") as? String)?.trim().orEmpty()
+                    val text = if (reason.isEmpty() || reason.contains("没认出金额")) {
+                        "没认出金额"
+                    } else {
+                        reason
+                    }
+                    val waiting = pending + queued
+                    val suffix = if (waiting > 0) {
+                        " · 待确认 $waiting 张"
+                    } else {
+                        " · 点击手动记"
+                    }
+                    showResult("$text$suffix", ok = false)
                 }
-                showResult(text, ok = false)
+                latch.countDown()
+            }
+
+            override fun error(code: String, message: String?, details: Any?) {
+                showResult("识别失败 · 点击手动记", ok = false)
+                latch.countDown()
+            }
+
+            override fun notImplemented() {
+                showResult("识别失败 · 点击手动记", ok = false)
+                latch.countDown()
             }
         }
-
-        override fun error(code: String, message: String?, details: Any?) {
-            showResult("识别失败 · 点击手动记", ok = false)
-        }
-
-        override fun notImplemented() {
-            showResult("识别失败 · 点击手动记", ok = false)
-        }
-    }
 
     private fun showProgress() {
         notify(
@@ -334,6 +389,9 @@ class ScreenshotService : Service() {
     private fun openAppIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // 通知就是入口：用户点它时，让前台 Shell 消费待确认队列；
+            // App 未打开时由启动/恢复流程自己消费。
+            putExtra(EXTRA_CONSUME_PENDING, true)
         }
         return PendingIntent.getActivity(
             this,
@@ -348,6 +406,7 @@ class ScreenshotService : Service() {
 
     companion object {
         const val CHANNEL = "com.jindou.bean_count/screenshot"
+        const val EXTRA_CONSUME_PENDING = "consume_pending"
         private const val TAG = "ScreenshotService"
         private const val ONGOING_CHANNEL = "screenshot_service"
         private const val RESULT_CHANNEL = "screenshot_result"
@@ -355,6 +414,7 @@ class ScreenshotService : Service() {
         private const val RESULT_ID = 42
         private const val READ_TIMEOUT_MS = 3_000L
         private const val READ_POLL_MS = 100L
+        private const val RECOGNITION_WAIT_SECONDS = 60L
         private const val MAX_DIMENSION = 1920
         private const val RECOGNITION_QUALITY = 85
 

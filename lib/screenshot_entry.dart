@@ -46,6 +46,7 @@ Future<Map<String, Object?>> _recognize(
   final state = AppStateRepository(db);
   final store = PendingScreenshotEntryStore(state);
   final now = DateTime.now();
+  final entryId = 'shot-${now.microsecondsSinceEpoch}';
   final recognitionInput = recognitionBytes ?? bytes;
   String? imagePath;
 
@@ -65,15 +66,15 @@ Future<Map<String, Object?>> _recognize(
     );
     if (recognizer == null) {
       const message = '视觉识别未开启，可在设置里配置 API Key';
-      await store.write(
+      final pendingCount = await store.add(
         PendingScreenshotEntry(
-          id: 'shot-${now.microsecondsSinceEpoch}',
+          id: entryId,
           createdAt: now,
           imagePath: imagePath,
           error: message,
         ),
       );
-      return {'ok': false, 'error': message};
+      return {'ok': false, 'error': message, 'pending_count': pendingCount};
     }
 
     ReceiptGuess guess;
@@ -88,20 +89,20 @@ Future<Map<String, Object?>> _recognize(
     if (!usable) {
       debugPrint('screenshotEntry: empty guess');
       const message = '没认出金额，点击手动记';
-      await store.write(
+      final pendingCount = await store.add(
         PendingScreenshotEntry(
-          id: 'shot-${now.microsecondsSinceEpoch}',
+          id: entryId,
           createdAt: now,
           imagePath: imagePath,
           error: message,
         ),
       );
-      return {'ok': false, 'error': '没认出金额'};
+      return {'ok': false, 'error': '没认出金额', 'pending_count': pendingCount};
     }
 
-    await store.write(
+    final pendingCount = await store.add(
       PendingScreenshotEntry(
-        id: 'shot-${now.microsecondsSinceEpoch}',
+        id: entryId,
         createdAt: now,
         guess: guess,
         imagePath: imagePath,
@@ -113,16 +114,17 @@ Future<Map<String, Object?>> _recognize(
       'category': guess.categoryName,
       'note': guess.note,
       'source': url,
+      'pending_count': pendingCount,
     };
   } catch (error) {
-    final message = error is ReceiptRecognitionException
-        ? error.message
-        : '识别失败，可以手动记';
+    final message =
+        error is ReceiptRecognitionException ? error.message : '识别失败，可以手动记';
     debugPrint('screenshotEntry: failed: $message');
+    var pendingCount = 0;
     try {
-      await store.write(
+      pendingCount = await store.add(
         PendingScreenshotEntry(
-          id: 'shot-${now.microsecondsSinceEpoch}',
+          id: entryId,
           createdAt: now,
           imagePath: imagePath,
           error: message,
@@ -131,7 +133,7 @@ Future<Map<String, Object?>> _recognize(
     } catch (_) {
       // 连 pending 都写不进去时，至少让通知带上真实原因
     }
-    return {'ok': false, 'error': message};
+    return {'ok': false, 'error': message, 'pending_count': pendingCount};
   } finally {
     await db.close();
   }
@@ -140,7 +142,8 @@ Future<Map<String, Object?>> _recognize(
 Future<String?> _saveTempImage(Uint8List bytes, DateTime now) async {
   try {
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/screenshot_${now.microsecondsSinceEpoch}.jpg');
+    final file =
+        File('${dir.path}/screenshot_${now.microsecondsSinceEpoch}.jpg');
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
   } catch (_) {
