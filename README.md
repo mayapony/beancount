@@ -7,7 +7,9 @@
 
 ## 状态
 
-🟢 **1.0.1 已发布**：M1–M6、M8–M10 完成；M7 完成「手动加图 → 视觉模型识别」（DeepSeek / OpenAI 兼容，默认关闭、需自带 API Key），截屏自动触发仍在 Backlog；生物识别与「多账本」待决策。产品计划见 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)，设计语言见 [`docs/DESIGN.md`](docs/DESIGN.md)。
+🟢 **1.0.1 已发布；应用内更新已实现（v1.0.2 起）**：M1–M6、M8–M10 完成；M7 完成「手动加图 → 视觉模型识别」（DeepSeek / OpenAI 兼容，默认关闭、需自带 API Key），截屏自动触发仍在 Backlog；生物识别与「多账本」待决策。产品计划见 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)，设计语言见 [`docs/DESIGN.md`](docs/DESIGN.md)。
+
+> **第一次带更新器的版本仍需手动安装**：v1.0.2 装好之后，才能在「设置 → 关于金豆」里检查并安装后续版本。仓库需要保持公开，App 才能匿名读取 `releases/latest`。
 
 ## 技术栈
 

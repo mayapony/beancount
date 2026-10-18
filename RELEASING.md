@@ -75,6 +75,13 @@ git push origin v1.0.1
 
 跑完在 Releases 页就能下载。安装：`app-release.apk` 直接侧载（Android 6.0+）。
 
+### 应用内更新（v1.0.2 起）
+
+- **仓库必须保持公开**：App 匿名请求 `releases/latest`；仓库转私有后会 404。
+- **签名必须一致**：本机 debug 签名包不能被发布签名包覆盖；先导出数据，再决定是否卸载，不要直接卸载丢数据。
+- **第一次仍需手动装**：v1.0.2 是第一个带更新器的版本；装好之后才能用「设置 → 关于金豆」检查并安装 v1.0.3+。
+- 更新说明取 Release body 的「## 变更」段，App 只展示 `feat` / `fix` / `perf` 条目。
+
 ### 演练（不发版）
 
 Actions → Release → Run workflow（手动 dispatch）。会完整跑校验、签名、构建与签名检查，
@@ -117,7 +124,9 @@ keyPassword=你的密码
 | `缺少签名 Secrets：ANDROID_...` | Secrets 没配全，按上表补齐；错误信息里会列出缺哪几个 |
 | `APK 是 debug 签名，不能发布` | keystore 没还原成功（base64 带换行最常见），或别名/密码不对 |
 | `android/key.properties 缺少字段` | 本机 `key.properties` 少写一行；四项都必须有 |
-| 覆盖安装报「签名不一致」 | 现有 APK 是 debug 签名或另一把 keystore 签的；先卸载，或用同一把密钥 |
+| 覆盖安装报「签名不一致」 | 现有 APK 是 debug 签名或另一把 keystore 签的；先导出数据，再决定是否卸载，不要直接卸载丢数据 |
+| App 里检查更新提示「更新源不可用」 | 仓库转私有或网络不可达；确认仓库公开并检查手机网络 |
+| App 内安装提示「版本低于当前」 | versionCode 回退；确认 CI 与本机都取提交数，且安装的是更大的版本 |
 | tag 推上去了但没跑 | 确认 tag 是 `v` 开头（`v1.0.1`，不是 `1.0.1`） |
 | Release 建了但附件缺失 | 构建步骤失败；看 run 日志里的 `构建 release APK` 步骤 |
 

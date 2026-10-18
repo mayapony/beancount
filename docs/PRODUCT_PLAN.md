@@ -54,11 +54,12 @@
 - **AI 记账**：**截屏后自动识别** → 确认 → 入账（不设常驻入口）；单供应商可插拔。
 - **数据迁移**：导入（CSV/Excel/支付宝/微信账单）、导出（CSV/Excel）。
 - **安全与个性化**：应用锁（PIN/生物识别）、主题（亮/暗/跟随系统）。
+- **应用内更新**：Android 上检查 GitHub Releases、应用内下载并拉起系统安装器（v1.0.2 起；首次仍需手动安装）。
 
 ### 5.2 Out of Scope（砍掉）
 
 预算、标签、日历视图、年度报告、交易附件、头部皮肤、字体字号、多语言 i18n、桌面小组件、
-应用内自更新、捐赠/内购、分享海报、营销卡片、账号登录/2FA、多人共享账本、欢迎引导页。
+捐赠/内购、分享海报、营销卡片、账号登录/2FA、多人共享账本、欢迎引导页。
 
 ### 5.3 Backlog（未来，不阻塞当前）
 
@@ -116,7 +117,7 @@ S3 云同步、预算、标签、多语言（中英）、桌面小组件、语�
 | M7 | 截图记账（自动） | 手动加图后视觉模型识别（DeepSeek，OpenAI 兼容，默认关闭，自带 Key）；截屏自动触发未做 | M3 | 🟡 部分 |
 | M8 | 导入导出 | CSV/Excel 导入（含支付宝/微信账单）、导出与完整备份 | M1 | ✅ 完成 |
 | M9 | 安全与个性化 | 应用锁（PIN）、主题、设置中心 | M3 | ✅ 完成（生物识别未做） |
-| M10 | 发布打磨 | 设计语言、图标品牌、测试覆盖、性能、打包发布 | M5/M6/M7 | ✅ 完成（v1.0.1 已发布） |
+| M10 | 发布打磨 | 设计语言、图标品牌、测试覆盖、性能、打包发布、应用内更新 | M5/M6/M7 | ✅ 完成（v1.0.1 已发布；v1.0.2 起支持应用内更新） |
 
 **Backlog**（不计入当前版本）：S3 同步、预算、标签、多语言、桌面小组件。
 
@@ -171,8 +172,9 @@ M5/M6/M7 ─▶ M10
 
 ## 13. 发版方式
 
-- **自动发布**：推送 `v*` tag（如 `v1.0.2`）→ GitHub Actions 跑 analyze + test → 用仓库 Secrets 还原 keystore → 构建 release APK → 校验不是 debug 签名 → 创建 GitHub Release（APK + `SHA256SUMS.txt`）。versionName 取 tag，versionCode 取 run number。
+- **自动发布**：推送 `v*` tag（如 `v1.0.2`）→ GitHub Actions 跑 analyze + test → 用仓库 Secrets 还原 keystore → 构建 release APK → 校验不是 debug 签名 → 创建 GitHub Release（APK + `SHA256SUMS.txt`）。versionName 取 tag，versionCode 取提交数（`git rev-list --count HEAD`）。
+- **应用内更新**：App 查公开仓库的 `releases/latest`，下载后校验 SHA-256，安装前检查未知来源权限、versionCode 不降级与签名一致。仓库必须保持公开；v1.0.2 是第一个带更新器的版本，仍需手动安装一次。
 - **手动演练**：Actions → Release → Run workflow，只上传 workflow artifact，不建 Release。
 - **本机出包**：`tools/build_release.ps1`，仅供自己安装，不发布。
 - 密钥不入库（`android/key.properties`、`*.jks`、`*.keystore` 均在 `.gitignore`）；步骤与排查见 [`RELEASING.md`](../RELEASING.md)。
-- 暂不支持：Google Play / App Store 上架、iOS 打包、AAB、增量更新。
+- 暂不支持：Google Play / App Store 上架、iOS 打包与自更新、AAB、增量更新、beta 频道。
