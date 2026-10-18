@@ -17,10 +17,10 @@
 
 ## 3. APK 下载与校验
 
-- [ ] 3.1 `ApkDownloader` 接口与 IO 实现：`http` 流式写 `cache/update/app-release.apk.part`，显示进度，完成后改名；验证 `flutter test test/services/update/apk_downloader_test.dart` 用 `MockClient` 与临时目录断言字节与目标路径
-- [ ] 3.2 下载取消、超时、HTTP 错误与磁盘错误时删除 `.part` 并回到可重试状态；验证同一测试文件覆盖取消后无残留、超时抛可读错误
-- [ ] 3.3 SHA-256 校验与地址约束：优先用 asset `digest`，缺失时解析 `SHA256SUMS.txt`；不匹配删除文件；只接受 GitHub releases 下载地址；验证 `flutter test test/services/update/apk_downloader_test.dart` 覆盖匹配、不匹配、无校验和、非法 host 四种情况
-- [ ] 3.4 下载缓存清理：启动时删除 `cache/update` 下过期/无主 APK，不碰正在下载的 `.part`；验证 `flutter test test/services/update/update_cache_test.dart` 覆盖旧文件删除与新文件保留
+- [x] 3.1 `ApkDownloader` 接口与 IO 实现：`http` 流式写 `cache/update/app-release.apk.part`，显示进度，完成后改名；验证 `flutter test test/services/update/apk_downloader_test.dart` 用 `MockClient` 与临时目录断言字节与目标路径
+- [x] 3.2 下载取消、超时、HTTP 错误与磁盘错误时删除 `.part` 并回到可重试状态；验证同一测试文件覆盖取消后无残留、超时抛可读错误
+- [x] 3.3 SHA-256 校验与地址约束：优先用 asset `digest`，缺失时解析 `SHA256SUMS.txt`；不匹配删除文件；只接受 GitHub releases 下载地址；验证 `flutter test test/services/update/apk_downloader_test.dart` 覆盖匹配、不匹配、无校验和、非法 host 四种情况
+- [x] 3.4 下载缓存清理：启动时删除 `cache/update` 下过期/无主 APK，不碰正在下载的 `.part`；验证 `flutter test test/services/update/update_cache_test.dart` 覆盖旧文件删除与新文件保留
 
 ## 4. Android 安装桥
 
