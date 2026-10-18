@@ -55,4 +55,5 @@
   - 关闭：开关置 false 并重启后，服务与两条通知都消失，截屏不再触发。
   - 降级：撤销 `READ_MEDIA_IMAGES` 后不崩溃、无 pending；撤销 `POST_NOTIFICATIONS` 后识别仍写 pending（通知不展示）。
   - 分享：`am start -a android.intent.action.SEND -t image/png` 交付到金豆，面板打开并附上图片、显示「识别中…」。
+- `flutter build apk --release` → 67.4 MB；release（AOT）下 headless 入口同样可解析，通知与降级路径正常。
 - 未覆盖：真实系统截屏键（用 adb 写 MediaStore 模拟）、真实视觉 API 成功识别（无可用 Key，成功路径由 MockClient 覆盖）、多厂商截图目录差异（仅 AOSP 模拟器）、真机（7.1 保留未勾选）。
