@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只暴露缓存里的自更新安装包；不要加 external-path/root-path。 -->
+<paths>
+    <cache-path name="update" path="update/" />
+</paths>
