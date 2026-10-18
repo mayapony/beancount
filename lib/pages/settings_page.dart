@@ -8,10 +8,12 @@ import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../services/ocr/receipt_vision_settings.dart';
+import '../services/screenshot/screenshot_settings.dart';
 import '../services/update/update_controller.dart';
 import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/screenshot_settings_section.dart';
 import 'accounts_page.dart';
 import 'categories_page.dart';
 import 'app_lock_page.dart';
@@ -34,6 +36,9 @@ class SettingsPage extends StatelessWidget {
     required this.lock,
     required this.visionSettings,
     required this.visionKeys,
+    this.screenshotSettings,
+    this.requestScreenshotPermissions,
+    this.onScreenshotAutoEntryChanged,
     this.updateController,
   });
 
@@ -50,6 +55,15 @@ class SettingsPage extends StatelessWidget {
   /// 截图记账的视觉模型配置与 API Key 存储（设置页只负责入口与状态）。
   final ReceiptVisionSettingsStore visionSettings;
   final ReceiptApiKeyStore visionKeys;
+
+  /// 截屏自动记账的偏好；为空时不显示该区块（Web/iOS/测试）。
+  final ScreenshotSettingsStore? screenshotSettings;
+
+  /// 申请相册与通知权限；为空时只保存开关。
+  final ScreenshotPermissionRequest? requestScreenshotPermissions;
+
+  /// 总开关变化：由壳层负责启停后台监听服务。
+  final ValueChanged<bool>? onScreenshotAutoEntryChanged;
 
   /// 更新控制器；为空时（Web/iOS/测试）关于页只展示版本与链接。
   final UpdateController? updateController;
@@ -145,6 +159,18 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
           ),
+
+          if (screenshotSettings != null) ...[
+            const SizedBox(height: BeanSpace.section),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: ScreenshotSettingsSection(
+                store: screenshotSettings!,
+                requestPermissions: requestScreenshotPermissions,
+                onAutoEntryChanged: onScreenshotAutoEntryChanged,
+              ),
+            ),
+          ],
 
           const SizedBox(height: BeanSpace.section),
 

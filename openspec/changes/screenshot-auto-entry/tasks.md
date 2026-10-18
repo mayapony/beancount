@@ -13,7 +13,7 @@
 
 ## 3. 设置项与待处理结果
 
-- [ ] 3.1 设置页新增「截屏自动识别」「允许自动新建分类/标签」（默认关）与权限状态说明，偏好写入 `app_state`；Widget 用例覆盖默认关、开启后显示权限引导、拒绝后回退；`flutter test test/pages/settings_page_test.dart` 全绿
+- [x] 3.1 设置页新增「截屏自动识别」「允许自动新建分类/标签」（默认关）与权限状态说明，偏好写入 `app_state`；Widget 用例覆盖默认关、开启后显示权限引导、拒绝后回退；`flutter test test/pages/settings_page_test.dart` 全绿
 - [ ] 3.2 实现 `pending_screenshot_entry` 的读写与消费：冷启动/恢复时读取、`LockGate` 解锁后由 `Shell` 打开面板、消费后清除；用例覆盖「已锁 → 解锁后才弹」「重复启动不重复弹」；`flutter test test/pages/shell_update_test.dart` 与新增用例全绿
 
 ## 4. Android 截屏检测
