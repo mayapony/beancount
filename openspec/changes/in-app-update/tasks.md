@@ -25,7 +25,7 @@
 ## 4. Android 安装桥
 
 - [x] 4.1 主清单增加 `REQUEST_INSTALL_PACKAGES`、受限 `FileProvider`（`${applicationId}.update.fileprovider`，仅 `cache/update`）与 installer `<queries>`，新增 `res/xml/update_file_paths.xml`；验证 `flutter build apk --debug` 成功，合并清单包含权限、provider 与 queries
-- [ ] 4.2 Kotlin `UpdateInstaller` 与 `MethodChannel("com.jindou.bean_count/update")`：`canInstall`、`openInstallSettings`、`preflight`（versionCode/签名 SHA-256/versionName）、`install`（ACTION_VIEW + MIME）；校验 canonical path 在 `cacheDir/update` 下；验证 `flutter analyze` 与 `flutter build apk --debug` 通过
+- [x] 4.2 Kotlin `UpdateInstaller` 与 `MethodChannel("com.jindou.bean_count/update")`：`canInstall`、`openInstallSettings`、`preflight`（versionCode/签名 SHA-256/versionName）、`install`（ACTION_VIEW + MIME）；校验 canonical path 在 `cacheDir/update` 下；验证 `flutter analyze` 与 `flutter build apk --debug` 通过
 - [ ] 4.3 Dart `ApkInstaller` 接口、MethodChannel 实现与 `FakeApkInstaller`；验证 `flutter test test/services/update/apk_installer_test.dart` 用 mock channel 断言方法名、参数与错误码映射
 - [ ] 4.4 安装失败类型与文案映射：`permission` / `downgrade` / `signature` / `versionName` / `parse` / `noInstaller`；验证 `flutter test test/services/update/install_failure_test.dart` 覆盖六种 reason，且签名不一致文案包含「先导出」
 
