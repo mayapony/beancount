@@ -4,6 +4,8 @@
 /// 但金额与「合计」通常稳。
 library;
 
+import 'entry_matching.dart';
+
 /// 识别置信度。
 enum ReceiptConfidence { none, categoryOnly, amount }
 
@@ -12,6 +14,8 @@ class ReceiptGuess {
   const ReceiptGuess({
     this.amountCents,
     this.categoryName,
+    this.tagNames = const [],
+    this.accountName,
     this.note,
     this.happenedAt,
     this.rawText = '',
@@ -20,6 +24,12 @@ class ReceiptGuess {
 
   final int? amountCents;
   final String? categoryName;
+
+  /// 标签候选（固定词表，最多 2 个）。
+  final List<String> tagNames;
+
+  /// 支付渠道线索（微信/支付宝/云闪付/银行卡），已归一化为规范名，未与本地账户核对。
+  final String? accountName;
   final String? note;
   final DateTime? happenedAt;
   final String rawText;
@@ -40,19 +50,6 @@ final _amountPattern = RegExp(
 /// 含这些词的行优先当"合计行"。
 const _totalKeywords = ['合计', '总计', '实付', '应付', '小计', '总额', 'total'];
 
-/// 商家关键字 → 本地分类名。顺序有意义：更具体的放前面。
-const _categoryRules = <String, List<String>>{
-  '餐饮': [
-    '餐厅', '饭馆', '饭店', '面馆', '小吃', '烧烤', '火锅', '食堂', '咖啡',
-    '奶茶', '茶饮', '快餐', '牛肉面', '米线', '饺子', '面', '餐', '食',
-  ],
-  '交通': ['打车', '滴滴', '出租车', '地铁', '公交', '高铁', '加油', '停车', '机票'],
-  '购物': ['超市', '便利店', '商场', '百货', '超市发', '药妆', '网购'],
-  '医疗': ['药房', '药店', '医院', '诊所', '体检'],
-  '娱乐': ['电影', '影城', 'ktv', '游戏', '演出'],
-  '旅行': ['酒店', '民宿', '旅行', '景区', '门票'],
-};
-
 /// 解析 OCR 文本。找不到金额时 `confidence` 会降级，但其它字段仍尽量给。
 ReceiptGuess parseReceiptText(String text, {DateTime? now}) {
   final raw = text.trim();
@@ -67,6 +64,8 @@ ReceiptGuess parseReceiptText(String text, {DateTime? now}) {
 
   final amountCents = _pickAmount(lines);
   final category = _pickCategory(raw);
+  final tags = tagCandidates(raw);
+  final account = accountHint(raw);
   final note = _pickNote(lines);
   final happenedAt = _pickDate(raw, reference);
 
@@ -79,6 +78,8 @@ ReceiptGuess parseReceiptText(String text, {DateTime? now}) {
   return ReceiptGuess(
     amountCents: amountCents,
     categoryName: category,
+    tagNames: tags,
+    accountName: account,
     note: note,
     happenedAt: happenedAt,
     rawText: raw,
@@ -132,7 +133,7 @@ List<int> _amountsIn(String line) {
 
 String? _pickCategory(String text) {
   final haystack = text.toLowerCase();
-  for (final entry in _categoryRules.entries) {
+  for (final entry in kCategoryKeywords.entries) {
     for (final keyword in entry.value) {
       if (haystack.contains(keyword.toLowerCase())) return entry.key;
     }

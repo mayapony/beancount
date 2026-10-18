@@ -83,6 +83,34 @@ void main() {
     });
   });
 
+  group('标签与账户线索', () {
+    test('从支付渠道与消费词里取标签，最多两个', () {
+      final guess = parseReceiptText('微信支付 ¥38.50\n星巴克咖啡');
+      expect(guess.tagNames, containsAll(<String>['微信支付', '咖啡']));
+      expect(guess.tagNames.length, lessThanOrEqualTo(2));
+    });
+
+    test('认不出支付渠道时账户线索为空', () {
+      final guess = parseReceiptText('牛肉面 ¥38.50');
+      expect(guess.accountName, isNull);
+    });
+
+    test('账户线索归一化为规范名', () {
+      expect(parseReceiptText('支付宝 ¥12.00').accountName, '支付宝');
+      expect(parseReceiptText('招行信用卡 尾号1234').accountName, '银行卡');
+    });
+
+    test('标签不改变置信度判定', () {
+      final guess = parseReceiptText('微信支付');
+      expect(guess.tagNames, isNotEmpty);
+      expect(
+        guess.confidence,
+        ReceiptConfidence.categoryOnly,
+        reason: '置信度仍只看金额/分类/备注，标签不参与',
+      );
+    });
+  });
+
   group('边界', () {
     test('空文本', () {
       final guess = parseReceiptText('   ');

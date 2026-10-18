@@ -73,6 +73,14 @@ const kTagKeywords = <String, List<String>>{
   '晚餐': ['晚餐', '晚饭'],
 };
 
+/// 账户线索：识别文本里出现的支付渠道 → 规范名（未与本地账户核对）。
+const kAccountHints = <String, List<String>>{
+  '微信': ['微信支付', '微信零钱', '微信'],
+  '支付宝': ['支付宝', '花呗', '余额宝'],
+  '云闪付': ['云闪付', '银联'],
+  '银行卡': ['银行卡', '储蓄卡', '借记卡', '信用卡', '尾号'],
+};
+
 /// 账户别名分组：同组内任一关键词出现在账户名与文本里，就算命中。
 const kAccountAliasGroups = <List<String>>[
   ['微信', '零钱', '微信支付'],
@@ -143,6 +151,18 @@ List<String> tagCandidates(
     }
   }
   return [...reused, ...fresh].take(limit).toList(growable: false);
+}
+
+/// 从识别文本里提取账户线索（规范名）；没有任何支付渠道线索时返回 null。
+String? accountHint(String? text) {
+  final haystack = normalizeName(text);
+  if (haystack.isEmpty) return null;
+  for (final entry in kAccountHints.entries) {
+    if (entry.value.any((word) => haystack.contains(normalizeName(word)))) {
+      return entry.key;
+    }
+  }
+  return null;
 }
 
 /// 从识别文本里匹配已有账户；匹配不到返回 null（调用方沿用上次账户）。

@@ -3,7 +3,7 @@
 ## 1. 匹配与解析（纯 Dart，先写失败测试）
 
 - [x] 1.1 新增 `lib/services/ocr/entry_matching.dart`：`normalizeName`（空白/标点/全半角/大小写）、分类词表与别名、标签词表、账户别名表，以及 `matchCategory` / `matchAccount` / `tagCandidates`；用例覆盖别名命中、归一化重名、账户只做相等/包含匹配；`flutter test test/services/ocr/entry_matching_test.dart` 全绿
-- [ ] 1.2 扩展 `ReceiptGuess` 与 `parseReceiptText`：新增 `tagNames` 与 `accountName`（词表驱动，认不出为空），保持金额/日期/分类规则不变；`flutter test test/services/receipt_parser_test.dart` 全绿并新增标签/账户用例
+- [x] 1.2 扩展 `ReceiptGuess` 与 `parseReceiptText`：新增 `tagNames` 与 `accountName`（词表驱动，认不出为空），保持金额/日期/分类规则不变；`flutter test test/services/receipt_parser_test.dart` 全绿并新增标签/账户用例
 - [ ] 1.3 新增 `lib/services/ocr/auto_create_policy.dart`：读 `app_state` 的配额时间戳，判定单笔 ≤1 分类 / ≤2 标签、7 天 ≤3 分类 / ≤10 标签、分类总数 ≤40、开关关闭时不建；用例覆盖配额边界与回滚（不写库）；`flutter test test/services/ocr/auto_create_policy_test.dart` 全绿
 
 ## 2. 记一笔面板接入（Dart UI）
