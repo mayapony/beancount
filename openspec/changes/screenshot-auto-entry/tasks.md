@@ -8,8 +8,8 @@
 
 ## 2. 记一笔面板接入（Dart UI）
 
-- [ ] 2.1 `QuickEntrySheet` 增加「初始识别结果 / 待识别图片 / 以识别中状态打开」入参，复用 `_applyReceipt` 的预填逻辑（只补空字段）；Widget 用例：直接带入结果、带图进入后自动识别、已有输入不被覆盖；`flutter test test/widgets/quick_entry_sheet_test.dart` 全绿
-- [ ] 2.2 面板展示标签 chip 与「将新建分类：X」候选，保存时才调用 `CategoryRepository.ensure` / 标签创建并受 `AutoCreatePolicy` 约束，取消不动库；Widget 用例：候选展示、保存落库、取消零写入、标签上限 2；同上测试文件全绿
+- [x] 2.1 `QuickEntrySheet` 增加「初始识别结果 / 待识别图片 / 以识别中状态打开」入参，复用 `_applyReceipt` 的预填逻辑（只补空字段）；Widget 用例：直接带入结果、带图进入后自动识别、已有输入不被覆盖；`flutter test test/widgets/quick_entry_sheet_test.dart` 全绿
+- [x] 2.2 面板展示标签 chip 与「将新建分类：X」候选，保存时才调用 `CategoryRepository.ensure` / 标签创建并受 `AutoCreatePolicy` 约束，取消不动库；Widget 用例：候选展示、保存落库、取消零写入、标签上限 2；同上测试文件全绿
 
 ## 3. 设置项与待处理结果
 

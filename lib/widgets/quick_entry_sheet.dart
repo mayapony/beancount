@@ -8,6 +8,7 @@ import '../data/db/app_database.dart';
 import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
 import '../services/attachments/image_picker_service.dart';
+import '../services/ocr/entry_matching.dart';
 import '../services/ocr/receipt_parser.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
@@ -23,6 +24,7 @@ class QuickEntryDraft {
     required this.isIncome,
     this.isTransfer = false,
     this.category,
+    this.newCategoryName,
     this.account,
     this.toAccount,
     required this.time,
@@ -41,6 +43,9 @@ class QuickEntryDraft {
 
   /// 选中的分类记录（一级或二级），落库时直接取 `id`；转账时为 null。
   final Category? category;
+
+  /// 待新建的分类名（面板没有创建能力时交给调用方在保存时创建）。
+  final String? newCategoryName;
   final Account? account;
   final Account? toAccount;
   final DateTime time;
@@ -83,6 +88,12 @@ class QuickEntrySheet extends StatefulWidget {
     this.fxRates = const <String, int>{},
     this.recognizeReceipt,
     this.recognitionUnavailableHint,
+    this.initialGuess,
+    this.pendingImage,
+    this.initialRecognizing = false,
+    this.autoTagEnabled = false,
+    this.newCategoryCandidate,
+    this.onCreateCategory,
   });
 
   /// 全部分类（一级与二级都在内）；面板按当前收支类型过滤后展示。
@@ -114,6 +125,25 @@ class QuickEntrySheet extends StatefulWidget {
 
   /// 选了图但没有识别能力时给一句提示（为空则静默，不干扰记账）。
   final String? recognitionUnavailableHint;
+
+  /// 已经拿到的识别结果（截屏流程在面板打开前就识别完了）：直接预填。
+  final ReceiptGuess? initialGuess;
+
+  /// 待识别的截图（检测到截屏后直接开面板时）：面板挂载后自动跑一次识别。
+  final PickedImage? pendingImage;
+
+  /// 以「识别中」状态打开（后台识别还没返回）。
+  final bool initialRecognizing;
+
+  /// 识别结果里的标签是否可用（受设置里的「自动打标签」开关控制）。
+  final bool autoTagEnabled;
+
+  /// 识别出、但本地还不存在的分类名：显示为「将新建」，保存时才创建。
+  final String? newCategoryCandidate;
+
+  /// 保存时的建分类实现（生产环境接 `CategoryRepository.ensure`）。
+  /// 为空时把 [QuickEntryDraft.newCategoryName] 交给调用方处理。
+  final Future<Category?> Function(String name)? onCreateCategory;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -161,6 +191,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   late String? _categoryId =
       widget.initialDraft?.category?.id ?? widget.initialCategoryId;
 
+  /// 识别出的待新建分类（还没落库）；为空表示没有候选。
+  late String? _newCategoryName = widget.newCategoryCandidate;
+
   /// 面板只展示一级分类，并按当前收支类型过滤。
   List<Category> get _visibleCategories => [
         for (final c in widget.categories)
@@ -182,6 +215,10 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
         }
       }
     }
+    // 有「将新建」候选时不要在视觉上又选中第一个分类，否则用户会以为
+    // 这笔账会记到那个分类上。
+    if (_newCategoryName != null) return null;
+
     final visible = _visibleCategories;
     return visible.isEmpty ? null : visible.first;
   }
@@ -351,6 +388,22 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
         setState(_toast.reset);
       }
     });
+
+    if (_categoryId != null) _newCategoryName = null;
+
+    final guess = widget.initialGuess;
+    if (guess != null) _fillFromGuess(guess);
+
+    final pending = widget.pendingImage;
+    if (pending != null) {
+      _images.add(pending);
+      _recognizingReceipt = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyReceipt(pending);
+      });
+    } else if (widget.initialRecognizing) {
+      _recognizingReceipt = true;
+    }
   }
 
   @override
@@ -366,7 +419,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   bool get _canSubmit =>
       _finalValue > 0 &&
-      (_isTransfer ? _transferAccountsValid : _selectedCategory != null);
+      (_isTransfer
+          ? _transferAccountsValid
+          : _selectedCategory != null || _newCategoryName != null);
 
   double _apply(double a, String op, double b) {
     if (op == '+') return a + b;
@@ -470,35 +525,8 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       return;
     }
 
-    final filled = <String>[];
-    setState(() {
-      if (guess!.hasAmount && _amount == '0') {
-        _amount = (guess.amountCents! / 100).toStringAsFixed(2);
-        _left = null;
-        _op = null;
-        filled.add('金额');
-      }
-      if (guess.categoryName != null && _categoryId == null) {
-        final match = widget.categories
-            .where((c) => c.name == guess!.categoryName)
-            .where((c) => c.type.name == (_isIncome ? 'income' : 'expense'))
-            .firstOrNull;
-        if (match != null) {
-          _categoryId = match.id;
-          filled.add('分类');
-        }
-      }
-      final note = guess.note;
-      if (note != null && note.trim().isNotEmpty && _note.trim().isEmpty) {
-        _note = note.trim();
-        filled.add('备注');
-      }
-      final at = guess.happenedAt;
-      if (at != null && !_timeChanged) {
-        _time = at;
-        filled.add('日期');
-      }
-    });
+    late List<String> filled;
+    setState(() => filled = _fillFromGuess(guess!));
 
     if (filled.isEmpty) {
       _showHint('识别到了文字，但没有可填的空位', error: true);
@@ -508,6 +536,65 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     } else {
       _showHint('认出了文字，金额没认出来', error: true);
     }
+  }
+
+  /// 把识别结果补进空字段并返回补了哪些；识别阶段不创建分类/标签。
+  List<String> _fillFromGuess(ReceiptGuess guess) {
+    final filled = <String>[];
+
+    if (guess.hasAmount && _amount == '0') {
+      _amount = (guess.amountCents! / 100).toStringAsFixed(2);
+      _left = null;
+      _op = null;
+      filled.add('金额');
+    }
+
+    if (guess.categoryName != null && _categoryId == null) {
+      final type = _isIncome ? CategoryType.income : CategoryType.expense;
+      final match = matchCategory(guess.categoryName, widget.categories, type);
+      if (match != null) {
+        _categoryId = match.id;
+        filled.add('分类');
+      }
+    }
+
+    if (widget.autoTagEnabled && guess.tagNames.isNotEmpty) {
+      final added = <String>[];
+      for (final tag in guess.tagNames) {
+        if (_tags.length >= 2) break;
+        if (_tags.any((existing) => normalizeName(existing) == normalizeName(tag))) {
+          continue;
+        }
+        _tags.add(tag);
+        added.add(tag);
+      }
+      if (added.isNotEmpty) filled.add('标签');
+    }
+
+    if (guess.accountName != null && widget.initialDraft == null) {
+      final match = matchAccount(
+        guess.accountName,
+        widget.accounts.map((balance) => balance.account),
+      );
+      if (match != null && match.id != _accountId) {
+        _accountId = match.id;
+        filled.add('账户');
+      }
+    }
+
+    final note = guess.note;
+    if (note != null && note.trim().isNotEmpty && _note.trim().isEmpty) {
+      _note = note.trim();
+      filled.add('备注');
+    }
+
+    final at = guess.happenedAt;
+    if (at != null && !_timeChanged) {
+      _time = at;
+      filled.add('日期');
+    }
+
+    return filled;
   }
 
   void _showHint(String text, {bool error = false}) {
@@ -605,11 +692,39 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   Future<void> _submit({bool keepOpen = false}) async {
     if (!_canSubmit || _saving) return;
+
+    var category = _isTransfer ? null : _selectedCategory;
+    var newCategoryName = _isTransfer ? null : _newCategoryName;
+    if (newCategoryName != null && category == null) {
+      final create = widget.onCreateCategory;
+      if (create != null) {
+        HapticFeedback.lightImpact();
+        setState(() => _saving = true);
+        final created = await create(newCategoryName);
+        if (!mounted) return;
+        if (created == null) {
+          setState(() {
+            _saving = false;
+            _errorText = '新建分类失败，可以手动选一个';
+          });
+          return;
+        }
+        category = created;
+        newCategoryName = null;
+        setState(() {
+          _categoryId = created.id;
+          _newCategoryName = null;
+          _saving = false;
+        });
+      }
+    }
+
     final draft = QuickEntryDraft(
       amount: _finalValue,
       isIncome: _isTransfer ? false : _isIncome,
       isTransfer: _isTransfer,
-      category: _isTransfer ? null : _selectedCategory,
+      category: category,
+      newCategoryName: newCategoryName,
       account: _selectedAccount?.account,
       toAccount: _isTransfer ? _selectedToAccount?.account : null,
       time: _time,
@@ -745,6 +860,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                       onChanged: (mode) => setState(() {
                         _isTransfer = mode == 2;
                         _isIncome = mode == 1;
+                        _newCategoryName = null;
                         if (_isTransfer && _toAccountId == null) {
                           _toAccountId = _selectedToAccount?.account.id;
                         }
@@ -834,6 +950,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                                               setState(() {
                                                 _categoryId =
                                                     visible[row * 4 + col].id;
+                                                _newCategoryName = null;
                                               });
                                             },
                                           )
@@ -863,6 +980,31 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                     );
                   },
                 ),
+              ),
+            ),
+          if (!_isTransfer && _newCategoryName != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 2, 16, 0),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 14,
+                    color: BeanColors.goldDeep,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '将新建分类「$_newCategoryName」· 选已有分类即取消',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           const SizedBox(height: 6),

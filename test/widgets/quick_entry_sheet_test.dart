@@ -849,4 +849,528 @@ void main() {
     await tester.pumpAndSettle();
     expect(submitted?.amount, 12, reason: '识别失败不阻塞保存');
   });
+
+  testWidgets('初始识别结果直接预填，不需要先选图', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    initialGuess: ReceiptGuess(
+                      amountCents: 4450,
+                      categoryName: '餐饮',
+                      note: '金豆餐厅',
+                      happenedAt: DateTime(2026, 10, 18, 12, 30),
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('44.50'), findsWidgets);
+    expect(find.textContaining('金豆餐厅'), findsWidgets);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.amount, 44.5);
+    expect(submitted?.note, '金豆餐厅');
+    expect(submitted?.category?.name, '餐饮');
+    expect(submitted?.time, DateTime(2026, 10, 18, 12, 30));
+  });
+
+  testWidgets('分类别名命中用户改名后的分类', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: [
+                      _cat('cat-meal', '吃饭', CategoryType.expense, 0, 'restaurant'),
+                    ],
+                    accounts: _accounts(),
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 1200,
+                      categoryName: '餐饮',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.category?.name, '吃饭', reason: '别名「餐饮」应命中改名后的分类');
+  });
+
+  testWidgets('账户线索命中已有账户，匹配不到则沿用上次账户', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    AccountBalance balance(String id, String name, int order) => AccountBalance(
+          account: Account(
+            id: id,
+            name: name,
+            type: AccountType.wallet,
+            initialBalanceCents: 0,
+            sortOrder: order,
+            currency: 'CNY',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+          expenseCents: 0,
+          incomeCents: 0,
+        );
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: [
+                      balance('acc-wallet', '日常钱包', 0),
+                      balance('acc-wechat', '微信零钱', 1),
+                    ],
+                    initialAccountId: 'acc-wallet',
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 3850,
+                      accountName: '微信',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.account?.name, '微信零钱');
+  });
+
+  testWidgets('以识别中状态打开时显示进度，不阻塞其它操作', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    initialRecognizing: true,
+                    onSubmit: (draft) async => null,
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('识别中…'), findsOneWidget);
+  });
+
+  testWidgets('带图进入时自动识别并预填', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    pendingImage: PickedImage(
+                      bytes: Uint8List.fromList([1, 2, 3]),
+                      fileName: 'screenshot.png',
+                    ),
+                    recognizeReceipt: (bytes) async => const ReceiptGuess(
+                      amountCents: 3850,
+                      note: '星巴克',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('38.50'), findsWidgets);
+    expect(find.textContaining('星巴克'), findsWidgets);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.amount, 38.5);
+    expect(submitted?.images.length, 1, reason: '待识别的截图保存时作为附件');
+  });
+
+  testWidgets('初始识别结果不覆盖编辑模式里已有的金额', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    initialDraft: QuickEntryDraft(
+                      amount: 30,
+                      isIncome: false,
+                      time: DateTime(2026, 10, 18, 9),
+                    ),
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 4450,
+                      note: '金豆餐厅',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.amount, 30, reason: '用户已有的金额优先');
+    expect(submitted?.note, '金豆餐厅', reason: '空字段仍可被填充');
+  });
+
+  testWidgets('「将新建分类」只在保存时创建，标签随保存带上', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final created = <String>[];
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    newCategoryCandidate: '咖啡',
+                    onCreateCategory: (name) async {
+                      created.add(name);
+                      return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
+                    },
+                    autoTagEnabled: true,
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 3800,
+                      categoryName: '咖啡',
+                      tagNames: ['咖啡', '微信支付'],
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('将新建分类「咖啡」'), findsOneWidget);
+    expect(find.textContaining('#咖啡'), findsWidgets);
+    expect(created, isEmpty, reason: '识别/展示阶段不落库');
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(created, ['咖啡']);
+    expect(submitted?.category?.name, '咖啡');
+    expect(submitted?.newCategoryName, isNull);
+    expect(submitted?.tags, containsAll(<String>['咖啡', '微信支付']));
+  });
+
+  testWidgets('取消面板不创建分类、不产生草稿', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final created = <String>[];
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    newCategoryCandidate: '咖啡',
+                    onCreateCategory: (name) async {
+                      created.add(name);
+                      return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
+                    },
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 3800,
+                      categoryName: '咖啡',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    expect(created, isEmpty);
+    expect(submitted, isNull);
+  });
+
+  testWidgets('选已有分类会取消「将新建」候选', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final created = <String>[];
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    newCategoryCandidate: '咖啡',
+                    onCreateCategory: (name) async {
+                      created.add(name);
+                      return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
+                    },
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 3800,
+                      categoryName: '咖啡',
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('餐饮'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('将新建分类'), findsNothing);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(created, isEmpty);
+    expect(submitted?.category?.name, '餐饮');
+  });
+
+  testWidgets('自动标签最多两个', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    QuickEntryDraft? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => QuickEntrySheet(
+                    categories: _categories(),
+                    accounts: _accounts(),
+                    autoTagEnabled: true,
+                    initialGuess: const ReceiptGuess(
+                      amountCents: 3800,
+                      tagNames: ['咖啡', '微信支付', '打车'],
+                      confidence: ReceiptConfidence.amount,
+                    ),
+                    onSubmit: (draft) async {
+                      submitted = draft;
+                      return null;
+                    },
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(submitted?.tags.length, 2);
+    expect(submitted?.tags, isNot(contains('打车')));
+  });
 }
