@@ -9,6 +9,7 @@ import 'data/db/connection.dart';
 import 'data/repositories/app_state_repository.dart';
 import 'services/ocr/receipt_guess.dart';
 import 'services/ocr/receipt_recognizer_factory.dart';
+import 'services/ocr/receipt_recognizer_vision.dart';
 import 'services/ocr/receipt_vision_settings.dart';
 import 'services/screenshot/pending_entry.dart';
 
@@ -24,74 +25,113 @@ void screenshotEntry() {
     if (call.method != 'recognize') return null;
     final args = call.arguments;
     final bytes = args is Map ? args['bytes'] : null;
-    if (bytes is! Uint8List) return {'ok': false};
+    if (bytes is! Uint8List) return {'ok': false, 'error': '截图字节无效'};
+    final recognitionBytes = args is Map ? args['recognitionBytes'] : null;
     final path = args is Map ? args['path'] as String? : null;
-    return _recognize(bytes, path);
+    return _recognize(
+      bytes,
+      recognitionBytes is Uint8List ? recognitionBytes : null,
+      path,
+    );
   });
   channel.invokeMethod<void>('ready');
 }
 
-Future<Map<String, Object?>> _recognize(Uint8List bytes, String? url) async {
+Future<Map<String, Object?>> _recognize(
+  Uint8List bytes,
+  Uint8List? recognitionBytes,
+  String? url,
+) async {
   final db = AppDatabase(openDatabaseConnection());
   final state = AppStateRepository(db);
   final store = PendingScreenshotEntryStore(state);
   final now = DateTime.now();
+  final recognitionInput = recognitionBytes ?? bytes;
   String? imagePath;
 
   try {
     // MediaStore 的 content:// URI 在 UI 引擎里读不了；落一份临时文件随草稿带走。
+    // 落盘用原图（附件保留原图）；模型只收 Kotlin 压好的识别副本。
     imagePath = await _saveTempImage(bytes, now);
+    debugPrint(
+      'screenshotEntry: original=${bytes.length}B '
+      'recognition=${recognitionInput.length}B '
+      'mime=${VisionReceiptRecognizer.mimeOf(recognitionInput)}',
+    );
 
     final recognizer = await systemReceiptRecognizer(
       settings: ReceiptVisionSettingsStore(state),
       keys: SecureReceiptApiKeyStore(),
     );
     if (recognizer == null) {
+      const message = '视觉识别未开启，可在设置里配置 API Key';
       await store.write(
         PendingScreenshotEntry(
           id: 'shot-${now.microsecondsSinceEpoch}',
           createdAt: now,
           imagePath: imagePath,
-          error: '视觉识别未开启，可在设置里配置 API Key',
+          error: message,
         ),
       );
-      return {'ok': false};
+      return {'ok': false, 'error': message};
     }
 
     ReceiptGuess guess;
     try {
-      guess = await recognizer.recognize(bytes);
+      guess = await recognizer.recognize(recognitionInput);
     } finally {
       await recognizer.close();
     }
 
-    final usable = guess.hasAmount || guess.categoryName != null || guess.note != null;
+    final usable =
+        guess.hasAmount || guess.categoryName != null || guess.note != null;
+    if (!usable) {
+      debugPrint('screenshotEntry: empty guess');
+      const message = '没认出金额，点击手动记';
+      await store.write(
+        PendingScreenshotEntry(
+          id: 'shot-${now.microsecondsSinceEpoch}',
+          createdAt: now,
+          imagePath: imagePath,
+          error: message,
+        ),
+      );
+      return {'ok': false, 'error': '没认出金额'};
+    }
+
     await store.write(
       PendingScreenshotEntry(
         id: 'shot-${now.microsecondsSinceEpoch}',
         createdAt: now,
-        guess: usable ? guess : null,
+        guess: guess,
         imagePath: imagePath,
-        error: usable ? null : '没认出金额，点击手动记',
       ),
     );
     return {
-      'ok': usable,
+      'ok': true,
       'amount_cents': guess.amountCents,
       'category': guess.categoryName,
       'note': guess.note,
       'source': url,
     };
   } catch (error) {
-    await store.write(
-      PendingScreenshotEntry(
-        id: 'shot-${now.microsecondsSinceEpoch}',
-        createdAt: now,
-        imagePath: imagePath,
-        error: '识别失败，可以手动记',
-      ),
-    );
-    return {'ok': false};
+    final message = error is ReceiptRecognitionException
+        ? error.message
+        : '识别失败，可以手动记';
+    debugPrint('screenshotEntry: failed: $message');
+    try {
+      await store.write(
+        PendingScreenshotEntry(
+          id: 'shot-${now.microsecondsSinceEpoch}',
+          createdAt: now,
+          imagePath: imagePath,
+          error: message,
+        ),
+      );
+    } catch (_) {
+      // 连 pending 都写不进去时，至少让通知带上真实原因
+    }
+    return {'ok': false, 'error': message};
   } finally {
     await db.close();
   }

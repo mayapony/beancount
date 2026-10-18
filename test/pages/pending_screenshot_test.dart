@@ -85,17 +85,17 @@ void main() {
     expect(find.text('记一笔'), findsNothing);
   });
 
-  testWidgets('识别失败时提示手动记，不打开面板', (tester) async {
+  testWidgets('识别失败时显示真实原因，不打开面板', (tester) async {
     await pending.write(
       PendingScreenshotEntry(
         id: 'shot-2',
         createdAt: DateTime(2026, 10, 18, 12),
-        error: '视觉识别失败',
+        error: '识别超时，稍后再试',
       ),
     );
     await pumpShell(tester);
 
-    expect(find.textContaining('截屏识别失败'), findsOneWidget);
+    expect(find.text('识别超时，稍后再试'), findsOneWidget);
     expect(find.text('记一笔'), findsNothing);
   });
 

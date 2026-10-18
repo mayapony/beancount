@@ -246,7 +246,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       if (entry == null || !mounted) return;
       if (entry.error != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('截屏识别失败，可以手动记一笔')),
+          SnackBar(content: Text(entry.error!)),
         );
         return;
       }
