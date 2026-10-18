@@ -138,9 +138,21 @@ Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 5; i++) {
     await tester.pump(const Duration(milliseconds: 200));
   }
+  _drainExceptions(tester);
+}
+
+/// 截图工具在无中文字体的机器上会出现排版溢出（文字变方块 → 换行/宽度算错）。
+/// 那是"这张图不好看"，不是"应用坏了"：把异常打出来但不让工具红掉。
+void _drainExceptions(WidgetTester tester) {
+  final error = tester.takeException();
+  if (error != null) {
+    // ignore: avoid_print
+    print('（截图环境告警）$error');
+  }
 }
 
 Future<void> _shot(WidgetTester tester, String name) async {
+  _drainExceptions(tester);
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey('screen')),
   );
