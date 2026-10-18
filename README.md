@@ -7,7 +7,7 @@
 
 ## 状态
 
-🟡 **M0 奠基**（脚手架 + 设计基线 + 设计 Demo 已完成）。产品计划见 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)，设计语言见 [`docs/DESIGN.md`](docs/DESIGN.md)。
+🟢 **1.0.1 已发布**：M1–M6、M8–M10 完成；M7 只完成「手动加图 → 本地 OCR 预填」，截屏自动触发与视觉模型仍为 Backlog；生物识别与「多账本」待决策。产品计划见 [`docs/PRODUCT_PLAN.md`](docs/PRODUCT_PLAN.md)，设计语言见 [`docs/DESIGN.md`](docs/DESIGN.md)。
 
 ## 技术栈
 
