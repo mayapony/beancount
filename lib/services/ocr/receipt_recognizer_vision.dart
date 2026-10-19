@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show TlsException;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'entry_matching.dart';
@@ -112,6 +114,14 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
       throw const ReceiptRecognitionException('识别超时，稍后再试');
     } on http.ClientException {
       throw const ReceiptRecognitionException('网络不通，检查一下连接');
+    } on TlsException catch (error) {
+      // 握手/证书失败不会被 http 包包装成 ClientException（它只接 SocketException
+      // 和 HttpException），以前会一路漏到调用方的 catch-all 里变成「检查网络」。
+      // 真凶通常是 VPN/代理中间人、系统时间偏差或证书链。
+      debugPrint('vision recognize: TLS 失败 $error');
+      throw const ReceiptRecognitionException(
+        '安全连接没建立起来（证书没过）：关掉 VPN 或代理再试，或检查系统时间',
+      );
     }
 
     if (response.statusCode != 200) {

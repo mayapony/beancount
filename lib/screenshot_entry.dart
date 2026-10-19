@@ -144,7 +144,8 @@ Future<Map<String, Object?>> _recognize(
   } catch (error) {
     final message =
         error is ReceiptRecognitionException ? error.message : '识别失败，可以手动记';
-    debugPrint('screenshotEntry: failed: $message');
+    // 带上原始异常：只在界面上说「识别失败」会把根因吃掉。
+    debugPrint('screenshotEntry: failed: $message ($error)');
     var pendingCount = 0;
     try {
       pendingCount = await _addPending(

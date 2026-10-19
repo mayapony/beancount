@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show HandshakeException;
 import 'dart:typed_data';
 
 import 'package:bean_count/services/ocr/probe_receipt_image.dart';
@@ -113,6 +114,22 @@ void main() {
 
     expect(result.ok, isFalse);
     expect(result.message, contains('网络'));
+  });
+
+  test('证书不过时说证书，而不是笼统的「检查网络」', () async {
+    // 真实事故：TLS 握手失败不会被 http 包包装成 ClientException，
+    // 以前会落进 catch-all，界面只说「检查网络」，把 VPN 这个真凶藏了。
+    final result = await _probe(
+      MockClient(
+        (_) async => throw const HandshakeException(
+          'CERTIFICATE_VERIFY_FAILED: self signed certificate',
+        ),
+      ),
+    );
+
+    expect(result.ok, isFalse);
+    expect(result.message, contains('证书'));
+    expect(result.message, isNot(contains('检查网络后重试')));
   });
 
   test('内置小票是一张可用的 PNG', () {

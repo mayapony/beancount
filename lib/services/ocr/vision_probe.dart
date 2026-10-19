@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'probe_receipt_image.dart';
@@ -71,7 +72,9 @@ Future<VisionProbeResult> probeVision({
     );
   } on ReceiptRecognitionException catch (error) {
     return VisionProbeResult.failure(error.message);
-  } catch (_) {
+  } catch (error) {
+    // 兜底：留下原始异常，否则只剩「检查网络」一句误导排查方向。
+    debugPrint('vision probe failed: $error');
     return const VisionProbeResult.failure('识别请求失败，检查网络后重试');
   } finally {
     await recognizer.close();

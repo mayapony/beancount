@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show HandshakeException;
 import 'dart:typed_data';
 
 import 'package:bean_count/services/ocr/receipt_guess.dart';
@@ -348,6 +349,27 @@ void main() {
         throwsA(
           isA<ReceiptRecognitionException>()
               .having((e) => e.message, 'message', contains('网络')),
+        ),
+      );
+    });
+
+    test('证书/握手失败说证书，不落成「网络不通」', () async {
+      // TLS 异常 implements IOException，http 包的 IOClient 只包装
+      // SocketException/HttpException，所以它曾经一路溥到调用方的 catch-all。
+      final recognizer = _recognizer(
+        MockClient(
+          (_) async => throw const HandshakeException(
+            'CERTIFICATE_VERIFY_FAILED: self signed certificate',
+          ),
+        ),
+      );
+      await expectLater(
+        recognizer.recognize(_png),
+        throwsA(
+          isA<ReceiptRecognitionException>()
+              .having((e) => e.statusCode, 'status', isNull)
+              .having((e) => e.message, 'message', contains('证书'))
+              .having((e) => e.message, 'message', contains('VPN')),
         ),
       );
     });
