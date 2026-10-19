@@ -123,14 +123,20 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       attachments: _attachmentRepo,
       categories: _categoryRepo,
       accounts: _accountRepo,
+      refreshSignal: _dataRevision,
     ),
     InsightsPage(
       repository: _insightsRepo,
       transactions: _transactionRepo,
       attachments: _attachmentRepo,
       categories: _categories,
+      refreshSignal: _dataRevision,
     ),
-    AssetsPage(repository: _accountRepo, netWorth: _netWorthRepo),
+    AssetsPage(
+      repository: _accountRepo,
+      netWorth: _netWorthRepo,
+      refreshSignal: _dataRevision,
+    ),
     SettingsPage(
       theme: widget.themeController,
       importer: _importService,
@@ -150,6 +156,13 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       updateController: widget.updateController,
     ),
   ];
+
+  /// 各页重新查询的信号。
+  ///
+  /// 截屏识别跑在 headless engine（**另一个 isolate + 另一个 AppDatabase**），
+  /// 它写进去的交易不会触发本 isolate 的 drift 流（tableUpdates 只认同一个
+  /// 连接），所以回到前台时手动戳一下，否则明细/洞察/资产一直是旧数字。
+  final ValueNotifier<int> _dataRevision = ValueNotifier<int>(0);
 
   /// 各币种上次用过的汇率（ppm），面板打开前从 app_state 读出来。
   Map<String, int> _fxRates = const <String, int>{};
@@ -207,6 +220,8 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     // 从后台回来（例如在别的 App 截完图）时补一次：在锁屏后面也不会弹，
     // 因为 ShellPage 只有解锁后才会被构建。
     if (state == AppLifecycleState.resumed) {
+      // 后台自动记账走的是另一个 isolate，流收不到通知，只能回来时重查
+      _dataRevision.value++;
       unawaited(_consumePendingScreenshot());
       unawaited(_consumeSharedImage());
     }
@@ -333,6 +348,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _dataRevision.dispose();
     // 只关闭自己创建的库，注入的库由调用方负责
     if (widget.database == null) _db.close();
     super.dispose();

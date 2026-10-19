@@ -27,6 +27,7 @@ class TransactionsPage extends StatefulWidget {
     this.categories,
     this.accounts,
     this.initialMonth,
+    this.refreshSignal,
   });
 
   final TransactionRepository repository;
@@ -41,6 +42,13 @@ class TransactionsPage extends StatefulWidget {
   /// 初始浏览月份（测试与深链用）；为空时落在当前自然月。
   final LedgerMonth? initialMonth;
 
+  /// 外部写入后的重查信号。
+  ///
+  /// drift 的 `tableUpdates()` 只跟踪**本连接**：后台截图识别跑在另一个
+  /// isolate、另一个 AppDatabase 实例上，写库不会发通知给这里。所以壳层
+  /// 在回前台时戳一下它，页面自己重建查询。
+  final Listenable? refreshSignal;
+
   @override
   State<TransactionsPage> createState() => _TransactionsPageState();
 }
@@ -54,6 +62,19 @@ class _TransactionsPageState extends State<TransactionsPage> {
     super.initState();
     // 先把附件目录解析好：列表里的缩略图需要同步拿路径
     widget.attachments?.ensureReady();
+    widget.refreshSignal?.addListener(_reloadFromScratch);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_reloadFromScratch);
+    super.dispose();
+  }
+
+  /// 丢掉旧的查询流重新订阅：StreamBuilder 拿到的是新流，会重新查库。
+  void _reloadFromScratch() {
+    if (!mounted) return;
+    setState(() => _stream = _watch());
   }
 
   @override

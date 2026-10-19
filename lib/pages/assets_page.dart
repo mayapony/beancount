@@ -17,6 +17,7 @@ class AssetsPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.netWorth,
+    this.refreshSignal,
   });
 
   final AccountRepository repository;
@@ -24,13 +25,33 @@ class AssetsPage extends StatefulWidget {
   /// 净资产走势（由账目推导）；为空时只显示账户列表。
   final NetWorthRepository? netWorth;
 
+  /// 外部写入后的重查信号，语义同 `TransactionsPage.refreshSignal`。
+  final Listenable? refreshSignal;
+
   @override
   State<AssetsPage> createState() => _AssetsPageState();
 }
 
 class _AssetsPageState extends State<AssetsPage> {
-  late final Stream<List<AccountBalance>> _stream =
+  late Stream<List<AccountBalance>> _stream =
       widget.repository.watchWithBalances();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.refreshSignal?.addListener(_reloadFromScratch);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_reloadFromScratch);
+    super.dispose();
+  }
+
+  void _reloadFromScratch() {
+    if (!mounted) return;
+    setState(() => _stream = widget.repository.watchWithBalances());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,17 +78,28 @@ class _AssetsPageState extends State<AssetsPage> {
             ),
           );
         }
-        return _AssetsBody(accounts: accounts, netWorth: widget.netWorth);
+        return _AssetsBody(
+          accounts: accounts,
+          netWorth: widget.netWorth,
+          refreshSignal: widget.refreshSignal,
+        );
       },
     );
   }
 }
 
 class _AssetsBody extends StatefulWidget {
-  const _AssetsBody({required this.accounts, this.netWorth});
+  const _AssetsBody({
+    required this.accounts,
+    this.netWorth,
+    this.refreshSignal,
+  });
 
   final List<AccountBalance> accounts;
   final NetWorthRepository? netWorth;
+
+  /// 走势图同样由交易推导，外部写库后一并重查。
+  final Listenable? refreshSignal;
 
   @override
   State<_AssetsBody> createState() => _AssetsBodyState();
@@ -83,6 +115,18 @@ class _AssetsBodyState extends State<_AssetsBody> {
   void initState() {
     super.initState();
     _seriesStream = widget.netWorth?.watch(range: _range);
+    widget.refreshSignal?.addListener(_reloadSeries);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_reloadSeries);
+    super.dispose();
+  }
+
+  void _reloadSeries() {
+    if (!mounted) return;
+    setState(() => _seriesStream = widget.netWorth?.watch(range: _range));
   }
 
   void _pickRange(NetWorthRange range) {

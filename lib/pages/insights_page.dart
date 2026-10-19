@@ -18,6 +18,7 @@ class InsightsPage extends StatefulWidget {
     this.transactions,
     this.attachments,
     this.categories = const <Category>[],
+    this.refreshSignal,
   });
 
   final InsightsRepository repository;
@@ -27,6 +28,9 @@ class InsightsPage extends StatefulWidget {
   final AttachmentRepository? attachments;
   final List<Category> categories;
 
+  /// 外部写入后的重查信号，语义同 [TransactionsPage.refreshSignal]。
+  final Listenable? refreshSignal;
+
   @override
   State<InsightsPage> createState() => _InsightsPageState();
 }
@@ -34,6 +38,23 @@ class InsightsPage extends StatefulWidget {
 class _InsightsPageState extends State<InsightsPage> {
   InsightsPeriod _period = InsightsPeriod.month;
   late Stream<RangeInsights> _stream = widget.repository.watch(period: _period);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.refreshSignal?.addListener(_reloadFromScratch);
+  }
+
+  @override
+  void dispose() {
+    widget.refreshSignal?.removeListener(_reloadFromScratch);
+    super.dispose();
+  }
+
+  void _reloadFromScratch() {
+    if (!mounted) return;
+    setState(() => _stream = widget.repository.watch(period: _period));
+  }
 
   void _select(InsightsPeriod period) {
     if (period == _period) return;

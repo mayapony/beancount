@@ -19,6 +19,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
+
 void main() {
   late AppDatabase db;
   late TransactionRepository repo;
@@ -561,5 +563,62 @@ void main() {
       tester.getTopLeft(thumbs.at(1)).dx,
       reason: '金额列宽固定后，缩略图左边应该一致',
     );
+  });
+
+  testWidgets('另一条连接写库（后台自动记账）后，信号一到就重查', (tester) async {
+    // 真机上的情形：截屏识别跑在 headless engine，用自己打开的 AppDatabase
+    // 写库；drift 的 tableUpdates 只认同一个连接，所以 UI 的流收不到。
+    final file = File('${tmp.path}/shared.sqlite');
+    final uiDb = AppDatabase(NativeDatabase(file));
+    final bgDb = AppDatabase(NativeDatabase(file));
+    addTearDown(() async {
+      await uiDb.close();
+      await bgDb.close();
+    });
+
+    final signal = ValueNotifier<int>(0);
+    addTearDown(signal.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildBeanTheme(Brightness.light),
+        home: Scaffold(
+          body: TransactionsPage(
+            repository: TransactionRepository(uiDb),
+            refreshSignal: signal,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('还没有记账'), findsOneWidget);
+
+    final wallet = (await AccountRepository(bgDb).all()).first;
+    final food = (await CategoryRepository(bgDb)
+        .findByName('餐饮', CategoryType.expense))!;
+    await TransactionRepository(bgDb).create(
+      NewTransaction(
+        type: EntryType.expense,
+        amountCents: 1234,
+        categoryId: food.id,
+        accountId: wallet.id,
+        happenedAt: DateTime.now(),
+        note: '后台记的一笔',
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.text('后台记的一笔'),
+      findsNothing,
+      reason: '另一条连接写库不会通知本连接的 drift 流',
+    );
+
+    signal.value++;
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('后台记的一笔'), findsOneWidget);
   });
 }
