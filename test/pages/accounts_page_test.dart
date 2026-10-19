@@ -149,4 +149,36 @@ void main() {
     expect(find.text('空账户'), findsNothing);
     expect(await accounts.byId(empty.id), isNull);
   });
+
+  testWidgets('输入法弹起后期初余额与保存键仍露在键盘上方', (tester) async {
+    await accounts.create(name: '支付宝');
+    await pumpPage(tester);
+
+    await tester.tap(find.text('支付宝'));
+    await tester.pumpAndSettle();
+
+    // 模拟输入法：物理高度 1100 / dpr 2.75 = 400 逻辑像素
+    tester.view.viewInsets = const FakeViewPadding(bottom: 1100);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final keyboardTop = tester.view.physicalSize.height / 2.75 - 400;
+
+    // 面板让位给键盘后内容会滚：把期初余额和保存键都滚到可见处
+    await tester.ensureVisible(find.text('期初余额'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(find.text('期初余额')).dy,
+      lessThanOrEqualTo(keyboardTop + 1),
+      reason: '期初余额输入框不该被输入法盖住',
+    );
+
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(find.text('保存')).dy,
+      lessThanOrEqualTo(keyboardTop + 1),
+      reason: '保存键不该被输入法盖住',
+    );
+  });
 }

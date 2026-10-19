@@ -257,52 +257,61 @@ class BeanSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = BeanPalette.of(context);
     final safeBottom = math.min(MediaQuery.viewPaddingOf(context).bottom, 28.0);
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(bottom: 16 + safeBottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: palette.neutral.handle,
-              borderRadius: BorderRadius.circular(2),
+    // 输入法弹起时整体上移，否则面板下半截（输入框、保存键）会被盖住。
+    // 键盘挡住 home indicator，所以这时候不再留安全区。
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: Container(
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: 16 + (keyboard > 0 ? 0 : safeBottom),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: palette.neutral.handle,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-            child: Row(
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+              child: Row(
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: '关闭',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  style: IconButton.styleFrom(
-                    backgroundColor: palette.neutral.sand,
-                    foregroundColor: palette.textSecondary,
-                    minimumSize: const Size(40, 40),
-                    padding: EdgeInsets.zero,
+                  const Spacer(),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: palette.neutral.sand,
+                      foregroundColor: palette.textSecondary,
+                      minimumSize: const Size(40, 40),
+                      padding: EdgeInsets.zero,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          child,
-        ],
+            // 面板让位给键盘后高度会变矮，内容自己滚，不溢出。
+            Flexible(child: child),
+          ],
+        ),
       ),
     );
   }
