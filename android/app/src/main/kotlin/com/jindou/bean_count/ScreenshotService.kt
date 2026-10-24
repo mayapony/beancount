@@ -41,6 +41,9 @@ import kotlin.math.roundToInt
 class ScreenshotService : Service() {
     private var engine: FlutterEngine? = null
     private var channel: MethodChannel? = null
+
+    /** 读取循环在 IO 线程里查 pending 状态，所以这里要跨线程可见。 */
+    @Volatile
     private var watcher: ScreenshotWatcher? = null
     private var dartReady = false
     private var queuedUri: Uri? = null
@@ -113,11 +116,15 @@ class ScreenshotService : Service() {
     }
 
     private fun recognize(uri: Uri) {
-        busyJobs.incrementAndGet()
+        // 检测到截图就立刻给反馈：队列空闲时马上亮「识别中」，用户不用等读图。
+        // 排队中的截图等轮到自己再更新（processRecognize 开头），避免把上一张的
+        // 结果盖掉后看不到。
+        val wasIdle = busyJobs.getAndIncrement() == 0
+        if (wasIdle) mainHandler.post { showProgress() }
         try {
             ioExecutor.execute {
                 try {
-                    processRecognize(uri)
+                    processRecognize(uri, announceProgress = !wasIdle)
                 } finally {
                     busyJobs.decrementAndGet()
                 }
@@ -127,17 +134,22 @@ class ScreenshotService : Service() {
         }
     }
 
-    private fun processRecognize(uri: Uri) {
-        // 排队时不要提前显示「识别中」：等真正轮到自己再更新，避免 A 的结果
-        // 被 B 的进度覆盖后看不到。
-        mainHandler.post { showProgress() }
-        val original = readCompleteImage(uri)
+    private fun processRecognize(uri: Uri, announceProgress: Boolean) {
+        if (announceProgress) mainHandler.post { showProgress() }
+
+        val original = readPublishedImage(uri)
         if (original == null) {
+            // 读不到：释放 in-flight 但不写 processed，发布后的二次回调还能重试；
+            // 同时记下 URI，让「点击手动记」能把这张图重新取出来。
+            watcher?.markHandled(uri, readSucceeded = false)
+            ScreenshotPrefs.setLastFailedUri(this, uri.toString())
             mainHandler.post {
-                showResult("读取截图失败 · 点击手动记", ok = false)
+                showResult("读取截图失败 · 点击手动记", ok = false, recoverable = true)
             }
             return
         }
+        watcher?.markHandled(uri, readSucceeded = true)
+
         val recognition = compressForRecognition(original) ?: original
         Log.i(
             TAG,
@@ -173,24 +185,53 @@ class ScreenshotService : Service() {
         }
     }
 
-    /** ContentObserver 的通知可能早于文件写完：轮询到大小/尾部有效为止。 */
-    private fun readCompleteImage(uri: Uri): ByteArray? {
-        val expected = querySize(uri)
-        val deadline = System.currentTimeMillis() + READ_TIMEOUT_MS
+    /**
+     * 读取一张**已发布**的截图字节。
+     *
+     * MIUI 等厂商的截图服务会先在 MediaStore 插一条 pending 行，发布之前非属主
+     * App 打不开（`Only owner is able to interact with pending/trashed item`），
+     * 而厂商发布通常要 2–5 秒。所以这里先查 `IS_PENDING`：没发布就等，发布后
+     * 再 open——pending 是正常的中间态，不是读取失败。
+     */
+    private fun readPublishedImage(uri: Uri): ByteArray? {
+        val startedAt = System.currentTimeMillis()
+        val deadline = startedAt + READ_TIMEOUT_MS
         var last: ByteArray? = null
         var lastError: Exception? = null
+        var publishedAfterMs = 0L
+        var pendingSinceMs = 0L
+
         while (true) {
-            val bytes = try {
-                contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            } catch (error: Exception) {
-                // 截图刚插入时可能是 pending/trashed，稍后重试即可；最后再统一记日志
-                lastError = error
-                null
-            }
-            if (bytes != null && bytes.isNotEmpty()) {
-                last = bytes
-                val sizeReady = expected <= 0L || bytes.size >= expected
-                if (sizeReady && looksComplete(bytes)) return bytes
+            val published = watcher?.isPublished(uri)
+            if (published == true) {
+                if (pendingSinceMs > 0L) {
+                    publishedAfterMs = System.currentTimeMillis() - pendingSinceMs
+                    pendingSinceMs = 0L
+                }
+                val readStartedAt = System.currentTimeMillis()
+                val bytes = try {
+                    contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                } catch (error: Exception) {
+                    lastError = error
+                    null
+                }
+                if (bytes != null && bytes.isNotEmpty()) {
+                    last = bytes
+                    val expected = querySize(uri)
+                    val sizeReady = expected <= 0L || bytes.size >= expected
+                    if (sizeReady && looksComplete(bytes)) {
+                        Log.i(
+                            TAG,
+                            "读取截图：等待发布=${publishedAfterMs}ms " +
+                                "读取=${System.currentTimeMillis() - readStartedAt}ms " +
+                                "大小=${bytes.size / 1024}KB（$uri）",
+                        )
+                        return bytes
+                    }
+                }
+            } else if (pendingSinceMs == 0L) {
+                // false = 还没发布；null = 查不到状态。两种都从这一刻开始计等待。
+                pendingSinceMs = System.currentTimeMillis()
             }
             if (System.currentTimeMillis() >= deadline) break
             try {
@@ -199,10 +240,19 @@ class ScreenshotService : Service() {
                 break
             }
         }
-        if (last == null) {
-            Log.w(TAG, "读取截图失败", lastError)
-        } else {
-            Log.w(TAG, "截图可能不完整，按已读到的 ${last.size} 字节继续")
+
+        val waited = System.currentTimeMillis() - startedAt
+        when {
+            last != null -> Log.w(
+                TAG,
+                "截图可能不完整，按已读到的 ${last.size} 字节继续（等待 ${waited}ms，$uri）",
+            )
+            pendingSinceMs > 0L -> Log.w(
+                TAG,
+                "等待发布超时：${waited}ms 后仍是 pending（$uri）",
+            )
+            lastError != null -> Log.w(TAG, "读取截图异常（${waited}ms，$uri）", lastError)
+            else -> Log.w(TAG, "读取截图为空（${waited}ms，$uri）")
         }
         return last
     }
@@ -347,8 +397,17 @@ class ScreenshotService : Service() {
         )
     }
 
-    private fun showResult(text: String, ok: Boolean) {
-        notify(RESULT_ID, resultNotification(text, ongoing = false, progress = false, ok = ok))
+    private fun showResult(text: String, ok: Boolean, recoverable: Boolean = false) {
+        notify(
+            RESULT_ID,
+            resultNotification(
+                text,
+                ongoing = false,
+                progress = false,
+                ok = ok,
+                recoverable = recoverable,
+            ),
+        )
     }
 
     private fun notify(id: Int, notification: Notification) {
@@ -369,11 +428,18 @@ class ScreenshotService : Service() {
             },
         )
         manager.createNotificationChannel(
+            // 高优先级 + 静音：检测到截图就悬浮提示一下，能立刻察觉，但不响不震。
+            // 旧渠道 screenshot_result 创建后无法由代码提权，所以另起一个渠道 ID；
+            // 已安装设备上的旧渠道会继续留在系统设置里（渠道不可删除），不再使用。
             NotificationChannel(
-                RESULT_CHANNEL,
+                ALERT_CHANNEL,
                 "截屏识别结果",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "检测到截屏与识别结果；只做视觉提示，不响铃不振动"
+                setSound(null, null)
+                enableVibration(false)
+            },
         )
     }
 
@@ -394,29 +460,33 @@ class ScreenshotService : Service() {
         ongoing: Boolean,
         progress: Boolean,
         ok: Boolean = true,
+        recoverable: Boolean = false,
     ): Notification {
-        return NotificationCompat.Builder(this, RESULT_CHANNEL)
+        return NotificationCompat.Builder(this, ALERT_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("金豆 · 截屏记账")
             .setContentText(text)
             .setOngoing(ongoing)
             .setAutoCancel(!ongoing)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // 静默悬浮：视觉上能立刻察觉，但不打扰。
+            .setSilent(true)
             .apply { if (progress) setProgress(0, 0, true) }
-            .setContentIntent(openAppIntent())
+            .setContentIntent(openAppIntent(withRecovery = recoverable))
             .build()
     }
 
-    private fun openAppIntent(): PendingIntent {
+    private fun openAppIntent(withRecovery: Boolean = false): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             // 通知就是入口：用户点它时，让前台 Shell 消费待确认队列；
             // App 未打开时由启动/恢复流程自己消费。
             putExtra(EXTRA_CONSUME_PENDING, true)
+            if (withRecovery) putExtra(EXTRA_RECOVER_SCREENSHOT, true)
         }
         return PendingIntent.getActivity(
             this,
-            100,
+            if (withRecovery) RECOVERY_REQUEST_CODE else NOTIFICATION_REQUEST_CODE,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -428,12 +498,24 @@ class ScreenshotService : Service() {
     companion object {
         const val CHANNEL = "com.jindou.bean_count/screenshot"
         const val EXTRA_CONSUME_PENDING = "consume_pending"
+
+        /** 点「读取截图失败」通知时，把失败的 URI 重新读出来交给 Dart。 */
+        const val EXTRA_RECOVER_SCREENSHOT = "recover_screenshot"
         private const val TAG = "ScreenshotService"
         private const val ONGOING_CHANNEL = "screenshot_service"
-        private const val RESULT_CHANNEL = "screenshot_result"
+        private const val ALERT_CHANNEL = "screenshot_alert"
         private const val ONGOING_ID = 41
         private const val RESULT_ID = 42
-        private const val READ_TIMEOUT_MS = 3_000L
+        private const val NOTIFICATION_REQUEST_CODE = 100
+        private const val RECOVERY_REQUEST_CODE = 101
+
+        /**
+         * 等厂商发布截图的上限。
+         *
+         * 本机（小米）实测发布耗时 2.16s / 3.60s；3.6s 那次就刚好越过旧的 3s 上限，
+         * 于是同一张图「后台识别失败、手动上传却能认」。留一倍余量取 10s。
+         */
+        private const val READ_TIMEOUT_MS = 10_000L
         private const val READ_POLL_MS = 100L
         private const val RECOGNITION_WAIT_SECONDS = 60L
         private const val MAX_DIMENSION = 1920

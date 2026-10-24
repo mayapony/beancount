@@ -240,12 +240,23 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
   }
 
   /// 处理系统分享面板发来的截图：与自动检测走同一条识别 → 预填链路。
+  ///
+  /// 点「读取截图失败」通知也会走到这里：原生侧把那张图重新读出来当作分享图，
+  /// 此时多半已经发布，于是能补上识别；真的取不回就提示一句，不静默。
   Future<void> _consumeSharedImage() async {
     if (!_screenshotChannel.isSupported || _consumingShared) return;
     _consumingShared = true;
     try {
       final path = await _screenshotChannel.takeSharedImagePath();
-      if (path == null || !mounted) return;
+      if (path == null) {
+        final failed = await _screenshotChannel.takeSharedImageError();
+        if (failed && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('这张图暂时读不到，可以直接手动记一笔')),
+          );
+        }
+        return;
+      }
       final image = await _readPendingImage(path);
       if (image == null || !mounted) return;
       await _openQuickEntry(pendingImage: image);

@@ -61,6 +61,14 @@ class ScreenshotWatcher(
                 .orEmpty(),
         )
 
+    /**
+     * 正在读取/识别的截图：挡住同一张图的并发回调。
+     *
+     * 与 [processed] 的区别：失败后会被释放，允许发布后的二次回调重试；
+     * [processed] 只在**读取成功后**才写入。
+     */
+    private val inFlight: MutableSet<String> = mutableSetOf()
+
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             maybeEmit(uri)
@@ -124,10 +132,48 @@ class ScreenshotWatcher(
 
     private fun emit(row: MediaRow) {
         val key = row.uri.toString()
-        if (!processed.add(key)) return
-        persistProcessed()
-        Log.i(TAG, "检测到截图：${row.name}（$key）")
+        if (processed.contains(key) || inFlight.contains(key)) return
+        inFlight.add(key)
+        Log.i(TAG, "检测到截图：${row.name}（pending=${row.pending}，$key）")
         onScreenshot(row.uri)
+    }
+
+    /**
+     * 服务处理完一张截图后回报结果（主线程）。
+     *
+     * 只有**读取成功**才写入 [processed]；读取失败/超时只释放 [inFlight]，
+     * 让发布后再次到来的变更通知有机会重试——这正是「pending 期间读不到，
+     * 发布后再也回不来」那个 bug 的修复点。
+     */
+    fun markHandled(uri: Uri, readSucceeded: Boolean) {
+        val key = uri.toString()
+        handler.post {
+            inFlight.remove(key)
+            if (readSucceeded && processed.add(key)) persistProcessed()
+        }
+    }
+
+    /**
+     * 该条目是否已发布（不再 pending）。
+     *
+     * `null` 表示查不到状态（旧系统、查询失败或行已消失），调用方按「未知」
+     * 处理、退回直接尝试读取，而不是当失败。
+     */
+    fun isPublished(uri: Uri): Boolean? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Images.Media.IS_PENDING),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) null else cursor.getInt(0) == 0
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -215,6 +261,13 @@ class ScreenshotWatcher(
         } else {
             cursor.getColumnIndex(MediaStore.Images.Media.DATA)
         }.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+        val pending = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            cursor.getColumnIndex(MediaStore.Images.Media.IS_PENDING)
+                .takeIf { it >= 0 }
+                ?.let { cursor.getInt(it) != 0 } ?: false
+        } else {
+            false
+        }
 
         if (dateAdded > 0) {
             val age = System.currentTimeMillis() / 1000 - dateAdded
@@ -224,7 +277,7 @@ class ScreenshotWatcher(
             }
         }
         if (!looksLikeScreenshot(name, path)) return null
-        return MediaRow(uri = uri, name = name)
+        return MediaRow(uri = uri, name = name, pending = pending)
     }
 
     private fun isItemUri(uri: Uri): Boolean =
@@ -245,6 +298,7 @@ class ScreenshotWatcher(
                 MediaStore.Images.Media.DISPLAY_NAME,
                 MediaStore.Images.Media.DATE_ADDED,
                 MediaStore.Images.Media.RELATIVE_PATH,
+                MediaStore.Images.Media.IS_PENDING,
             )
         } else {
             arrayOf(
@@ -276,7 +330,11 @@ class ScreenshotWatcher(
         }
     }
 
-    private data class MediaRow(val uri: Uri, val name: String)
+    private data class MediaRow(
+        val uri: Uri,
+        val name: String,
+        val pending: Boolean = false,
+    )
 
     private data class QueryResult(val found: Boolean, val row: MediaRow? = null)
 

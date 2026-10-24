@@ -28,6 +28,9 @@ class ScreenshotPlugin(private val activity: Activity) :
     private var permissionResult: MethodChannel.Result? = null
     private var pendingSharedImagePath: String? = null
 
+    /** 上一次「取回失败截图」没取到图：让 Dart 侧能说一句原因，而不是静默。 */
+    private var pendingSharedImageError = false
+
     fun attach(engine: FlutterEngine) {
         channel =
             MethodChannel(engine.dartExecutor.binaryMessenger, ScreenshotService.CHANNEL)
@@ -59,6 +62,13 @@ class ScreenshotPlugin(private val activity: Activity) :
                 result.success(path)
             }
 
+            // 取回失败截图时如果读不到图，Dart 侧据此提示原因（取一次就清零）。
+            "takeSharedImageError" -> {
+                val failed = pendingSharedImageError
+                pendingSharedImageError = false
+                result.success(failed)
+            }
+
             else -> result.notImplemented()
         }
     }
@@ -70,6 +80,20 @@ class ScreenshotPlugin(private val activity: Activity) :
             intent.removeExtra(ScreenshotService.EXTRA_CONSUME_PENDING)
             if (ScreenshotRuntime.isAppVisible) {
                 channel?.invokeMethod("pendingAvailable", null)
+            }
+        }
+        // 点「读取截图失败」通知：后台那次读不到（pending/超时），现在多半已发布，
+        // 重新读一次当作「分享进来的一张图」，复用同一条识别 → 预填链路。
+        if (intent?.getBooleanExtra(ScreenshotService.EXTRA_RECOVER_SCREENSHOT, false) == true) {
+            intent.removeExtra(ScreenshotService.EXTRA_RECOVER_SCREENSHOT)
+            val uri = ScreenshotPrefs.takeLastFailedUri(activity)
+            val copied = uri?.let { copyToCache(Uri.parse(it)) }
+            pendingSharedImageError = uri != null && copied == null
+            if (copied != null) {
+                pendingSharedImagePath = copied
+                if (ScreenshotRuntime.isAppVisible) {
+                    channel?.invokeMethod("sharedImageAvailable", null)
+                }
             }
         }
         if (intent?.action != Intent.ACTION_SEND) return

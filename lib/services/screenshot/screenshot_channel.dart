@@ -61,6 +61,21 @@ class ScreenshotChannel {
     }
   }
 
+  /// 上一次「取回失败截图」是否没取到图（取一次就清零）。
+  ///
+  /// 点「读取截图失败」通知时，原生侧会把那张图重新读出来当作分享图交过来；
+  /// 如果连这时都读不到（图片被删/权限被撤），这里返回 true，让界面说一句原因。
+  Future<bool> takeSharedImageError() async {
+    if (!isSupported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('takeSharedImageError') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// 原生主动通知：前台收到分享 / 用户点结果通知要求消费待确认队列。
   /// MethodChannel 只能挂一个 handler，所以两个事件放在一个监听里。
   void setNativeListeners({
