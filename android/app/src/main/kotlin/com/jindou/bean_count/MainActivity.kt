@@ -7,22 +7,28 @@ import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
     private var screenshot: ScreenshotPlugin? = null
+    private var capture: CapturePlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         UpdateInstaller(this).attach(flutterEngine)
         screenshot = ScreenshotPlugin(this).also { it.attach(flutterEngine) }
+        capture = CapturePlugin(this).also { it.attach(flutterEngine) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) screenshot?.handleIntent(intent)
+        if (savedInstanceState == null) {
+            screenshot?.handleIntent(intent)
+            capture?.handleIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         screenshot?.handleIntent(intent)
+        capture?.handleIntent(intent)
     }
 
     override fun onResume() {

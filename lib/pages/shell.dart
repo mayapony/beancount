@@ -18,6 +18,8 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/capture/capture_channel.dart';
+import '../services/capture/capture_settings.dart';
 import '../services/ocr/auto_create_policy.dart';
 import '../services/ocr/entry_matching.dart';
 import '../services/ocr/receipt_guess.dart';
@@ -37,6 +39,7 @@ import '../widgets/bean_fab.dart';
 import '../widgets/quick_entry_sheet.dart';
 import '../widgets/update_prompt_sheet.dart';
 import 'assets_page.dart';
+import 'auto_entries_page.dart';
 import 'insights_page.dart';
 import 'settings_page.dart';
 import 'transactions_page.dart';
@@ -97,8 +100,11 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
   bool _consumingShared = false;
 
   static const ScreenshotChannel _screenshotChannel = ScreenshotChannel();
+  static const CaptureChannel _captureChannel = CaptureChannel();
   late final ReceiptApiKeyStore _visionKeys =
       widget.visionKeys ?? SecureReceiptApiKeyStore();
+  late final CaptureSettingsStore _captureSettings =
+      CaptureSettingsStore(_appState);
   late final EntryWriter _entryWriter = EntryWriter(
     transactions: _transactionRepo,
     attachments: _attachmentRepo,
@@ -153,6 +159,9 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       onScreenshotAutoEntryChanged: _screenshotChannel.isSupported
           ? (enabled) => unawaited(_screenshotChannel.setEnabled(enabled))
           : null,
+      captureSettings: _captureSettings,
+      capturePlatform: _captureChannel,
+      onOpenAutoEntries: _openAutoEntries,
       updateController: widget.updateController,
     ),
   ];
@@ -207,7 +216,10 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       onSharedImage: _consumeSharedImage,
       onPendingAvailable: _consumePendingScreenshot,
     );
+    _captureChannel.setNativeListeners(onOpenAutoEntries: _openAutoEntries);
     unawaited(_syncScreenshotService());
+    unawaited(_syncCaptureService());
+    unawaited(_consumePendingOpenAutoEntries());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_runUpdateCheck());
       unawaited(_consumePendingScreenshot());
@@ -232,6 +244,41 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     if (!_screenshotChannel.isSupported) return;
     final settings = await _screenshotSettings.load();
     await _screenshotChannel.setEnabled(settings.autoEntry);
+  }
+
+  /// 启动时把自动记账后台服务与开关对齐（App 被划掉后由前台服务保活，此处兜底）。
+  Future<void> _syncCaptureService() async {
+    if (!_captureChannel.isSupported) return;
+    final settings = await _captureSettings.load();
+    await _captureChannel.setEnabled(settings.enabled);
+  }
+
+  /// 处理「点已记账通知」的冷启动：取走挂起标记，打开自动记账列表。
+  Future<void> _consumePendingOpenAutoEntries() async {
+    if (!_captureChannel.isSupported) return;
+    final open = await _captureChannel.takeOpenAutoEntries();
+    if (open && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_openAutoEntries());
+      });
+    }
+  }
+
+  /// 打开「最近自动记账」列表；返回后补一次刷新（可能改了账）。
+  Future<void> _openAutoEntries() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AutoEntriesPage(
+          repository: _transactionRepo,
+          attachments: _attachmentRepo,
+          categories: _categories,
+          accounts: _accounts,
+          pickImage: kIsWeb ? null : systemImagePicker(),
+        ),
+      ),
+    );
+    _dataRevision.value++;
   }
 
   Future<bool> _requestScreenshotPermissions() async {

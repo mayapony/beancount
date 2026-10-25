@@ -7,12 +7,15 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/category_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/capture/capture_channel.dart';
+import '../services/capture/capture_settings.dart';
 import '../services/ocr/receipt_vision_settings.dart';
 import '../services/screenshot/screenshot_settings.dart';
 import '../services/update/update_controller.dart';
 import '../theme/theme_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+import '../widgets/capture_settings_section.dart';
 import '../widgets/screenshot_settings_section.dart';
 import 'accounts_page.dart';
 import 'categories_page.dart';
@@ -39,6 +42,9 @@ class SettingsPage extends StatelessWidget {
     this.screenshotSettings,
     this.requestScreenshotPermissions,
     this.onScreenshotAutoEntryChanged,
+    this.captureSettings,
+    this.capturePlatform,
+    this.onOpenAutoEntries,
     this.updateController,
   });
 
@@ -64,6 +70,15 @@ class SettingsPage extends StatelessWidget {
 
   /// 总开关变化：由壳层负责启停后台监听服务。
   final ValueChanged<bool>? onScreenshotAutoEntryChanged;
+
+  /// 自动记账（无障碍 + 通知）的偏好；为空时不显示该区块。
+  final CaptureSettingsStore? captureSettings;
+
+  /// 自动记账的原生能力；非 Android / Web 上 `isSupported` 为 false，不显示区块。
+  final CapturePlatform? capturePlatform;
+
+  /// 打开「最近自动记账」列表（由壳层导航）。
+  final VoidCallback? onOpenAutoEntries;
 
   /// 更新控制器；为空时（Web/iOS/测试）关于页只展示版本与链接。
   final UpdateController? updateController;
@@ -168,6 +183,18 @@ class SettingsPage extends StatelessWidget {
                 store: screenshotSettings!,
                 requestPermissions: requestScreenshotPermissions,
                 onAutoEntryChanged: onScreenshotAutoEntryChanged,
+              ),
+            ),
+          ],
+
+          if (captureSettings != null && capturePlatform != null) ...[
+            const SizedBox(height: BeanSpace.section),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: BeanSpace.page),
+              child: CaptureSettingsSection(
+                store: captureSettings!,
+                platform: capturePlatform!,
+                onOpenAutoEntries: onOpenAutoEntries ?? () {},
               ),
             ),
           ],
