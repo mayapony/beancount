@@ -21,9 +21,9 @@
 
 ## 5. 原生 shim（Android/Kotlin）
 
-- [ ] 5.1 注册 AccessibilityService（Manifest 声明 `BIND_ACCESSIBILITY_SERVICE` + 白名单包过滤），验证：真机可开启、仅白名单包在前台才读
-- [ ] 5.2 注册 NotificationListenerService（Manifest 声明 `BIND_NOTIFICATION_LISTENER_SERVICE`），验证：真机可开启、能收到支付通知
-- [ ] 5.3 经 EventChannel 把树快照与通知转发到 Dart，并实现约 60s 树快照环形缓冲，验证：手动触发支付，Dart 侧收到候选
+- [x] 5.1 注册 AccessibilityService（Manifest 声明 `BIND_ACCESSIBILITY_SERVICE` + 白名单包过滤），验证：真机可开启、仅白名单包在前台才读
+- [x] 5.2 注册 NotificationListenerService（Manifest 声明 `BIND_NOTIFICATION_LISTENER_SERVICE`），验证：真机可开启、能收到支付通知
+- [x] 5.3 经 EventChannel 把树快照与通知转发到 Dart，并实现约 60s 树快照环形缓冲，验证：手动触发支付，Dart 侧收到候选
 
 ## 6. 入账与事后审计（Dart）
 
