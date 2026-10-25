@@ -33,7 +33,9 @@ class CaptureRuntime {
     required this.notifier,
     this.flushDelay = const Duration(seconds: 3),
     DateTime Function()? clock,
-  }) : _clock = clock ?? DateTime.now;
+    void Function(String)? log,
+  })  : _clock = clock ?? DateTime.now,
+        _log = log;
 
   final AppDatabase db;
   final CaptureNotifier notifier;
@@ -41,6 +43,7 @@ class CaptureRuntime {
   /// 一次 flush 的合并窗口：通知与无障碍几乎同时到达时，把两者收进同一批。
   final Duration flushDelay;
   final DateTime Function() _clock;
+  final void Function(String)? _log;
 
   late final CaptureSettingsStore _settings =
       CaptureSettingsStore(AppStateRepository(db));
@@ -60,15 +63,23 @@ class CaptureRuntime {
     if (!(await _settings.load()).enabled) return;
     final tree = dumpToTree(dump);
     final fingerprint = surfaceFingerprintOf(tree);
+    _log?.call('tree pkg=$packageName fp=$fingerprint nodes=${tree.totalNodeCount}');
     final rule = await _match(
       packageName: packageName,
       target: RuleTarget.accessibility,
       fingerprint: fingerprint,
     );
-    if (rule == null) return;
+    if (rule == null) {
+      _log?.call('tree pkg=$packageName no-rule fp=$fingerprint');
+      return;
+    }
 
     final extraction = _executor.apply(rule, tree: tree);
-    if (extraction == null) return;
+    if (extraction == null) {
+      _log?.call('tree pkg=$packageName rule=${rule.id} no-extraction');
+      return;
+    }
+    _log?.call('tree pkg=$packageName rule=${rule.id} amount=${extraction.amountCents}');
 
     _enqueue(
       CaptureCandidate(
@@ -93,10 +104,17 @@ class CaptureRuntime {
       packageName: packageName,
       target: RuleTarget.notification,
     );
-    if (rule == null) return;
+    if (rule == null) {
+      _log?.call('notif pkg=$packageName no-rule');
+      return;
+    }
 
     final extraction = _executor.apply(rule, text: text);
-    if (extraction == null) return;
+    if (extraction == null) {
+      _log?.call('notif pkg=$packageName rule=${rule.id} no-extraction');
+      return;
+    }
+    _log?.call('notif pkg=$packageName rule=${rule.id} amount=${extraction.amountCents}');
 
     _enqueue(
       CaptureCandidate(
@@ -133,6 +151,7 @@ class CaptureRuntime {
     try {
       final result = await _saver.save(candidate, now: _clock());
       await _settings.markCaptured(_clock());
+      _log?.call('entry written inserted=${result.inserted} amount=${candidate.amountCents}');
       if (result.inserted) {
         await notifier.notifyEntry(
           amountCents: candidate.amountCents!,
@@ -140,6 +159,7 @@ class CaptureRuntime {
         );
       }
     } catch (error) {
+      _log?.call('entry write failed: $error');
       debugPrint('capture runtime: 入账失败: $error');
     }
   }

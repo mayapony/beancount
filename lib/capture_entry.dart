@@ -14,7 +14,11 @@ void captureEntry() {
   WidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('com.jindou.bean_count/capture');
   final db = AppDatabase(openDatabaseConnection());
-  final runtime = CaptureRuntime(db: db, notifier: _ChannelNotifier(channel));
+  final runtime = CaptureRuntime(
+    db: db,
+    notifier: _ChannelNotifier(channel),
+    log: (message) => _log(channel, message),
+  );
   channel.setMethodCallHandler((call) async {
     final args = call.arguments;
     switch (call.method) {
@@ -65,5 +69,13 @@ class _ChannelNotifier implements CaptureNotifier {
     } catch (_) {
       // 通知发不出去不影响入账本身。
     }
+  }
+}
+
+Future<void> _log(MethodChannel channel, String message) async {
+  try {
+    await channel.invokeMethod<void>('log', {'message': message});
+  } catch (_) {
+    // 日志失败不打断主流程。
   }
 }

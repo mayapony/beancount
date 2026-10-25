@@ -188,10 +188,18 @@ Future<void> _learnFromScreenshot(
 }) async {
   final db = AppDatabase(openDatabaseConnection());
   try {
-    final snapshot = await channel.invokeMapMethod<String, String>('lastTreeSnapshot');
+    // 截图后 MIUI 会弹截图工具栏（系统悬浮窗），无障碍现读时可能还挡在前面，
+    // 所以带重试：直到读到「非系统窗口」的树为止。
+    final snapshot = await _fetchCurrentTree(channel);
     final package = snapshot?['package'];
     final dump = snapshot?['dump'];
-    if (package == null || dump == null) return;
+    if (package == null || dump == null) {
+      await _log(channel, 'learn: no snapshot (tree unreadable/system window)');
+      return;
+    }
+
+    // 把当前包记进「已认识」，之后对它持续抓树 / 监听通知。
+    await channel.invokeMethod<void>('addKnown', {'package': package});
 
     final tree = dumpToTree(dump);
     final fingerprint = surfaceFingerprintOf(tree);
@@ -199,11 +207,12 @@ Future<void> _learnFromScreenshot(
     final surfaces = CaptureSurfaceStore(state);
 
     if (tree.flattenedText.trim().isEmpty) {
-      // 树读不出（自绘 / WebView / FLAG_SECURE）：标记截图优先，不生成规则
+      await _log(channel, 'learn: tree empty → mark screenshot-first pkg=$package');
       await surfaces.mark(package, fingerprint);
       return;
     }
 
+    await _log(channel, 'learn: store evidence pkg=$package fp=$fingerprint amount=$amountCents');
     await CaptureEvidenceStore(state).add(
       CaptureEvidence(
         id: 'evt-${DateTime.now().microsecondsSinceEpoch}',
@@ -220,21 +229,48 @@ Future<void> _learnFromScreenshot(
       settings: ReceiptVisionSettingsStore(state),
       keys: SecureReceiptApiKeyStore(),
     );
-    if (generator == null) return; // 未配置云端模型：不生成、不上传
+    if (generator == null) {
+      await _log(channel, 'learn: generator null (vision not configured)');
+      return;
+    }
     try {
       final learner = CaptureRuleLearner(
         db: db,
         generator: generator,
         isConfigured: () async => true,
+        log: (message) => _log(channel, message),
       );
       await learner.learnAll();
     } finally {
       generator.close();
     }
   } catch (error) {
+    await _log(channel, 'learn: failed $error');
     debugPrint('screenshotEntry: rule learning failed: $error');
   } finally {
     await db.close();
+  }
+}
+
+/// 现读当前前台应用树：最多重试 6 次、每次等 1 秒，跳过系统悬浮窗（截图工具栏）。
+Future<Map<String, String>?> _fetchCurrentTree(MethodChannel channel) async {
+  for (var attempt = 0; attempt < 6; attempt++) {
+    final snapshot = await channel.invokeMapMethod<String, String>('lastTreeSnapshot');
+    final package = snapshot?['package'];
+    final dump = snapshot?['dump'];
+    if (package != null && dump != null && dump.isNotEmpty) {
+      return snapshot;
+    }
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  return null;
+}
+
+Future<void> _log(MethodChannel channel, String message) async {
+  try {
+    await channel.invokeMethod<void>('log', {'message': message});
+  } catch (_) {
+    // 日志失败不打断主流程。
   }
 }
 

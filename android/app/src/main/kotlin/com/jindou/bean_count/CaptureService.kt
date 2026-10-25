@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.FlutterEngine
@@ -74,7 +75,12 @@ class CaptureService : Service() {
                 "notifyEntry" -> {
                     val cents = (call.argument<Number>("amount_cents"))?.toLong() ?: 0L
                     val note = call.argument<String>("note")?.trim().orEmpty()
+                    Log.i(TAG, "notifyEntry amount=$cents note=$note")
                     showEntryNotification(cents, note)
+                    result.success(null)
+                }
+                "log" -> {
+                    Log.i(TAG, call.argument<String>("message").orEmpty())
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -143,7 +149,8 @@ class CaptureService : Service() {
             .setContentText(text)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(openAutoEntriesIntent())
             .build()
         getSystemService(NotificationManager::class.java)
@@ -166,6 +173,7 @@ class CaptureService : Service() {
     companion object {
         const val CHANNEL = "com.jindou.bean_count/capture"
         const val EXTRA_OPEN_AUTO_ENTRIES = "open_auto_entries"
+        private const val TAG = "BeanCapture"
         private const val CHANNEL_ID = "capture_service"
         private const val ENTRY_CHANNEL_ID = "capture_entry"
         private const val ONGOING_ID = 51

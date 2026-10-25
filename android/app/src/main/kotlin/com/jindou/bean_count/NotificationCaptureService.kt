@@ -14,7 +14,7 @@ class NotificationCaptureService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val packageName = sbn.packageName ?: return
-        if (!CaptureWhitelist.contains(packageName)) return
+        if (!CapturePrefs.isKnown(this, packageName)) return
 
         val extras = sbn.notification?.extras ?: return
         val title = extras.getCharSequence("android.title")?.toString().orEmpty()

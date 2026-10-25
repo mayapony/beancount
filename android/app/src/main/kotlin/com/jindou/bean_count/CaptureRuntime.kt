@@ -1,5 +1,6 @@
 package com.jindou.bean_count
 
+import android.util.Log
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -18,6 +19,10 @@ object CaptureRuntime {
     @Volatile
     var dartReady: Boolean = false
 
+    /** 无障碍服务实例（`onServiceConnected` 时挂上），供截图兜底一次性现读树。 */
+    @Volatile
+    var accessibilityService: AccessibilityCaptureService? = null
+
     private val snapshots = CopyOnWriteArrayList<TreeSnapshot>()
 
     data class TreeSnapshot(
@@ -35,11 +40,13 @@ object CaptureRuntime {
         while (snapshots.isNotEmpty() && now - snapshots[0].atMs > WINDOW_MS) {
             snapshots.removeAt(0)
         }
+        Log.i(TAG, "treeCaptured package=$packageName lines=${dump.lineSequence().count()} buffer=${snapshots.size}")
         forward("treeCaptured", mapOf("package" to packageName, "dump" to dump))
     }
 
     /** 通知监听抓到一条支付通知：直接转发给 Dart。 */
     fun onNotificationCaptured(packageName: String, text: String) {
+        Log.i(TAG, "notificationCaptured package=$packageName text=${text.take(40)}")
         forward("notificationCaptured", mapOf("package" to packageName, "text" to text))
     }
 
@@ -48,11 +55,21 @@ object CaptureRuntime {
         snapshots.lastOrNull { it.packageName == packageName }
 
     /** 取最近一帧任意白名单包的树快照（截图兜底留证用）；没有返回 null。 */
-    fun lastSnapshot(): TreeSnapshot? = snapshots.lastOrNull()
+    fun lastSnapshot(): TreeSnapshot? {
+        val snapshot = snapshots.lastOrNull()
+        Log.i(TAG, "lastSnapshot -> ${snapshot?.packageName ?: "null"} buffer=${snapshots.size}")
+        return snapshot
+    }
+
+    /** 截图兜底的一次性现读：从无障碍服务取「当前前台应用 → 树」。 */
+    fun requestCurrentTree(): Pair<String, String>? =
+        accessibilityService?.dumpCurrentTree()
 
     private fun forward(method: String, args: Map<String, Any?>) {
         val ch = channel ?: return
         if (!dartReady) return
         ch.invokeMethod(method, args)
     }
+
+    private const val TAG = "BeanCapture"
 }

@@ -101,13 +101,23 @@ class ScreenshotService : Service() {
                     }
                 }
                 "lastTreeSnapshot" -> {
-                    val snapshot = CaptureRuntime.lastSnapshot()
+                    val tree = CaptureRuntime.requestCurrentTree()
+                    Log.i(TAG, "lastTreeSnapshot -> ${tree?.first ?: "null"}")
                     result.success(
-                        if (snapshot == null) null else mapOf(
-                            "package" to snapshot.packageName,
-                            "dump" to snapshot.dump,
+                        if (tree == null) null else mapOf(
+                            "package" to tree.first,
+                            "dump" to tree.second,
                         ),
                     )
+                }
+                "addKnown" -> {
+                    val pkg = call.argument<String>("package")
+                    if (pkg != null) CapturePrefs.addKnown(this, pkg)
+                    result.success(null)
+                }
+                "log" -> {
+                    Log.i(TAG, call.argument<String>("message").orEmpty())
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }
@@ -471,18 +481,23 @@ class ScreenshotService : Service() {
         ok: Boolean = true,
         recoverable: Boolean = false,
     ): Notification {
-        return NotificationCompat.Builder(this, ALERT_CHANNEL)
+        val builder = NotificationCompat.Builder(this, ALERT_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("金豆 · 截屏记账")
             .setContentText(text)
             .setOngoing(ongoing)
             .setAutoCancel(!ongoing)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            // 静默悬浮：视觉上能立刻察觉，但不打扰。
-            .setSilent(true)
-            .apply { if (progress) setProgress(0, 0, true) }
             .setContentIntent(openAppIntent(withRecovery = recoverable))
-            .build()
+        // 识别中的进度条静音；结果弹悬浮（heads-up），更显眼。
+        if (ongoing) {
+            builder.setSilent(true)
+            if (progress) builder.setProgress(0, 0, true)
+        } else {
+            builder.setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+        }
+        return builder.build()
     }
 
     private fun openAppIntent(withRecovery: Boolean = false): PendingIntent {

@@ -20,11 +20,13 @@ class CaptureRuleLearner {
     required this.db,
     required this.generator,
     required this.isConfigured,
-  });
+    void Function(String)? log,
+  }) : _log = log;
 
   final AppDatabase db;
   final CaptureRuleGenerator generator;
   final Future<bool> Function() isConfigured;
+  final void Function(String)? _log;
 
   CaptureRuleStore get _rules => CaptureRuleStore(AppStateRepository(db));
   CaptureEvidenceStore get _evidence => CaptureEvidenceStore(AppStateRepository(db));
@@ -42,6 +44,7 @@ class CaptureRuleLearner {
     final fingerprint = evidence.surfaceFingerprint;
     if (fingerprint != null &&
         await _surfaces.isMarked(evidence.packageName, fingerprint)) {
+      _log?.call('learner: skip (screenshot-first) pkg=${evidence.packageName}');
       return;
     }
 
@@ -57,15 +60,22 @@ class CaptureRuleLearner {
       amountCents: evidence.amountCents,
       surfaceFingerprint: fingerprint,
     ));
-    if (rule == null) return;
+    if (rule == null) {
+      _log?.call('learner: unconfigured (no rule) pkg=${evidence.packageName}');
+      return;
+    }
 
     // 回放验证：正例必须解出当次真值金额（负例在同包其它页面留证，见 8.x 扩展）。
+    final tree = dumpToTree(evidence.dump);
     final verified = verifyRule(rule, [
-      RuleReplaySample(
-        tree: dumpToTree(evidence.dump),
-        expectedAmountCents: evidence.amountCents,
-      ),
+      RuleReplaySample(tree: tree, expectedAmountCents: evidence.amountCents),
     ]);
+    _log?.call(
+      'learner: rule=${rule.id} pkg=${evidence.packageName} '
+      'verified=$verified strategy=${rule.amountStrategy.name} '
+      'label=${rule.adjacentLabel} pattern=${rule.amountPattern} '
+      'truth=${evidence.amountCents} text=[${tree.flattenedText.replaceAll('\n', ' | ')}]',
+    );
     await _upsert(verified ? RuleTrustLadder.activateGrey(rule) : rule);
   }
 
