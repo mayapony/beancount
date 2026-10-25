@@ -791,6 +791,19 @@ class TransactionRepository {
     );
   }
 
+  /// 「最近自动记账」：来源为 auto 的交易，按发生时间倒序，供事后审计列表用。
+  Future<List<TransactionRow>> recentAutoEntries({int limit = 200}) async {
+    final rows = await (_db.select(_db.transactions)
+          ..where((t) => t.source.equalsValue(EntrySource.auto))
+          ..orderBy([
+            (t) => OrderingTerm(expression: t.happenedAt, mode: OrderingMode.desc),
+          ])
+          ..limit(limit))
+        .get();
+    if (rows.isEmpty) return const [];
+    return _rowsFor(rows);
+  }
+
   /// 明细页的完整快照：当月分组 + 整库总笔数。
   Future<LedgerSnapshot> ledger({
     int? year,
