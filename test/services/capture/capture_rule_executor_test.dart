@@ -36,19 +36,6 @@ void main() {
     expect(result.direction, CaptureDirection.expense);
   });
 
-  test('maxAmount 策略取最大金额', () {
-    final r = rule(
-      target: RuleTarget.accessibility,
-      strategy: AmountStrategy.maxAmount,
-    );
-    final tree = CaptureNode(children: [
-      const CaptureNode(text: '¥6.00'),
-      const CaptureNode(text: '合计 ¥44.50'),
-    ]);
-    final result = executor.apply(r, tree: tree);
-    expect(result!.amountCents, 4450);
-  });
-
   test('adjacentLabel 策略从标签邻近行取金额', () {
     final r = rule(
       target: RuleTarget.accessibility,
@@ -65,7 +52,7 @@ void main() {
 
   test('排除词命中返回空', () {
     final r = rule(
-      strategy: AmountStrategy.maxAmount,
+      strategy: AmountStrategy.regex,
       exclude: ['余额'],
     );
     expect(executor.apply(r, text: '余额 ¥1204.00'), isNull);

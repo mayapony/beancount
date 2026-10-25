@@ -14,7 +14,7 @@ class CaptureExtraction {
 
 /// 规则执行器：套用 LLM 生成的规则，从控件树或通知文本提取金额与方向。
 ///
-/// 只提供策略原语（regex / maxAmount / adjacentLabel），不含任何业务启发式——
+/// 只提供策略原语（regex / adjacentLabel），不含任何业务启发式——
 /// 具体怎么抽、抽哪里，由 LLM 生成的规则里的策略与参数决定。
 class CaptureRuleExecutor {
   const CaptureRuleExecutor();
@@ -43,8 +43,6 @@ class CaptureRuleExecutor {
     switch (rule.amountStrategy) {
       case AmountStrategy.regex:
         return _regexAmount(rule.amountPattern, source);
-      case AmountStrategy.maxAmount:
-        return _maxAmount(source);
       case AmountStrategy.adjacentLabel:
         return _adjacentAmount(rule.adjacentLabel, tree);
     }
@@ -64,12 +62,6 @@ int? _regexAmount(String? pattern, String source) {
   final group = match.groupCount >= 1 ? match.group(1) : match.group(0);
   if (group == null) return null;
   return _parseAmountString(group);
-}
-
-int? _maxAmount(String source) {
-  final amounts = _findCurrencyAmounts(source);
-  if (amounts.isEmpty) return null;
-  return amounts.reduce((a, b) => a > b ? a : b);
 }
 
 int? _adjacentAmount(String? label, CaptureNode? tree) {

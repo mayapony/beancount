@@ -47,7 +47,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
   static final String prompt = [
     '根据脱敏后的控件树快照与真值金额，输出一个 JSON 对象，描述怎么从这页提取金额。',
     '只输出 JSON，不要解释，不要 markdown 代码块。',
-    'amount_strategy：regex / max_amount / adjacent_label 三选一。',
+    'amount_strategy：regex / adjacent_label 二选一。',
     'amount_pattern：amount_strategy 为 regex 时必填，正则的第一捕获组是金额数字。',
     'adjacent_label：amount_strategy 为 adjacent_label 时必填，金额旁边的标签文字。',
     'exclude_keywords：字符串数组，命中的文本不当作支付（如余额、优惠）。',
@@ -184,12 +184,10 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     switch (raw?.toString()) {
       case 'regex':
         return AmountStrategy.regex;
-      case 'max_amount':
-        return AmountStrategy.maxAmount;
       case 'adjacent_label':
         return AmountStrategy.adjacentLabel;
       default:
-        return AmountStrategy.maxAmount;
+        return AmountStrategy.regex;
     }
   }
 

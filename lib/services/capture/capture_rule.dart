@@ -9,7 +9,7 @@ import 'capture_candidate.dart';
 enum RuleTarget { accessibility, notification }
 
 /// 金额抽取策略：LLM 从这几个原语里选并参数化，运行时由执行器套用。
-enum AmountStrategy { regex, maxAmount, adjacentLabel }
+enum AmountStrategy { regex, adjacentLabel }
 
 /// 信任阶梯：pending 待验证 → grey 灰度 → active 自动。
 enum CaptureRuleTier { pending, grey, active }
@@ -25,7 +25,7 @@ class CaptureRule {
     required this.target,
     this.surfaceFingerprint,
     this.direction = CaptureDirection.expense,
-    this.amountStrategy = AmountStrategy.maxAmount,
+    this.amountStrategy = AmountStrategy.regex,
     this.amountPattern,
     this.adjacentLabel,
     this.excludeKeywords = const [],
@@ -95,7 +95,7 @@ class CaptureRule {
               CaptureDirection.expense,
       amountStrategy:
           _enumByName(AmountStrategy.values, raw['amount_strategy']) ??
-              AmountStrategy.maxAmount,
+              AmountStrategy.regex,
       amountPattern: raw['amount_pattern']?.toString(),
       adjacentLabel: raw['adjacent_label']?.toString(),
       excludeKeywords: raw['exclude_keywords'] is List

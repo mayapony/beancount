@@ -30,31 +30,33 @@ void main() {
     });
 
     test('负例解出金额 → 拒绝', () {
-      final maxRule = CaptureRule(
+      final broadRule = CaptureRule(
         id: 'r2',
         packageName: 'com.tencent.mm',
         target: RuleTarget.notification,
-        amountStrategy: AmountStrategy.maxAmount,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'[¥￥]\s*(\d+(?:\.\d{1,2})?)',
       );
       final samples = [
         const RuleReplaySample(text: '余额 ¥1204.00'),
       ];
-      expect(verifyRule(maxRule, samples), isFalse);
+      expect(verifyRule(broadRule, samples), isFalse);
     });
 
     test('排除词让负例静默 → 通过', () {
-      final maxRule = CaptureRule(
+      final broadRule = CaptureRule(
         id: 'r3',
         packageName: 'com.tencent.mm',
         target: RuleTarget.notification,
-        amountStrategy: AmountStrategy.maxAmount,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'[¥￥]\s*(\d+(?:\.\d{1,2})?)',
         excludeKeywords: const ['余额'],
       );
       final samples = [
         const RuleReplaySample(text: '合计 ¥44.50', expectedAmountCents: 4450),
         const RuleReplaySample(text: '余额 ¥1204.00'),
       ];
-      expect(verifyRule(maxRule, samples), isTrue);
+      expect(verifyRule(broadRule, samples), isTrue);
     });
   });
 
