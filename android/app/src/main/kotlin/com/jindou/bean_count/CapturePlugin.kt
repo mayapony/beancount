@@ -77,7 +77,8 @@ class CapturePlugin(private val activity: Activity) : MethodChannel.MethodCallHa
         val key = if (accessibility) {
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         } else {
-            Settings.Secure.ENABLED_NOTIFICATION_LISTENERS
+            // Settings.Secure 没有公开的通知使用权常量，键名是系统保留字符串。
+            "enabled_notification_listeners"
         }
         val enabled = Settings.Secure.getString(activity.contentResolver, key).orEmpty()
         return enabled.split(':').contains(expected)
