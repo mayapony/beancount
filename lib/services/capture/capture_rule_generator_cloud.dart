@@ -86,6 +86,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     return _parseRule(response.bodyBytes, request);
   }
 
+  @override
   void close() {
     if (_ownsClient) _client.close();
   }

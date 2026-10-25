@@ -100,6 +100,15 @@ class ScreenshotService : Service() {
                         recognize(uri)
                     }
                 }
+                "lastTreeSnapshot" -> {
+                    val snapshot = CaptureRuntime.lastSnapshot()
+                    result.success(
+                        if (snapshot == null) null else mapOf(
+                            "package" to snapshot.packageName,
+                            "dump" to snapshot.dump,
+                        ),
+                    )
+                }
                 else -> result.notImplemented()
             }
         }

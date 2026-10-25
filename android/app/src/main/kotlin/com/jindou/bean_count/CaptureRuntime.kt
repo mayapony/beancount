@@ -47,6 +47,9 @@ object CaptureRuntime {
     fun recentSnapshot(packageName: String): TreeSnapshot? =
         snapshots.lastOrNull { it.packageName == packageName }
 
+    /** 取最近一帧任意白名单包的树快照（截图兜底留证用）；没有返回 null。 */
+    fun lastSnapshot(): TreeSnapshot? = snapshots.lastOrNull()
+
     private fun forward(method: String, args: Map<String, Any?>) {
         val ch = channel ?: return
         if (!dartReady) return

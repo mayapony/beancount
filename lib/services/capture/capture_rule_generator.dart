@@ -31,6 +31,9 @@ class CaptureRuleGenerationRequest {
 /// 规则生成器：把（脱敏树快照 + 真值金额）变成一条 DSL 规则。
 abstract class CaptureRuleGenerator {
   Future<CaptureRule> generate(CaptureRuleGenerationRequest request);
+
+  /// 释放底层资源（如 HTTP 客户端）；默认无操作。
+  void close() {}
 }
 
 /// 规则生成编排：未配置云端模型时直接跳过——不调用生成器、不上传任何内容。

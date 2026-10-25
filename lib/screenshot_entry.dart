@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -7,6 +8,12 @@ import 'package:path_provider/path_provider.dart';
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
 import 'data/repositories/app_state_repository.dart';
+import 'services/capture/capture_candidate.dart';
+import 'services/capture/capture_evidence.dart';
+import 'services/capture/capture_rule_generator_cloud.dart';
+import 'services/capture/capture_rule_learner.dart';
+import 'services/capture/capture_surface.dart';
+import 'services/capture/capture_tree.dart';
 import 'services/ocr/receipt_guess.dart';
 import 'services/ocr/receipt_recognizer_factory.dart';
 import 'services/ocr/receipt_recognizer_vision.dart';
@@ -17,8 +24,9 @@ import 'services/screenshot/screenshot_settings.dart';
 
 /// 后台识别入口：由 `ScreenshotService` 里的 headless FlutterEngine 运行。
 ///
-/// 只做一件事——收到截图字节 → 复用现有识别器 → 把结果写进 `app_state`。
-/// 不碰 UI；通知由 Kotlin 侧根据返回值发。
+/// 收到截图字节 → 复用现有识别器 → 把结果写进 `app_state`；识别出金额时直接
+/// 入账，并异步留证（包名/指纹/树快照）→ 云端生成规则。不碰 UI；通知由
+/// Kotlin 侧根据返回值发。
 @pragma('vm:entry-point')
 void screenshotEntry() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,11 +38,19 @@ void screenshotEntry() {
     if (bytes is! Uint8List) return {'ok': false, 'error': '截图字节无效'};
     final recognitionBytes = args is Map ? args['recognitionBytes'] : null;
     final path = args is Map ? args['path'] as String? : null;
-    return _recognize(
+    final result = await _recognize(
       bytes,
       recognitionBytes is Uint8List ? recognitionBytes : null,
       path,
     );
+    // 直接入账成功后异步留证 + 学规则，不阻塞识别结果与通知返回。
+    if (result['ok'] == true && result['auto_saved'] == true) {
+      final amount = result['amount_cents'];
+      if (amount is int) {
+        unawaited(_learnFromScreenshot(channel, amountCents: amount));
+      }
+    }
+    return result;
   });
   channel.invokeMethod<void>('ready');
 }
@@ -159,6 +175,64 @@ Future<Map<String, Object?>> _recognize(
       // 连 pending 都写不进去时，至少让通知带上真实原因
     }
     return {'ok': false, 'error': message, 'pending_count': pendingCount};
+  } finally {
+    await db.close();
+  }
+}
+
+/// 截图兜底留证 + 规则学习：从原生环形缓冲取回最近一帧树快照，留证后交给
+/// [CaptureRuleLearner] 生成规则。树读不出则标记「截图优先」，不反复生成。
+Future<void> _learnFromScreenshot(
+  MethodChannel channel, {
+  required int amountCents,
+}) async {
+  final db = AppDatabase(openDatabaseConnection());
+  try {
+    final snapshot = await channel.invokeMapMethod<String, String>('lastTreeSnapshot');
+    final package = snapshot?['package'];
+    final dump = snapshot?['dump'];
+    if (package == null || dump == null) return;
+
+    final tree = dumpToTree(dump);
+    final fingerprint = surfaceFingerprintOf(tree);
+    final state = AppStateRepository(db);
+    final surfaces = CaptureSurfaceStore(state);
+
+    if (tree.flattenedText.trim().isEmpty) {
+      // 树读不出（自绘 / WebView / FLAG_SECURE）：标记截图优先，不生成规则
+      await surfaces.mark(package, fingerprint);
+      return;
+    }
+
+    await CaptureEvidenceStore(state).add(
+      CaptureEvidence(
+        id: 'evt-${DateTime.now().microsecondsSinceEpoch}',
+        packageName: package,
+        dump: dump,
+        amountCents: amountCents,
+        direction: CaptureDirection.expense,
+        surfaceFingerprint: fingerprint,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final generator = await systemCaptureRuleGenerator(
+      settings: ReceiptVisionSettingsStore(state),
+      keys: SecureReceiptApiKeyStore(),
+    );
+    if (generator == null) return; // 未配置云端模型：不生成、不上传
+    try {
+      final learner = CaptureRuleLearner(
+        db: db,
+        generator: generator,
+        isConfigured: () async => true,
+      );
+      await learner.learnAll();
+    } finally {
+      generator.close();
+    }
+  } catch (error) {
+    debugPrint('screenshotEntry: rule learning failed: $error');
   } finally {
     await db.close();
   }

@@ -75,4 +75,7 @@ class _FakeGenerator implements CaptureRuleGenerator {
       surfaceFingerprint: request.surfaceFingerprint,
     );
   }
+
+  @override
+  void close() {}
 }
