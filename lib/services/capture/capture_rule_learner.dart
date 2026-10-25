@@ -41,12 +41,52 @@ class CaptureRuleLearner {
   }
 
   Future<void> _learnOne(CaptureEvidence evidence) async {
-    final fingerprint = evidence.surfaceFingerprint;
-    if (fingerprint != null &&
+    // 无障碍规则：从控件树学（树读不出就跳过或标记截图优先）。
+    await _learnForTarget(
+      evidence,
+      target: RuleTarget.accessibility,
+      source: evidence.dump,
+      fingerprint: evidence.surfaceFingerprint,
+    );
+
+    // 通知规则：从通知文本学（留证时抓到了通知才学）。
+    final notificationText = evidence.notificationText?.trim();
+    if (notificationText != null && notificationText.isNotEmpty) {
+      await _learnForTarget(
+        evidence,
+        target: RuleTarget.notification,
+        source: notificationText,
+        fingerprint: null,
+      );
+    }
+  }
+
+  Future<void> _learnForTarget(
+    CaptureEvidence evidence, {
+    required RuleTarget target,
+    required String source,
+    required String? fingerprint,
+  }) async {
+    if (source.trim().isEmpty) return;
+
+    // 无障碍规则：树里没有文字（Flutter/自绘页）时学不出金额，直接跳过。
+    if (target == RuleTarget.accessibility &&
+        dumpToTree(source).flattenedText.trim().isEmpty) {
+      _log?.call('learner: skip accessibility (empty tree) pkg=${evidence.packageName}');
+      return;
+    }
+
+    // 截图优先的 surface（树读不出）不再尝试生成无障碍规则。
+    if (target == RuleTarget.accessibility &&
+        fingerprint != null &&
         await _surfaces.isMarked(evidence.packageName, fingerprint)) {
       _log?.call('learner: skip (screenshot-first) pkg=${evidence.packageName}');
       return;
     }
+
+    final desensitized = target == RuleTarget.accessibility
+        ? desensitizeTree(dumpToTree(source))
+        : desensitizeText(source);
 
     final service = RuleGenerationService(
       generator: generator,
@@ -54,27 +94,33 @@ class CaptureRuleLearner {
     );
     final rule = await service.generate(CaptureRuleGenerationRequest(
       packageName: evidence.packageName,
-      target: RuleTarget.accessibility,
+      target: target,
       direction: evidence.direction,
-      desensitizedTree: desensitizeTree(dumpToTree(evidence.dump)),
+      desensitizedTree: desensitized,
       amountCents: evidence.amountCents,
       surfaceFingerprint: fingerprint,
     ));
     if (rule == null) {
-      _log?.call('learner: unconfigured (no rule) pkg=${evidence.packageName}');
+      _log?.call('learner: unconfigured pkg=${evidence.packageName} target=${target.name}');
       return;
     }
 
-    // 回放验证：正例必须解出当次真值金额（负例在同包其它页面留证，见 8.x 扩展）。
-    final tree = dumpToTree(evidence.dump);
-    final verified = verifyRule(rule, [
-      RuleReplaySample(tree: tree, expectedAmountCents: evidence.amountCents),
-    ]);
+    // 回放验证：正例必须解出当次真值金额。
+    final sample = target == RuleTarget.accessibility
+        ? RuleReplaySample(
+            tree: dumpToTree(source),
+            expectedAmountCents: evidence.amountCents,
+          )
+        : RuleReplaySample(
+            text: source,
+            expectedAmountCents: evidence.amountCents,
+          );
+    final verified = verifyRule(rule, [sample]);
     _log?.call(
-      'learner: rule=${rule.id} pkg=${evidence.packageName} '
-      'verified=$verified strategy=${rule.amountStrategy.name} '
-      'label=${rule.adjacentLabel} pattern=${rule.amountPattern} '
-      'truth=${evidence.amountCents} text=[${tree.flattenedText.replaceAll('\n', ' | ')}]',
+      'learner: rule=${rule.id} target=${target.name} verified=$verified '
+      'strategy=${rule.amountStrategy.name} label=${rule.adjacentLabel} '
+      'pattern=${rule.amountPattern} truth=${evidence.amountCents} '
+      'source=[${source.replaceAll('\n', ' | ').replaceAll(RegExp(r'\s+'), ' ')}]',
     );
     await _upsert(verified ? RuleTrustLadder.activateGrey(rule) : rule);
   }

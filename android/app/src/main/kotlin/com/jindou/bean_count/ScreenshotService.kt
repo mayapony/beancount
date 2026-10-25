@@ -115,6 +115,12 @@ class ScreenshotService : Service() {
                     if (pkg != null) CapturePrefs.addKnown(this, pkg)
                     result.success(null)
                 }
+                "lastNotification" -> {
+                    val pkg = call.argument<String>("package")
+                    val snapshot = pkg?.let { CaptureRuntime.lastNotification(it) }
+                    Log.i(TAG, "lastNotification($pkg) -> ${snapshot?.text?.take(40) ?: "null"}")
+                    result.success(snapshot?.text)
+                }
                 "log" -> {
                     Log.i(TAG, call.argument<String>("message").orEmpty())
                     result.success(null)

@@ -62,6 +62,9 @@ String desensitizeTree(CaptureNode root) {
   return buf.toString().trim();
 }
 
+/// 脱敏：把一段纯文本（通知正文）里的所有数字掩成 `#`。
+String desensitizeText(String text) => text.replaceAll(RegExp(r'\d'), '#');
+
 void _dump(CaptureNode node, StringBuffer buf, int depth) {
   final indent = '  ' * depth;
   final text = node.text?.trim();
@@ -75,4 +78,4 @@ void _dump(CaptureNode node, StringBuffer buf, int depth) {
   }
 }
 
-String _maskDigits(String text) => text.replaceAll(RegExp(r'\d'), '#');
+String _maskDigits(String text) => desensitizeText(text);

@@ -45,7 +45,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
   final Duration timeout;
 
   static final String prompt = [
-    '根据脱敏后的控件树快照与真值金额，输出一个 JSON 对象，描述怎么从这页提取金额。',
+    '根据脱敏后的页面内容（控件树快照或通知文本）与真值金额，输出一个 JSON 对象，描述怎么从这页提取金额。',
     '只输出 JSON，不要解释，不要 markdown 代码块。',
     'amount_strategy：regex / adjacent_label 二选一。',
     'amount_pattern：amount_strategy 为 regex 时必填，正则的第一捕获组是金额数字。',
@@ -60,6 +60,9 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
       throw const RuleGenerationException('还没配置 API Key');
     }
 
+    final sourceLabel = request.target == RuleTarget.notification
+        ? '脱敏通知文本'
+        : '脱敏树快照';
     final body = jsonEncode({
       'model': _model,
       'stream': false,
@@ -73,7 +76,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
           'content': [
             {'type': 'text', 'text': prompt},
             {'type': 'text', 'text': '真值金额（分）：${request.amountCents}'},
-            {'type': 'text', 'text': '脱敏树快照：\n${request.desensitizedTree}'},
+            {'type': 'text', 'text': '$sourceLabel：\n${request.desensitizedTree}'},
           ],
         },
       ],

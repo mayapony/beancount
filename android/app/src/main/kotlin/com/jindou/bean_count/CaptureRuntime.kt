@@ -24,11 +24,18 @@ object CaptureRuntime {
     var accessibilityService: AccessibilityCaptureService? = null
 
     private val snapshots = CopyOnWriteArrayList<TreeSnapshot>()
+    private val notifications = CopyOnWriteArrayList<NotificationSnapshot>()
 
     data class TreeSnapshot(
         val atMs: Long,
         val packageName: String,
         val dump: String,
+    )
+
+    data class NotificationSnapshot(
+        val atMs: Long,
+        val packageName: String,
+        val text: String,
     )
 
     private const val WINDOW_MS = 60_000L
@@ -44,8 +51,13 @@ object CaptureRuntime {
         forward("treeCaptured", mapOf("package" to packageName, "dump" to dump))
     }
 
-    /** 通知监听抓到一条支付通知：直接转发给 Dart。 */
+    /** 通知监听抓到一条支付通知：入环形缓冲，并转发给 Dart。 */
     fun onNotificationCaptured(packageName: String, text: String) {
+        val now = System.currentTimeMillis()
+        notifications.add(NotificationSnapshot(now, packageName, text))
+        while (notifications.isNotEmpty() && now - notifications[0].atMs > WINDOW_MS) {
+            notifications.removeAt(0)
+        }
         Log.i(TAG, "notificationCaptured package=$packageName text=${text.take(40)}")
         forward("notificationCaptured", mapOf("package" to packageName, "text" to text))
     }
@@ -64,6 +76,10 @@ object CaptureRuntime {
     /** 截图兜底的一次性现读：从无障碍服务取「当前前台应用 → 树」。 */
     fun requestCurrentTree(): Pair<String, String>? =
         accessibilityService?.dumpCurrentTree()
+
+    /** 取最近一条 [packageName] 的通知文本（截图留证学通知规则用）；没有返回 null。 */
+    fun lastNotification(packageName: String): NotificationSnapshot? =
+        notifications.lastOrNull { it.packageName == packageName }
 
     private fun forward(method: String, args: Map<String, Any?>) {
         val ch = channel ?: return

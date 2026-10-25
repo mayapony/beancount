@@ -201,6 +201,12 @@ Future<void> _learnFromScreenshot(
     // 把当前包记进「已认识」，之后对它持续抓树 / 监听通知。
     await channel.invokeMethod<void>('addKnown', {'package': package});
 
+    // 顺带取最近一条该包的通知文本，供生成「通知规则」。
+    final notificationText = await channel.invokeMethod<String>(
+      'lastNotification',
+      {'package': package},
+    );
+
     final tree = dumpToTree(dump);
     final fingerprint = surfaceFingerprintOf(tree);
     final state = AppStateRepository(db);
@@ -209,10 +215,9 @@ Future<void> _learnFromScreenshot(
     if (tree.flattenedText.trim().isEmpty) {
       await _log(channel, 'learn: tree empty → mark screenshot-first pkg=$package');
       await surfaces.mark(package, fingerprint);
-      return;
     }
 
-    await _log(channel, 'learn: store evidence pkg=$package fp=$fingerprint amount=$amountCents');
+    await _log(channel, 'learn: store evidence pkg=$package fp=$fingerprint amount=$amountCents notif=${_truncate(notificationText, 40)}');
     await CaptureEvidenceStore(state).add(
       CaptureEvidence(
         id: 'evt-${DateTime.now().microsecondsSinceEpoch}',
@@ -221,6 +226,7 @@ Future<void> _learnFromScreenshot(
         amountCents: amountCents,
         direction: CaptureDirection.expense,
         surfaceFingerprint: fingerprint,
+        notificationText: notificationText,
         createdAt: DateTime.now(),
       ),
     );
@@ -272,6 +278,11 @@ Future<void> _log(MethodChannel channel, String message) async {
   } catch (_) {
     // 日志失败不打断主流程。
   }
+}
+
+String _truncate(String? text, int max) {
+  if (text == null) return 'null';
+  return text.length <= max ? text : '${text.substring(0, max)}…';
 }
 
 Future<int> _addPending({

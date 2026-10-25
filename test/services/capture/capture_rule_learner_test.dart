@@ -156,4 +156,58 @@ void main() {
 
     expect(await rules.load(), hasLength(1));
   });
+
+  test('树空但有通知文本：跳过无障碍规则，生成通知规则', () async {
+    await evidence.add(CaptureEvidence(
+      id: 'evt-1',
+      packageName: 'com.tencent.mm',
+      dump: 'android.view.View', // 空树（无文字）
+      amountCents: 10000,
+      direction: CaptureDirection.expense,
+      surfaceFingerprint: 'fp-empty',
+      notificationText: '微信支付 支付 ¥100.00',
+      createdAt: DateTime(2026, 10, 18, 12),
+    ));
+    final generator = _FakeGenerator();
+
+    await CaptureRuleLearner(
+      db: db,
+      generator: generator,
+      isConfigured: () async => true,
+    ).learnAll();
+
+    // 只生成一条通知规则（无障碍规则因空树被跳过）
+    final loaded = await rules.load();
+    expect(loaded, hasLength(1));
+    expect(loaded.single.target, RuleTarget.notification);
+    expect(loaded.single.tier, CaptureRuleTier.grey);
+    expect(loaded.single.surfaceFingerprint, isNull);
+    expect(generator.calls, 1);
+  });
+
+  test('树可读且有通知文本：生成无障碍 + 通知两条规则', () async {
+    await evidence.add(CaptureEvidence(
+      id: 'evt-1',
+      packageName: 'com.tencent.mm',
+      dump: dump,
+      amountCents: 1250,
+      direction: CaptureDirection.expense,
+      surfaceFingerprint: surfaceFingerprintOf(dumpToTree(dump)),
+      notificationText: '微信支付 支付 ¥12.50',
+      createdAt: DateTime(2026, 10, 18, 12),
+    ));
+    final generator = _FakeGenerator();
+
+    await CaptureRuleLearner(
+      db: db,
+      generator: generator,
+      isConfigured: () async => true,
+    ).learnAll();
+
+    final loaded = await rules.load();
+    expect(loaded, hasLength(2));
+    expect(loaded.map((r) => r.target).toSet(),
+        {RuleTarget.accessibility, RuleTarget.notification});
+    expect(generator.calls, 2);
+  });
 }

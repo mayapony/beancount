@@ -17,6 +17,7 @@ class CaptureEvidence {
     required this.amountCents,
     required this.direction,
     this.surfaceFingerprint,
+    this.notificationText,
     this.createdAt,
   });
 
@@ -26,6 +27,10 @@ class CaptureEvidence {
   final int amountCents;
   final CaptureDirection direction;
   final String? surfaceFingerprint;
+
+  /// 支付通知文本（留证时若通知监听抓到就带上，供生成通知规则）。
+  final String? notificationText;
+
   final DateTime? createdAt;
 
   Map<String, dynamic> toJson() => {
@@ -35,6 +40,7 @@ class CaptureEvidence {
         'amount_cents': amountCents,
         'direction': direction.name,
         if (surfaceFingerprint != null) 'surface_fingerprint': surfaceFingerprint,
+        if (notificationText != null) 'notification_text': notificationText,
         if (createdAt != null) 'created_at': createdAt!.toUtc().toIso8601String(),
       };
 
@@ -57,6 +63,7 @@ class CaptureEvidence {
       amountCents: amountCents,
       direction: _direction(raw['direction']),
       surfaceFingerprint: raw['surface_fingerprint']?.toString(),
+      notificationText: raw['notification_text']?.toString(),
       createdAt: DateTime.tryParse(raw['created_at']?.toString() ?? ''),
     );
   }
