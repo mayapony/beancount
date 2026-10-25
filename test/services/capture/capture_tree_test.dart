@@ -54,6 +54,48 @@ void main() {
       isNot(surfaceFingerprintOf(_chain(11))),
     );
   });
+
+  test('dumpToTree 按缩进还原层级与文本', () {
+    final tree = dumpToTree([
+      'android.widget.FrameLayout',
+      '  android.widget.TextView|支付成功',
+      '  android.widget.TextView|¥12.50',
+      'android.widget.Button|完成',
+    ].join('\n'));
+
+    // 哨兵根下是两个顶层节点：FrameLayout 与 Button
+    expect(tree.children, hasLength(2));
+    final frame = tree.children[0];
+    expect(frame.className, 'android.widget.FrameLayout');
+    expect(frame.children, hasLength(2));
+    expect(frame.children[0].className, 'android.widget.TextView');
+    expect(frame.children[0].text, '支付成功');
+    expect(frame.children[1].text, '¥12.50');
+    expect(tree.children[1].className, 'android.widget.Button');
+    expect(tree.children[1].text, '完成');
+    expect(tree.flattenedText, '支付成功\n¥12.50\n完成');
+  });
+
+  test('dumpToTree 文本里含 | 只按首个 | 切分', () {
+    final tree = dumpToTree('android.widget.TextView|支付 | 成功');
+    expect(tree.children, hasLength(1));
+    expect(tree.children[0].className, 'android.widget.TextView');
+    expect(tree.children[0].text, '支付 | 成功');
+  });
+
+  test('dumpToTree 同一 dump 指纹一致', () {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|金额\n'
+        'android.widget.TextView|¥12.50';
+    expect(
+      surfaceFingerprintOf(dumpToTree(dump)),
+      surfaceFingerprintOf(dumpToTree(dump)),
+    );
+  });
+
+  test('dumpToTree 空输入返回空树', () {
+    expect(dumpToTree('').flattenedText, isEmpty);
+  });
 }
 
 CaptureNode _chain(int n) {

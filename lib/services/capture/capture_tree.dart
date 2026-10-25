@@ -96,3 +96,67 @@ String _stableHash(String source) {
   }
   return hash.toRadixString(16).padLeft(8, '0');
 }
+
+/// 把原生侧 dump 出的缩进文本（`className|text` 行，每层缩进 2 空格）解析回树。
+///
+/// 无障碍 shim 为了在 Kotlin 侧不引入 JSON 序列化，直接产出缩进文本；这里按缩进
+/// 还原层级。每行 `|` 前是 className、后是文本（文本里可能再出现 `|`，只按首个
+/// `|` 切）。解析出的节点没有 bounds / viewId，指纹退化为「节点数 + 稳定标签」，
+/// 对同一页面的不同实例仍然一致。
+CaptureNode dumpToTree(String dump) {
+  final raw = <_RawLine>[];
+  for (final line in dump.split('\n')) {
+    final trimmed = line.trimRight();
+    if (trimmed.isEmpty) continue;
+    var depth = 0;
+    while (depth < trimmed.length && trimmed.codeUnitAt(depth) == 0x20) {
+      depth++;
+    }
+    depth = depth ~/ 2;
+    final content = trimmed.substring(depth * 2);
+    final sep = content.indexOf('|');
+    final className = sep >= 0 ? content.substring(0, sep).trim() : content;
+    final text = sep >= 0 ? content.substring(sep + 1) : '';
+    raw.add(_RawLine(
+      depth,
+      className.isEmpty ? null : className,
+      text.isEmpty ? null : text,
+    ));
+  }
+  if (raw.isEmpty) return const CaptureNode();
+
+  // 哨兵根（深度 -1）→ 按深度挂到最近一个更浅的祖先上。
+  final root = _Builder(null, null);
+  final stack = <_Builder>[root];
+  for (final line in raw) {
+    while (stack.length - 1 > line.depth) {
+      stack.removeLast();
+    }
+    final node = _Builder(line.className, line.text);
+    stack.last.children.add(node);
+    stack.add(node);
+  }
+  return _toNode(root);
+}
+
+CaptureNode _toNode(_Builder builder) => CaptureNode(
+      className: builder.className,
+      text: builder.text,
+      children: [for (final child in builder.children) _toNode(child)],
+    );
+
+class _RawLine {
+  const _RawLine(this.depth, this.className, this.text);
+
+  final int depth;
+  final String? className;
+  final String? text;
+}
+
+class _Builder {
+  _Builder(this.className, this.text);
+
+  final String? className;
+  final String? text;
+  final List<_Builder> children = [];
+}

@@ -31,6 +31,7 @@ class EntryWriter {
     String currency = 'CNY',
     int? originalAmountCents,
     int? ratePpm,
+    EntrySource source = EntrySource.manual,
   }) async {
     final result = await _transactions.create(
       NewTransaction(
@@ -45,6 +46,7 @@ class EntryWriter {
         currency: currency,
         originalAmountCents: originalAmountCents,
         ratePpm: ratePpm,
+        source: source,
       ),
     );
 

@@ -15,6 +15,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import java.util.Locale
 
 /**
  * 常驻前台服务：宿主 headless FlutterEngine 跑 `captureEntry`。
@@ -70,6 +71,12 @@ class CaptureService : Service() {
                         ),
                     )
                 }
+                "notifyEntry" -> {
+                    val cents = (call.argument<Number>("amount_cents"))?.toLong() ?: 0L
+                    val note = call.argument<String>("note")?.trim().orEmpty()
+                    showEntryNotification(cents, note)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -87,6 +94,17 @@ class CaptureService : Service() {
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
                 description = "保持无障碍 / 通知自动记账运行；关闭开关后消失"
+            },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ENTRY_CHANNEL_ID,
+                "自动记账结果",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "支付后自动入账的提醒；只做视觉提示，不响铃不振动"
+                setSound(null, null)
+                enableVibration(false)
             },
         )
     }
@@ -115,10 +133,44 @@ class CaptureService : Service() {
         )
     }
 
+    /** 已记账通知：深链到「最近自动记账」列表，点开直接核对。 */
+    private fun showEntryNotification(cents: Long, note: String) {
+        val amount = String.format(Locale.CHINA, "%.2f", cents / 100.0)
+        val text = if (note.isEmpty()) "已记账 ¥$amount" else "已记账 ¥$amount · $note"
+        val notification = NotificationCompat.Builder(this, ENTRY_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle("金豆 · 自动记账")
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSilent(true)
+            .setContentIntent(openAutoEntriesIntent())
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(ENTRY_NOTIFICATION_ID, notification)
+    }
+
+    private fun openAutoEntriesIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_AUTO_ENTRIES, true)
+        }
+        return PendingIntent.getActivity(
+            this,
+            ENTRY_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     companion object {
         const val CHANNEL = "com.jindou.bean_count/capture"
+        const val EXTRA_OPEN_AUTO_ENTRIES = "open_auto_entries"
         private const val CHANNEL_ID = "capture_service"
+        private const val ENTRY_CHANNEL_ID = "capture_entry"
         private const val ONGOING_ID = 51
+        private const val ENTRY_NOTIFICATION_ID = 52
+        private const val ENTRY_REQUEST_CODE = 110
 
         fun start(context: Context) {
             val intent = Intent(context, CaptureService::class.java)

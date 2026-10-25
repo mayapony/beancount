@@ -17,5 +17,5 @@ enum CategoryType { expense, income }
 /// 账户类型，仅用于展示与图标选择，不参与余额计算。
 enum AccountType { wallet, debit, credit, other }
 
-/// 交易的来源，用来区分手工记账与导入。
-enum EntrySource { manual, import }
+/// 交易的来源，用来区分手工记账、导入与自动记账（无障碍 / 通知 / 截图）。
+enum EntrySource { manual, import, auto }
