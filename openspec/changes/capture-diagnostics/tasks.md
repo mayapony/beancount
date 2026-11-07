@@ -13,7 +13,7 @@
   - 验证：单测写入 12 条证据后只剩最新 10 条，且被淘汰证据对应的事件仍可读（`evidenceId` 悬空时页面显示「证据已淘汰」）
 - [x] 1.4 同类合并：同 `kind` + 同 `package` 在 1 秒内重复发生时合并为一条并累加 `count`
   - 验证：单测模拟 5 条 200ms 间隔的 `tree_captured`，只产生 1 条事件且 `count == 5`
-- [ ] 1.5 JSONL 追加器：写 `<app files>/diag/events.log`，单文件上限 512 KB，超出滚为 `events.log.1`
+- [x] 1.5 JSONL 追加器：写 `<app files>/diag/events.log`，单文件上限 512 KB，超出滚为 `events.log.1`
   - 验证：单测用临时目录写入超过上限，断言产生 `.1` 且新文件从头开始
 
 ## 2. 原生侧记录（Kotlin）
