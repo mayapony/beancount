@@ -69,6 +69,7 @@ void main() {
       fileName: 'screenshot.jpg',
       autoTags: true,
       now: now,
+      sourcePackage: 'com.eg.android.AlipayGphone',
     );
 
     expect(result.inserted, isTrue);
@@ -156,5 +157,24 @@ void main() {
       ),
       throwsStateError,
     );
+  });
+  test('截图自动记账标记为自动来源并记下来源应用', () async {
+    await accounts.ensure(name: '支付宝');
+    await saver.save(
+      guess: guess(),
+      imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+      fileName: 'screenshot.jpg',
+      autoTags: false,
+      now: now,
+      sourcePackage: 'com.taobao.taobao',
+    );
+
+    final row = (await db.select(db.transactions).get()).single;
+    expect(row.source, EntrySource.auto);
+    expect(row.sourcePackage, 'com.taobao.taobao');
+
+    // 关键：它必须能被「最近自动记账」查到，否则用户核对时看不见
+    final recent = await transactions.recentAutoEntries();
+    expect(recent.map((r) => r.transaction.id), contains(row.id));
   });
 }

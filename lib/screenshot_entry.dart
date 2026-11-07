@@ -32,7 +32,7 @@ import 'services/screenshot/screenshot_settings.dart';
 @pragma('vm:entry-point')
 void screenshotEntry() {
   WidgetsFlutterBinding.ensureInitialized();
-  const channel = MethodChannel('com.jindou.bean_count/screenshot');
+  const channel = _screenshotChannel;
   channel.setMethodCallHandler((call) async {
     if (call.method != 'recognize') return null;
     final args = call.arguments;
@@ -55,6 +55,28 @@ void screenshotEntry() {
     return result;
   });
   channel.invokeMethod<void>('ready');
+}
+
+const _screenshotChannel = MethodChannel('com.jindou.bean_count/screenshot');
+
+/// 系统窗口不算来源应用：截图工具栏、状态栏、桌面都不是「这笔账来自哪个 App」。
+const _systemPackages = {
+  'com.android.systemui',
+  'com.miui.screenshot',
+  'com.miui.home',
+  'com.android.launcher',
+};
+
+Future<String?> _currentPackage(MethodChannel channel) async {
+  try {
+    final snapshot =
+        await channel.invokeMapMethod<String, String>('lastTreeSnapshot');
+    final package = snapshot?['package'];
+    if (package == null || package.isEmpty) return null;
+    return _systemPackages.contains(package) ? null : package;
+  } on Object {
+    return null;
+  }
 }
 
 Future<Map<String, Object?>> _recognize(
@@ -111,12 +133,16 @@ Future<Map<String, Object?>> _recognize(
     if (guess.hasAmount) {
       // 识别出金额就直接落库：原图随交易保存，不再让用户打开面板确认。
       try {
+        // 写账前先取当前应用：截完图 MIUI 可能弹出截图工具栏，这里只读一次、
+        // 认不出的系统窗口直接丢弃，宁可不记来源也不记错来源。
+        final sourcePackage = await _currentPackage(_screenshotChannel);
         final saved = await AutoScreenshotSaver(db: db).save(
           guess: guess,
           imageBytes: bytes,
           fileName: 'screenshot_${now.microsecondsSinceEpoch}.jpg',
           autoTags: settings.autoTags,
           now: now,
+          sourcePackage: sourcePackage,
         );
         final pendingCount = await store.count();
         debugPrint(

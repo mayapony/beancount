@@ -50,6 +50,7 @@ class AutoScreenshotSaver {
     required String fileName,
     required bool autoTags,
     required DateTime now,
+    String? sourcePackage,
   }) async {
     final amount = guess.amountCents;
     if (amount == null || amount <= 0) {
@@ -90,6 +91,9 @@ class AutoScreenshotSaver {
       note: (guess.note ?? '').trim(),
       tags: autoTags ? guess.tagNames : const <String>[],
       images: [PickedImage(bytes: imageBytes, fileName: fileName)],
+      // 截图入账也是自动入账：标记来源，才进得了「最近自动记账」审计列表。
+      source: EntrySource.auto,
+      sourcePackage: sourcePackage,
     );
 
     return AutoScreenshotSave(
