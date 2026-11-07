@@ -22,6 +22,15 @@ abstract class CapturePlatform {
   /// 取走「点已记账通知要打开自动记账列表」的挂起标记（取一次就清空）。
   Future<bool> takeOpenAutoEntries();
 
+  /// 原生侧环形记录（JSON 数组字符串）；不支持时返回 null。
+  Future<String?> readNativeDiag() async => null;
+
+  /// 原生侧的后台服务运行状态（`running` / `started_at` / `stopped_at`）。
+  Future<Map<String, Object?>?> nativeServiceState() async => null;
+
+  /// 清空原生侧记录。
+  Future<void> clearNativeDiag() async {}
+
   /// 原生主动通知：用户点了已记账通知，要求打开「最近自动记账」列表。
   void setNativeListeners({Future<void> Function()? onOpenAutoEntries});
 }
@@ -108,6 +117,45 @@ class CaptureChannel implements CapturePlatform {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  @override
+  Future<String?> readNativeDiag() async {
+    if (!isSupported) return null;
+    try {
+      return await _channel.invokeMethod<String>('readDiag');
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, Object?>?> nativeServiceState() async {
+    if (!isSupported) return null;
+    try {
+      final raw = await _channel.invokeMapMethod<String, Object?>(
+        'diagServiceState',
+      );
+      return raw;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> clearNativeDiag() async {
+    if (!isSupported) return;
+    try {
+      await _channel.invokeMethod<bool>('clearDiag');
+    } on PlatformException {
+      // 清空失败不影响 Flutter 侧
+    } on MissingPluginException {
+      // 忽略
     }
   }
 
