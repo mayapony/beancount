@@ -12,10 +12,27 @@ class CaptureExtraction {
   final CaptureDirection direction;
 }
 
+/// 一次套用的完整过程：要么抽出金额，要么说明为什么没抽出来。
+class CaptureAttempt {
+  const CaptureAttempt({this.extraction, this.excludedKeyword});
+
+  /// 抽出来的金额；为空表示没抽到。
+  final CaptureExtraction? extraction;
+
+  /// 命中排除词时记的是哪个词——排查时不用再猜。
+  final String? excludedKeyword;
+
+  bool get matched => extraction != null;
+}
+
 /// 规则执行器：套用 LLM 生成的规则，从控件树或通知文本提取金额与方向。
 ///
 /// 只提供策略原语（regex / adjacentLabel），不含任何业务启发式——
 /// 具体怎么抽、抽哪里，由 LLM 生成的规则里的策略与参数决定。
+///
+/// 排除词只在**金额所在行及其相邻行**内匹配。以前是拿整页文本判断，页面底部
+/// 随便一句「领积分」「券」就会把整笔判成「不是支付」，规则回放验证随之永远
+/// 失败、停在待定。
 class CaptureRuleExecutor {
   const CaptureRuleExecutor();
 
@@ -24,19 +41,71 @@ class CaptureRuleExecutor {
     CaptureRule rule, {
     CaptureNode? tree,
     String? text,
+  }) =>
+      attempt(rule, tree: tree, text: text).extraction;
+
+  /// 套用规则并返回过程细节，供运行记录使用。
+  CaptureAttempt attempt(
+    CaptureRule rule, {
+    CaptureNode? tree,
+    String? text,
   }) {
     final source = rule.target == RuleTarget.accessibility
         ? (tree?.flattenedText ?? '')
         : (text ?? '');
-    if (source.trim().isEmpty) return null;
-
-    if (rule.excludeKeywords.any((keyword) => source.contains(keyword))) {
-      return null;
-    }
+    if (source.trim().isEmpty) return const CaptureAttempt();
 
     final amount = _extract(rule, source, tree);
-    if (amount == null || amount <= 0) return null;
-    return CaptureExtraction(amountCents: amount, direction: rule.direction);
+    if (amount == null || amount <= 0) return const CaptureAttempt();
+
+    final keyword = _excludedKeyword(rule, source, amount);
+    if (keyword != null) return CaptureAttempt(excludedKeyword: keyword);
+
+    return CaptureAttempt(
+      extraction: CaptureExtraction(
+        amountCents: amount,
+        direction: rule.direction,
+      ),
+    );
+  }
+
+  /// 排除词命中在金额邻域内才算数；定位不到金额行时退回整段（保持旧行为，
+  /// 宁可漏记也不误记）。
+  String? _excludedKeyword(CaptureRule rule, String source, int amount) {
+    if (rule.excludeKeywords.isEmpty) return null;
+    final window = _amountWindow(rule, source, amount);
+    for (final keyword in rule.excludeKeywords) {
+      if (window.contains(keyword)) return keyword;
+    }
+    return null;
+  }
+
+  /// 金额所在行 ±1 行；通知文本只有一段时等价于整段。
+  String _amountWindow(CaptureRule rule, String source, int amount) {
+    final lines = source.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (!_lineYieldsAmount(rule, lines[i], amount)) continue;
+      final from = i > 0 ? i - 1 : 0;
+      final to = i + 1 < lines.length ? i + 1 : lines.length - 1;
+      return lines.sublist(from, to + 1).join('\n');
+    }
+    return source;
+  }
+
+  bool _lineYieldsAmount(CaptureRule rule, String line, int amount) {
+    for (final candidate in _findCurrencyAmounts(line)) {
+      if (candidate == amount) return true;
+    }
+    final pattern = rule.amountPattern;
+    if (pattern == null || pattern.isEmpty) return false;
+    try {
+      final match = RegExp(pattern).firstMatch(line);
+      if (match == null) return false;
+      final group = match.groupCount >= 1 ? match.group(1) : match.group(0);
+      return group != null && _parseAmountString(group) == amount;
+    } on FormatException {
+      return false;
+    }
   }
 
   int? _extract(CaptureRule rule, String source, CaptureNode? tree) {

@@ -17,9 +17,9 @@
 
 ## 2. 排除词只在金额邻域生效
 
-- [ ] 2.1 执行器改为先定位金额行，再只在该行 ±1 行内匹配排除词；通知文本记为单段、行为不变
+- [x] 2.1 执行器改为先定位金额行，再只在该行 ±1 行内匹配排除词；通知文本记为单段、行为不变
   - 验证：`test/services/capture/capture_rule_executor_test.dart` 新增「页面别处有券但仍抽出金额」用例
-- [ ] 2.2 命中排除词时在运行记录里写明命中的是哪个词、在哪一行
+- [x] 2.2 命中排除词时在运行记录里写明命中的是哪个词、在哪一行
   - 验证：`test/services/capture/capture_runtime_test.dart` 断言 `no_extraction` 事件 `reason` 与 `detail.keyword`
 
 ## 3. 金额锚定

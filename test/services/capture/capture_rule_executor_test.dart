@@ -71,4 +71,70 @@ void main() {
     final result = executor.apply(r, text: '退款 ¥50');
     expect(result!.direction, CaptureDirection.refund);
   });
+  group('排除词只看金额邻域', () {
+    CaptureRule rule({List<String> exclude = const ['余额', '优惠', '券']}) =>
+        CaptureRule(
+          id: 'r1',
+          packageName: 'com.tencent.mm',
+          target: RuleTarget.accessibility,
+          amountStrategy: AmountStrategy.adjacentLabel,
+          adjacentLabel: '实付金额',
+          excludeKeywords: exclude,
+          tier: CaptureRuleTier.grey,
+        );
+
+    CaptureNode treeOf(List<String> lines) {
+      var dump = '';
+      for (final line in lines) {
+        dump += 'android.widget.TextView|$line\n';
+      }
+      return dumpToTree(dump);
+    }
+
+    test('页面别处出现促销词仍然抽得出金额', () {
+      final tree = treeOf([
+        'REDMI K90 Pro Max',
+        '实付金额',
+        '¥4199',
+        '订单编号',
+        '1266382316857929',
+        '券｜下单享8.7折',
+      ]);
+
+      final attempt = const CaptureRuleExecutor().attempt(rule(), tree: tree);
+
+      expect(attempt.extraction?.amountCents, 419900);
+      expect(attempt.excludedKeyword, isNull);
+    });
+
+    test('金额相邻行出现排除词才判为排除', () {
+      final tree = treeOf([
+        '实付金额',
+        '优惠后 ¥4199',
+      ]);
+
+      final attempt = const CaptureRuleExecutor().attempt(rule(), tree: tree);
+
+      expect(attempt.extraction, isNull);
+      expect(attempt.excludedKeyword, '优惠');
+    });
+
+    test('通知文本只有一段，等价于整段匹配', () {
+      final notificationRule = CaptureRule(
+        id: 'n1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.notification,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'¥(\d+(?:\.\d{1,2})?)',
+        excludeKeywords: const ['余额'],
+        tier: CaptureRuleTier.active,
+      );
+
+      final attempt = const CaptureRuleExecutor()
+          .attempt(notificationRule, text: '余额变动 支出 ¥12.00');
+
+      expect(attempt.extraction, isNull);
+      expect(attempt.excludedKeyword, '余额');
+    });
+  });
 }

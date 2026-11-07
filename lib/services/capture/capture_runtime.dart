@@ -113,7 +113,8 @@ class CaptureRuntime {
       return;
     }
 
-    final extraction = _executor.apply(rule, tree: tree);
+    final attempt = _executor.attempt(rule, tree: tree);
+    final extraction = attempt.extraction;
     if (extraction == null) {
       _log?.call('tree pkg=$packageName rule=${rule.id} no-extraction');
       await _recordNoExtraction(
@@ -123,6 +124,7 @@ class CaptureRuntime {
         source: tree.flattenedText,
         evidence: dump,
         fingerprint: fingerprint,
+        excludedKeyword: attempt.excludedKeyword,
       );
       return;
     }
@@ -180,7 +182,8 @@ class CaptureRuntime {
       return;
     }
 
-    final extraction = _executor.apply(rule, text: text);
+    final attempt = _executor.attempt(rule, text: text);
+    final extraction = attempt.extraction;
     if (extraction == null) {
       _log?.call('notif pkg=$packageName rule=${rule.id} no-extraction');
       await _recordNoExtraction(
@@ -190,6 +193,7 @@ class CaptureRuntime {
         source: text,
         evidence: text,
         fingerprint: null,
+        excludedKeyword: attempt.excludedKeyword,
       );
       return;
     }
@@ -305,9 +309,9 @@ class CaptureRuntime {
     required String source,
     required String evidence,
     required String? fingerprint,
+    String? excludedKeyword,
   }) async {
-    final excluded =
-        rule.excludeKeywords.any((keyword) => source.contains(keyword));
+    final excluded = excludedKeyword != null;
     final evidenceId = await diag?.saveEvidence(evidence);
     await diag?.record(
       kind: CaptureDiagKind.noExtraction,
@@ -318,6 +322,7 @@ class CaptureRuntime {
       evidenceId: evidenceId,
       detail: {
         'rule': rule.id,
+        if (excludedKeyword != null) 'keyword': excludedKeyword,
         'strategy': rule.amountStrategy.name,
         'pattern': rule.amountPattern,
         'label': rule.adjacentLabel,

@@ -323,6 +323,7 @@ void main() {
     final event = (await diag.events())
         .firstWhere((e) => e.kind == CaptureDiagKind.noExtraction);
     expect(event.reason, 'excluded_keyword');
+    expect(event.detail['keyword'], '余额');
   });
 
   test('入账成功记录金额、方向、分类与账户', () async {
