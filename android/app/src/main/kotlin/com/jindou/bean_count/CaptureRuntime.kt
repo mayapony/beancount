@@ -19,6 +19,10 @@ object CaptureRuntime {
     @Volatile
     var dartReady: Boolean = false
 
+    /** 应用上下文：引擎还没绑好时也能落记录，由 [CaptureService] 在启动时挂上。 */
+    @Volatile
+    var appContext: android.content.Context? = null
+
     /** 无障碍服务实例（`onServiceConnected` 时挂上），供截图兜底一次性现读树。 */
     @Volatile
     var accessibilityService: AccessibilityCaptureService? = null
@@ -82,8 +86,21 @@ object CaptureRuntime {
         notifications.lastOrNull { it.packageName == packageName }
 
     private fun forward(method: String, args: Map<String, Any?>) {
-        val ch = channel ?: return
-        if (!dartReady) return
+        val ch = channel
+        if (ch == null || !dartReady) {
+            // 引擎没起来时事件会被丢掉——这恰恰是最需要留下痕迹的时刻。
+            appContext?.let { context ->
+                CaptureDiag.record(
+                    context,
+                    kind = "event_dropped",
+                    packageName = args["package"] as? String,
+                    ok = false,
+                    reason = if (ch == null) "engine_not_bound" else "engine_not_ready",
+                    detail = mapOf("method" to method),
+                )
+            }
+            return
+        }
         ch.invokeMethod(method, args)
     }
 
