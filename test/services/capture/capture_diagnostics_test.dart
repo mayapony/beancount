@@ -93,6 +93,7 @@ void main() {
 
   group('CaptureDiagStore', storeTests);
   group('CaptureDiagEvidenceStore', evidenceTests);
+  group('CaptureDiagStore 合并', mergeTests);
 }
 
 void storeTests() {
@@ -206,5 +207,64 @@ void evidenceTests() {
     await store.save('dump', at: DateTime(2026, 11, 7, 10));
     await store.clear();
     expect(await store.read('ev-${DateTime(2026, 11, 7, 10).toUtc().microsecondsSinceEpoch}'), isNull);
+  });
+}
+
+void mergeTests() {
+  late AppDatabase db;
+  late CaptureDiagStore store;
+  final base = DateTime(2026, 11, 7, 10);
+
+  setUp(() async {
+    db = AppDatabase(openInMemoryConnection());
+    store = CaptureDiagStore(AppStateRepository(db));
+    await db.select(db.appState).get();
+  });
+
+  tearDown(() async => db.close());
+
+  CaptureDiagEvent event({
+    required int millis,
+    CaptureDiagKind kind = CaptureDiagKind.treeCaptured,
+    String package = 'com.tencent.mm',
+  }) =>
+      CaptureDiagEvent(
+        seq: base.add(Duration(milliseconds: millis)).microsecondsSinceEpoch,
+        at: base.add(Duration(milliseconds: millis)),
+        kind: kind,
+        packageName: package,
+      );
+
+  test('同类同包 1 秒内合并成一条并计数', () async {
+    for (var i = 0; i < 5; i++) {
+      await store.record(event(millis: i * 200));
+    }
+
+    final events = await store.readAll();
+    expect(events, hasLength(1));
+    expect(events.single.count, 5);
+  });
+
+  test('超过 1 秒不再合并', () async {
+    await store.record(event(millis: 0));
+    await store.record(event(millis: 1500));
+
+    final events = await store.readAll();
+    expect(events, hasLength(2));
+    expect(events.every((e) => e.count == 1), isTrue);
+  });
+
+  test('不同包名不合并', () async {
+    await store.record(event(millis: 0, package: 'com.tencent.mm'));
+    await store.record(event(millis: 100, package: 'com.eg.android.AlipayGphone'));
+
+    expect(await store.readAll(), hasLength(2));
+  });
+
+  test('非刷屏类别不合并', () async {
+    await store.record(event(millis: 0, kind: CaptureDiagKind.entryWritten));
+    await store.record(event(millis: 100, kind: CaptureDiagKind.entryWritten));
+
+    expect(await store.readAll(), hasLength(2));
   });
 }

@@ -189,9 +189,42 @@ class CaptureDiagStore {
   static const kEventPrefix = 'diag_event:';
   static const kMaxEvents = 200;
 
-  Future<void> record(CaptureDiagEvent event) async {
-    await _state.write(_keyFor(event.seq), jsonEncode(event.toJson()));
-    await _prune(kEventPrefix, maxEvents);
+  /// 会刷屏的类别：内容变化事件很密集，同类重复只累加计数，不各占一行。
+  static const _mergeableKinds = {
+    CaptureDiagKind.treeCaptured,
+    CaptureDiagKind.noRule,
+    CaptureDiagKind.windowMissing,
+    CaptureDiagKind.eventDropped,
+  };
+
+  /// 合并窗口：同一类别 + 同一包名在这个间隔内重复出现算同一条。
+  static const _mergeWindow = Duration(seconds: 1);
+
+  /// 上一条写进去的事件，供 [record] 判断能否合并。
+  ///
+  /// 只在进程内有效：跨引擎（捕获 / 截图）各记各的，合并不到一起是预期行为。
+  CaptureDiagEvent? _last;
+
+  /// 写入一条记录；命中合并条件时只更新上一条的计数，不再新增一行。
+  Future<CaptureDiagEvent> record(CaptureDiagEvent event) async {
+    final merged = _mergeWithLast(event);
+    final stored = merged ?? event;
+    _last = stored;
+    await _state.write(_keyFor(stored.seq), jsonEncode(stored.toJson()));
+    if (merged == null) await _prune(kEventPrefix, maxEvents);
+    return stored;
+  }
+
+  CaptureDiagEvent? _mergeWithLast(CaptureDiagEvent event) {
+    final last = _last;
+    if (last == null) return null;
+    if (!_mergeableKinds.contains(event.kind)) return null;
+    if (last.kind != event.kind) return null;
+    if (last.packageName != event.packageName) return null;
+    if (last.ok != event.ok || last.reason != event.reason) return null;
+    final gap = event.at.difference(last.at);
+    if (gap.isNegative || gap > _mergeWindow) return null;
+    return last.copyWith(count: last.count + 1);
   }
 
   /// 按时间升序读出全部事件；解不出来的行跳过，不影响其余记录。
