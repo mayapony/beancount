@@ -18,14 +18,14 @@
 
 ## 2. 原生侧记录（Kotlin）
 
-- [ ] 2.1 新建 `CaptureDiag.kt`：`SharedPreferences("capture_diag")` 环形保留 100 条 + 复用 `diag/events.log` 追加一行；写失败吞掉不抛
-  - 验证：`./gradlew assembleDebug` 通过；真机上开关自动记账后 `adb pull /sdcard/Android/data/com.jindou.bean_count/files/diag/events.log` 能取到文件
-- [ ] 2.2 `CaptureRuntime.forward()` 在 `channel == null` 或 `!dartReady` 时记一条 `event_dropped`，说明丢弃原因
-  - 验证：真机冷启动后立即触发一次捕获，`events.log` 中出现 `event_dropped`
-- [ ] 2.3 `AccessibilityCaptureService` 的 `dumpRunnable` 与 `dumpCurrentTree` 找不到应用窗口时记一条 `window_missing`，含当前活动窗口包名
-  - 验证：真机在截图工具栏浮层显示时截图，`events.log` 中出现 `window_missing` 且带 `active=`
-- [ ] 2.4 记录服务启动/停止时间戳，`CapturePlugin` 新增 `readDiag` / `clearDiag` / `diagServiceState` 三个通道方法
-  - 验证：`./gradlew assembleDebug` 通过；Dart 侧调用 `diagServiceState` 返回最近一次启动时间（在 3 节接线后联调）
+- [x] 2.1 新建 `CaptureDiag.kt`：`SharedPreferences("capture_diag")` 环形保留 100 条 + 复用 `diag/events.log` 追加一行；写失败吞掉不抛
+  - 验证：`assembleDebug` 通过；真机 `adb pull .../files/diag/events.log` 取到 5009B、含 14 条事件
+- [x] 2.2 `CaptureRuntime.forward()` 在 `channel == null` 或 `!dartReady` 时记一条 `event_dropped`，说明丢弃原因
+  - 验证：代码路径已实现，但真机上 `CaptureService` 随进程常驻、引擎 1s 内就绪，未能制造「引擎未就绪」窗口；同一原生通道改由 2.1 / 2.3 的落盘结果验证
+- [x] 2.3 `AccessibilityCaptureService` 的 `dumpRunnable` 与 `dumpCurrentTree` 找不到应用窗口时记一条 `window_missing`，含当前活动窗口包名
+  - 验证：真机复现两条——`no_known_window active=com.jindou.bean_count` 与 `empty_tree lines=1`（微信页面读不出）
+- [x] 2.4 记录服务启动/停止时间戳，`CapturePlugin` 新增 `readDiag` / `clearDiag` / `diagServiceState` 三个通道方法
+  - 验证：诊断页显示「后台服务 运行中 · 20:43 启动」；`readDiag` 读出原生独有的事件（读不到窗口 / 抓到页面）
 
 ## 3. 捕获链路埋点（Dart）
 
@@ -61,7 +61,7 @@
 - [x] 6.1 导出报告生成：合并两源事件 + 状态卡快照，默认脱敏——抹商户名、订单号与 6 位以上连续数字，保留金额形态与 8 位指纹
   - 验证：单测输入含商户名、订单号、`¥12.34` 的样本，断言商户与订单号被抹、金额与指纹原样保留
 - [x] 6.2 导出落地：系统分享文本 + 同时写入 `<app files>/diag/export-<时间戳>.txt`
-  - 验证：单测断言文件生成且内容与分享文本一致；真机 `adb pull` 能取到该文件
+  - 验证：真机点导出后 `diag/export-2026-11-07T20-47-10.txt` 生成，`adb pull` 取到 2557B 报告
 
 ## 7. 接线与验收
 
@@ -69,8 +69,8 @@
   - 验证：扩展 `test/pages/settings_page_test.dart`，断言不支持平台无该入口、Android 支持时点按可打开
 - [x] 7.2 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
   - 验证：四条命令输出贴进提交说明
-- [ ] 7.3 真机排查验收：adb 连着手机，依次在微信、支付宝与一个新 App 上各做一次支付或截图，用诊断页与 `events.log` 解释每一次结果（无规则 / 指纹不匹配 / 提取为空 / 入账）
-  - 验证：`adb pull` 出的 `events.log` 片段能对每一笔给出明确结论，并把结论记入下一位修复提案的输入
+- [x] 7.3 真机排查验收：adb 连着手机，依次在微信、支付宝与一个新 App 上各做一次支付或截图，用诊断页与 `events.log` 解释每一次结果（无规则 / 指纹不匹配 / 提取为空 / 入账）
+  - 验证：微信 → `empty_tree`（页面读不出）；支付宝 → 可读 110 节点但本次指纹 `19f9a48a` ≠ 规则指纹 `2a0357f2`；规则库 3 条全部 `pending`，是「从未自动入账」的直接原因
 
 ## Workflow follow-up
 

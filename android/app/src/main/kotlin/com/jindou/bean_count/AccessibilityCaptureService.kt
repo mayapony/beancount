@@ -44,17 +44,33 @@ class AccessibilityCaptureService : AccessibilityService() {
         }
         val (packageName, root) = found
         val dump = dumpTree(root)
-        if (dump.lineSequence().count() <= 1) return@Runnable
+        val lines = dump.lineSequence().count()
         Log.i(
             TAG,
-            "dumpTree package=$packageName lines=${dump.lineSequence().count()} " +
+            "dumpTree package=$packageName lines=$lines " +
                 "text=${dump.replace('\n', ' ').take(160)}",
         )
+        if (lines <= 1) {
+            // 树是空的（自绘 / WebView / FLAG_SECURE）：以前这里静默返回，用户
+            // 只会看到「自动记账没反应」。留一条记录，让截图优先的判定有据可查。
+            CaptureDiag.record(
+                this,
+                kind = "window_missing",
+                packageName = packageName,
+                ok = false,
+                reason = "empty_tree",
+                detail = mapOf("lines" to lines),
+            )
+            return@Runnable
+        }
         CaptureRuntime.onTreeCaptured(packageName, dump)
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // 无障碍服务通常比后台捕获服务先起来：没这个上下文，引擎未就绪时
+        // 「事件被丢弃」这条最关键的记录根本写不出来。
+        CaptureRuntime.appContext = applicationContext
         CaptureRuntime.accessibilityService = this
     }
 
