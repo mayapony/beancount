@@ -54,7 +54,7 @@
 
 ## 7. 门禁与真机回归
 
-- [ ] 7.1 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
+- [x] 7.1 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
   - 验证：四条命令输出贴进提交说明
 - [ ] 7.2 真机回归：同一批页面（支付宝账单详情、淘宝订单详情、京东订单详情、微信账单详情）重跑，规则应能进灰度或给出明确的拒绝原因；账户按渠道映射落位
   - 验证：`adb pull` 的 `events.log` 与诊断页能对每一笔给出结论
