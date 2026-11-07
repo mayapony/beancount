@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
+import 'services/capture/capture_diag_log.dart';
+import 'services/capture/capture_diagnostics.dart';
 import 'services/capture/capture_runtime.dart';
 
 /// 后台捕获引擎入口：由 [CaptureService] 里的 headless FlutterEngine 运行。
@@ -14,9 +16,15 @@ void captureEntry() {
   WidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('com.jindou.bean_count/capture');
   final db = AppDatabase(openDatabaseConnection());
+  // 文件落点懒打开：引擎启动时别为了 IO 挡住通道注册。
+  final logFile = openCaptureDiagLog();
   final runtime = CaptureRuntime(
     db: db,
     notifier: _ChannelNotifier(channel),
+    diag: CaptureDiagnostics.forDatabase(
+      db,
+      sink: (line) async => (await logFile)?.append(line),
+    ),
     log: (message) => _log(channel, message),
   );
   channel.setMethodCallHandler((call) async {
