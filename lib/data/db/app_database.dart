@@ -105,6 +105,18 @@ class Transactions extends Table {
   TextColumn get dedupeKey => text().unique()();
   TextColumn get source =>
       textEnum<EntrySource>().withDefault(const Constant('manual'))();
+
+  /// 自动入账时抓到的来源应用包名（如 `com.taobao.taobao`）；手动记账为空。
+  ///
+  /// 也用作「渠道 → 账户」映射的键：同一个 App 的支付渠道通常稳定，用户为
+  /// 它选过一次账户之后，后续同一组合就直接套用。
+  TextColumn get sourcePackage => text().nullable()();
+
+  /// 账户没能自动确定、等用户在审计列表里选一次。
+  ///
+  /// 可空：`null` 与 `false` 同义（不需要人工处理）。不用非空 + 默认值，是因为
+  /// 历史迁移里有几处会重建 `transactions` 表，非空列会让旧表的重建语句失败。
+  BoolColumn get needsReview => boolean().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
@@ -195,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -206,6 +218,18 @@ class AppDatabase extends _$AppDatabase {
           await seedDefaults(this);
         },
         onUpgrade: (m, from, to) async {
+          if (from < 6) {
+            // v6：来源应用 + 待人工确认。
+            //
+            // 必须放在最前面：v2 / v3 / v5 会用「最新 schema」重建 transactions
+            // 并复制数据，旧表里没有这两列的话那几步会直接失败。
+            await customStatement(
+              'ALTER TABLE transactions ADD COLUMN source_package TEXT NULL',
+            );
+            await customStatement(
+              'ALTER TABLE transactions ADD COLUMN needs_review INTEGER NULL',
+            );
+          }
           if (from < 2) {
             // v2：转账。分类放宽为可空 + 新增转入账户，SQLite 只能重建表。
             await m.alterTable(
@@ -281,6 +305,7 @@ class AppDatabase extends _$AppDatabase {
               'ON transactions (category_id)',
             );
           }
+
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');

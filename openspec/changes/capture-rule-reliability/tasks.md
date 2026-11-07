@@ -4,7 +4,7 @@
 
 ## 1. 来源应用与待人工处理（数据库）
 
-- [ ] 1.1 `transactions` 新增 `sourcePackage`（可空文本）与 `needsReview`（布尔，默认 false），schemaVersion 5 → 6，迁移用 `TableMigration(newColumns:)`
+- [x] 1.1 `transactions` 新增 `sourcePackage`（可空文本）与 `needsReview`（布尔，默认 false），schemaVersion 5 → 6，迁移用 `TableMigration(newColumns:)`
   - 验证：`test/data/db_migration_test.dart` 新增「v5 建库后升级到 v6，旧账仍在、两列为空/false」
 - [ ] 1.2 `EntryWriter.submit` 与仓储写入路径支持 `sourcePackage` / `needsReview`，手动记账两列保持默认
   - 验证：`test/services/entry_writer_test.dart` 断言手动记账写入后 `sourcePackage` 为空、`needsReview=false`

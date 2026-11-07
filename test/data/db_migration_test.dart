@@ -126,7 +126,7 @@ void main() {
     );
   }
 
-  test('v1 库一路升到 v5：历史数据不变、索引还在、能写转账', () async {
+  test('v1 库一路升到 v6：历史数据不变、索引还在、能写转账', () async {
     final file = File('${tmp.path}/v1.sqlite');
     final executor = NativeDatabase(
       file,
@@ -150,6 +150,9 @@ void main() {
     expect(old.dedupeKey, 'deadbeefdeadbeef');
     expect(old.type, EntryType.expense);
     expect(old.toAccountId, isNull);
+    // v6：老账没有来源应用，也不需要人工确认（null 与 false 同义）
+    expect(old.sourcePackage, isNull);
+    expect(old.needsReview, isNull);
 
     // 索引仍在（重建表最容易丢的就是它们）
     final indexes = await db.customSelect(
@@ -162,7 +165,7 @@ void main() {
 
     // 版本号推进到 2
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 5);
+    expect(version.data.values.first, 6);
 
     // 迁移后能写转账：分类为空、两端账户俱在
     await db.into(db.transactions).insert(
@@ -207,6 +210,10 @@ void main() {
     expect(txNames, contains('original_amount_cents'));
     expect(txNames, contains('rate_ppm'));
 
+    // v6：来源应用 + 待人工确认
+    expect(txNames, contains('source_package'));
+    expect(txNames, contains('needs_review'));
+
     // v4：账户上多了账单日 / 还款日
     final accountColumns = await db.customSelect(
       "SELECT name FROM pragma_table_info('accounts')",
@@ -224,7 +231,7 @@ void main() {
     expect(recurring, hasLength(1));
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 5);
+    expect(version.data.values.first, 6);
     await db.close();
   });
 }

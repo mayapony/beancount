@@ -1900,6 +1900,21 @@ class $TransactionsTable extends Transactions
               requiredDuringInsert: false,
               defaultValue: const Constant('manual'))
           .withConverter<EntrySource>($TransactionsTable.$convertersource);
+  static const VerificationMeta _sourcePackageMeta =
+      const VerificationMeta('sourcePackage');
+  @override
+  late final GeneratedColumn<String> sourcePackage = GeneratedColumn<String>(
+      'source_package', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _needsReviewMeta =
+      const VerificationMeta('needsReview');
+  @override
+  late final GeneratedColumn<bool> needsReview = GeneratedColumn<bool>(
+      'needs_review', aliasedName, true,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("needs_review" IN (0, 1))'));
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -1925,6 +1940,8 @@ class $TransactionsTable extends Transactions
         happenedAt,
         dedupeKey,
         source,
+        sourcePackage,
+        needsReview,
         createdAt
       ];
   @override
@@ -2010,6 +2027,18 @@ class $TransactionsTable extends Transactions
     } else if (isInserting) {
       context.missing(_dedupeKeyMeta);
     }
+    if (data.containsKey('source_package')) {
+      context.handle(
+          _sourcePackageMeta,
+          sourcePackage.isAcceptableOrUnknown(
+              data['source_package']!, _sourcePackageMeta));
+    }
+    if (data.containsKey('needs_review')) {
+      context.handle(
+          _needsReviewMeta,
+          needsReview.isAcceptableOrUnknown(
+              data['needs_review']!, _needsReviewMeta));
+    }
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
@@ -2055,6 +2084,10 @@ class $TransactionsTable extends Transactions
       source: $TransactionsTable.$convertersource.fromSql(attachedDatabase
           .typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}source'])!),
+      sourcePackage: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_package']),
+      needsReview: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}needs_review']),
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
     );
@@ -2101,6 +2134,18 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   final DateTime happenedAt;
   final String dedupeKey;
   final EntrySource source;
+
+  /// 自动入账时抓到的来源应用包名（如 `com.taobao.taobao`）；手动记账为空。
+  ///
+  /// 也用作「渠道 → 账户」映射的键：同一个 App 的支付渠道通常稳定，用户为
+  /// 它选过一次账户之后，后续同一组合就直接套用。
+  final String? sourcePackage;
+
+  /// 账户没能自动确定、等用户在审计列表里选一次。
+  ///
+  /// 可空：`null` 与 `false` 同义（不需要人工处理）。不用非空 + 默认值，是因为
+  /// 历史迁移里有几处会重建 `transactions` 表，非空列会让旧表的重建语句失败。
+  final bool? needsReview;
   final DateTime createdAt;
   const Transaction(
       {required this.id,
@@ -2118,6 +2163,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       required this.happenedAt,
       required this.dedupeKey,
       required this.source,
+      this.sourcePackage,
+      this.needsReview,
       required this.createdAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2157,6 +2204,12 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       map['source'] =
           Variable<String>($TransactionsTable.$convertersource.toSql(source));
     }
+    if (!nullToAbsent || sourcePackage != null) {
+      map['source_package'] = Variable<String>(sourcePackage);
+    }
+    if (!nullToAbsent || needsReview != null) {
+      map['needs_review'] = Variable<bool>(needsReview);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -2192,6 +2245,12 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       happenedAt: Value(happenedAt),
       dedupeKey: Value(dedupeKey),
       source: Value(source),
+      sourcePackage: sourcePackage == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourcePackage),
+      needsReview: needsReview == null && nullToAbsent
+          ? const Value.absent()
+          : Value(needsReview),
       createdAt: Value(createdAt),
     );
   }
@@ -2218,6 +2277,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       dedupeKey: serializer.fromJson<String>(json['dedupeKey']),
       source: $TransactionsTable.$convertersource
           .fromJson(serializer.fromJson<String>(json['source'])),
+      sourcePackage: serializer.fromJson<String?>(json['sourcePackage']),
+      needsReview: serializer.fromJson<bool?>(json['needsReview']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -2242,6 +2303,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       'dedupeKey': serializer.toJson<String>(dedupeKey),
       'source': serializer
           .toJson<String>($TransactionsTable.$convertersource.toJson(source)),
+      'sourcePackage': serializer.toJson<String?>(sourcePackage),
+      'needsReview': serializer.toJson<bool?>(needsReview),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -2262,6 +2325,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           DateTime? happenedAt,
           String? dedupeKey,
           EntrySource? source,
+          Value<String?> sourcePackage = const Value.absent(),
+          Value<bool?> needsReview = const Value.absent(),
           DateTime? createdAt}) =>
       Transaction(
         id: id ?? this.id,
@@ -2285,6 +2350,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         happenedAt: happenedAt ?? this.happenedAt,
         dedupeKey: dedupeKey ?? this.dedupeKey,
         source: source ?? this.source,
+        sourcePackage:
+            sourcePackage.present ? sourcePackage.value : this.sourcePackage,
+        needsReview: needsReview.present ? needsReview.value : this.needsReview,
         createdAt: createdAt ?? this.createdAt,
       );
   Transaction copyWithCompanion(TransactionsCompanion data) {
@@ -2314,6 +2382,11 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           data.happenedAt.present ? data.happenedAt.value : this.happenedAt,
       dedupeKey: data.dedupeKey.present ? data.dedupeKey.value : this.dedupeKey,
       source: data.source.present ? data.source.value : this.source,
+      sourcePackage: data.sourcePackage.present
+          ? data.sourcePackage.value
+          : this.sourcePackage,
+      needsReview:
+          data.needsReview.present ? data.needsReview.value : this.needsReview,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -2336,6 +2409,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('happenedAt: $happenedAt, ')
           ..write('dedupeKey: $dedupeKey, ')
           ..write('source: $source, ')
+          ..write('sourcePackage: $sourcePackage, ')
+          ..write('needsReview: $needsReview, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -2358,6 +2433,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       happenedAt,
       dedupeKey,
       source,
+      sourcePackage,
+      needsReview,
       createdAt);
   @override
   bool operator ==(Object other) =>
@@ -2378,6 +2455,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.happenedAt == this.happenedAt &&
           other.dedupeKey == this.dedupeKey &&
           other.source == this.source &&
+          other.sourcePackage == this.sourcePackage &&
+          other.needsReview == this.needsReview &&
           other.createdAt == this.createdAt);
 }
 
@@ -2397,6 +2476,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<DateTime> happenedAt;
   final Value<String> dedupeKey;
   final Value<EntrySource> source;
+  final Value<String?> sourcePackage;
+  final Value<bool?> needsReview;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const TransactionsCompanion({
@@ -2415,6 +2496,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.happenedAt = const Value.absent(),
     this.dedupeKey = const Value.absent(),
     this.source = const Value.absent(),
+    this.sourcePackage = const Value.absent(),
+    this.needsReview = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -2434,6 +2517,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     required DateTime happenedAt,
     required String dedupeKey,
     this.source = const Value.absent(),
+    this.sourcePackage = const Value.absent(),
+    this.needsReview = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
@@ -2457,6 +2542,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<DateTime>? happenedAt,
     Expression<String>? dedupeKey,
     Expression<String>? source,
+    Expression<String>? sourcePackage,
+    Expression<bool>? needsReview,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -2477,6 +2564,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (happenedAt != null) 'happened_at': happenedAt,
       if (dedupeKey != null) 'dedupe_key': dedupeKey,
       if (source != null) 'source': source,
+      if (sourcePackage != null) 'source_package': sourcePackage,
+      if (needsReview != null) 'needs_review': needsReview,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -2498,6 +2587,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       Value<DateTime>? happenedAt,
       Value<String>? dedupeKey,
       Value<EntrySource>? source,
+      Value<String?>? sourcePackage,
+      Value<bool?>? needsReview,
       Value<DateTime>? createdAt,
       Value<int>? rowid}) {
     return TransactionsCompanion(
@@ -2516,6 +2607,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       happenedAt: happenedAt ?? this.happenedAt,
       dedupeKey: dedupeKey ?? this.dedupeKey,
       source: source ?? this.source,
+      sourcePackage: sourcePackage ?? this.sourcePackage,
+      needsReview: needsReview ?? this.needsReview,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -2571,6 +2664,12 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       map['source'] = Variable<String>(
           $TransactionsTable.$convertersource.toSql(source.value));
     }
+    if (sourcePackage.present) {
+      map['source_package'] = Variable<String>(sourcePackage.value);
+    }
+    if (needsReview.present) {
+      map['needs_review'] = Variable<bool>(needsReview.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2598,6 +2697,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('happenedAt: $happenedAt, ')
           ..write('dedupeKey: $dedupeKey, ')
           ..write('source: $source, ')
+          ..write('sourcePackage: $sourcePackage, ')
+          ..write('needsReview: $needsReview, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -5044,6 +5145,8 @@ typedef $$TransactionsTableCreateCompanionBuilder = TransactionsCompanion
   required DateTime happenedAt,
   required String dedupeKey,
   Value<EntrySource> source,
+  Value<String?> sourcePackage,
+  Value<bool?> needsReview,
   Value<DateTime> createdAt,
   Value<int> rowid,
 });
@@ -5064,6 +5167,8 @@ typedef $$TransactionsTableUpdateCompanionBuilder = TransactionsCompanion
   Value<DateTime> happenedAt,
   Value<String> dedupeKey,
   Value<EntrySource> source,
+  Value<String?> sourcePackage,
+  Value<bool?> needsReview,
   Value<DateTime> createdAt,
   Value<int> rowid,
 });
@@ -5213,6 +5318,12 @@ class $$TransactionsTableFilterComposer
       $composableBuilder(
           column: $table.source,
           builder: (column) => ColumnWithTypeConverterFilters(column));
+
+  ColumnFilters<String> get sourcePackage => $composableBuilder(
+      column: $table.sourcePackage, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get needsReview => $composableBuilder(
+      column: $table.needsReview, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
@@ -5384,6 +5495,13 @@ class $$TransactionsTableOrderingComposer
   ColumnOrderings<String> get source => $composableBuilder(
       column: $table.source, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get sourcePackage => $composableBuilder(
+      column: $table.sourcePackage,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get needsReview => $composableBuilder(
+      column: $table.needsReview, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -5509,6 +5627,12 @@ class $$TransactionsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<EntrySource, String> get source =>
       $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get sourcePackage => $composableBuilder(
+      column: $table.sourcePackage, builder: (column) => column);
+
+  GeneratedColumn<bool> get needsReview => $composableBuilder(
+      column: $table.needsReview, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -5680,6 +5804,8 @@ class $$TransactionsTableTableManager extends RootTableManager<
             Value<DateTime> happenedAt = const Value.absent(),
             Value<String> dedupeKey = const Value.absent(),
             Value<EntrySource> source = const Value.absent(),
+            Value<String?> sourcePackage = const Value.absent(),
+            Value<bool?> needsReview = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -5699,6 +5825,8 @@ class $$TransactionsTableTableManager extends RootTableManager<
             happenedAt: happenedAt,
             dedupeKey: dedupeKey,
             source: source,
+            sourcePackage: sourcePackage,
+            needsReview: needsReview,
             createdAt: createdAt,
             rowid: rowid,
           ),
@@ -5718,6 +5846,8 @@ class $$TransactionsTableTableManager extends RootTableManager<
             required DateTime happenedAt,
             required String dedupeKey,
             Value<EntrySource> source = const Value.absent(),
+            Value<String?> sourcePackage = const Value.absent(),
+            Value<bool?> needsReview = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
@@ -5737,6 +5867,8 @@ class $$TransactionsTableTableManager extends RootTableManager<
             happenedAt: happenedAt,
             dedupeKey: dedupeKey,
             source: source,
+            sourcePackage: sourcePackage,
+            needsReview: needsReview,
             createdAt: createdAt,
             rowid: rowid,
           ),
