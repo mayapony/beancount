@@ -8,6 +8,7 @@ import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/attachments/image_picker_service.dart';
+import '../services/capture/source_app.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/fx.dart';
@@ -369,6 +370,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     style: _valueStyle,
                   ),
                 ),
+                if (sourceAppName(_row.transaction.sourcePackage).isNotEmpty)
+                  _DetailRow(
+                    label: '来源',
+                    child: Text(
+                      sourceAppName(_row.transaction.sourcePackage),
+                      style: _valueStyle,
+                    ),
+                  ),
                 if (_row.transaction.currency != 'CNY' &&
                     _row.transaction.originalAmountCents != null) ...[
                   _DetailRow(

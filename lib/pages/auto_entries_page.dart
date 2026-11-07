@@ -5,6 +5,7 @@ import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/attachments/image_picker_service.dart';
+import '../services/capture/source_app.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
 import '../utils/money.dart';
@@ -175,7 +176,11 @@ class _EntryRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    formatEntryTime(row.transaction.happenedAt),
+                    [
+                      formatEntryTime(row.transaction.happenedAt),
+                      if (sourceAppName(row.transaction.sourcePackage).isNotEmpty)
+                        '来自 ${sourceAppName(row.transaction.sourcePackage)}',
+                    ].join(' · '),
                     style: TextStyle(fontSize: 12, color: palette.textSecondary),
                   ),
                 ],

@@ -40,6 +40,7 @@ void main() {
     required int amountCents,
     required DateTime at,
     String note = '',
+    String? sourcePackage,
   }) async {
     final category = (await categories.all(CategoryType.expense)).first;
     await repo.create(NewTransaction(
@@ -49,6 +50,7 @@ void main() {
       happenedAt: at,
       note: note,
       source: EntrySource.auto,
+      sourcePackage: sourcePackage,
     ));
   }
 
@@ -150,5 +152,25 @@ void main() {
     expect(find.text('可改的自动账'), findsOneWidget);
     final stored = await repo.recentAutoEntries();
     expect(stored.single.category?.name, '交通');
+  });
+  testWidgets('带来源应用的自动账显示应用名', (tester) async {
+    await seedAuto(
+      amountCents: 6900,
+      at: DateTime.now(),
+      note: '网易严选',
+      sourcePackage: 'com.jingdong.app.mall',
+    );
+
+    await pumpPage(tester);
+
+    expect(find.textContaining('来自 京东'), findsOneWidget);
+  });
+
+  testWidgets('没有来源应用时不显示来源字样', (tester) async {
+    await seedAuto(amountCents: 1200, at: DateTime.now(), note: '午饭');
+
+    await pumpPage(tester);
+
+    expect(find.textContaining('来自'), findsNothing);
   });
 }

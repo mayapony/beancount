@@ -12,7 +12,7 @@
   - 验证：`test/services/capture/capture_runtime_test.dart` 断言自动入账行的 `sourcePackage` 等于候选包名
 - [x] 1.4 截图自动入账补 `source: EntrySource.auto`，并在写账前解析当前应用包名写入 `sourcePackage`
   - 验证：单测断言截图入账 `source == auto` 且出现在 `recentAutoEntries()` 结果里
-- [ ] 1.5 「最近自动记账」与交易详情显示来源应用（已知包名映射到可读名，未知则显示原包名）
+- [x] 1.5 「最近自动记账」与交易详情显示来源应用（已知包名映射到可读名，未知则显示原包名）
   - 验证：`test/pages/auto_entries_page_test.dart` 断言带来源的行显示应用名，无来源的行不渲染该行
 
 ## 2. 排除词只在金额邻域生效
