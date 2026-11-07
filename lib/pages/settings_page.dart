@@ -45,6 +45,7 @@ class SettingsPage extends StatelessWidget {
     this.captureSettings,
     this.capturePlatform,
     this.onOpenAutoEntries,
+    this.onOpenDiagnostics,
     this.updateController,
   });
 
@@ -79,6 +80,9 @@ class SettingsPage extends StatelessWidget {
 
   /// 打开「最近自动记账」列表（由壳层导航）。
   final VoidCallback? onOpenAutoEntries;
+
+  /// 打开「诊断记录」页。
+  final VoidCallback? onOpenDiagnostics;
 
   /// 更新控制器；为空时（Web/iOS/测试）关于页只展示版本与链接。
   final UpdateController? updateController;
@@ -195,6 +199,7 @@ class SettingsPage extends StatelessWidget {
                 store: captureSettings!,
                 platform: capturePlatform!,
                 onOpenAutoEntries: onOpenAutoEntries ?? () {},
+                onOpenDiagnostics: onOpenDiagnostics ?? () {},
               ),
             ),
           ],

@@ -68,7 +68,7 @@ void main() {
 
   tearDown(() async => db.close());
 
-  Widget harness() {
+  Widget harness({VoidCallback? onOpenDiagnostics}) {
     return MaterialApp(
       theme: buildBeanTheme(Brightness.light),
       home: Scaffold(
@@ -78,6 +78,7 @@ void main() {
               store: store,
               platform: platform,
               onOpenAutoEntries: () {},
+              onOpenDiagnostics: onOpenDiagnostics ?? () {},
             ),
           ],
         ),
@@ -157,5 +158,24 @@ void main() {
 
     expect(find.byKey(const Key('capture-auto-entry-switch')), findsNothing);
     expect(find.textContaining('自动记账'), findsNothing);
+  });
+  testWidgets('开启后显示诊断入口，点按回调', (tester) async {
+    var opened = 0;
+    await store.setEnabled(true);
+
+    await tester.pumpWidget(harness(onOpenDiagnostics: () => opened++));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('capture-diag-entry')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('capture-diag-entry')));
+    await tester.pumpAndSettle();
+    expect(opened, 1);
+  });
+
+  testWidgets('关闭时不显示诊断入口', (tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('capture-diag-entry')), findsNothing);
   });
 }

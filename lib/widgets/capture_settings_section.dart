@@ -16,6 +16,7 @@ class CaptureSettingsSection extends StatefulWidget {
     required this.store,
     required this.platform,
     required this.onOpenAutoEntries,
+    required this.onOpenDiagnostics,
   });
 
   final CaptureSettingsStore store;
@@ -23,6 +24,9 @@ class CaptureSettingsSection extends StatefulWidget {
 
   /// 打开「最近自动记账」列表。
   final VoidCallback onOpenAutoEntries;
+
+  /// 打开「诊断记录」页：链路每一步的决策与模型原文都在那里。
+  final VoidCallback onOpenDiagnostics;
 
   @override
   State<CaptureSettingsSection> createState() => _CaptureSettingsSectionState();
@@ -173,6 +177,18 @@ class _CaptureSettingsSectionState extends State<CaptureSettingsSection>
               subtitle: const Text('核对、修改或删除自动入账'),
               trailing: const Icon(Icons.chevron_right_rounded, size: 20),
               onTap: widget.onOpenAutoEntries,
+            ),
+            _divider(palette),
+            ListTile(
+              key: const Key('capture-diag-entry'),
+              leading: Icon(
+                Icons.troubleshoot_rounded,
+                color: BeanColors.gold,
+              ),
+              title: const Text('诊断记录', style: TextStyle(fontSize: 15)),
+              subtitle: const Text('看每次捕获走到哪一步、为什么没记账'),
+              trailing: const Icon(Icons.chevron_right_rounded, size: 20),
+              onTap: widget.onOpenDiagnostics,
             ),
           ],
         ],

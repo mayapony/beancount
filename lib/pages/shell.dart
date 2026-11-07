@@ -19,6 +19,10 @@ import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
 import '../services/capture/capture_channel.dart';
+import '../services/capture/capture_diag_sink.dart';
+import '../services/capture/capture_diagnostics.dart';
+import '../services/capture/capture_rule.dart';
+import 'capture_diagnostics_page.dart';
 import '../services/capture/capture_settings.dart';
 import '../services/ocr/auto_create_policy.dart';
 import '../services/ocr/entry_matching.dart';
@@ -162,6 +166,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
       captureSettings: _captureSettings,
       capturePlatform: _captureChannel,
       onOpenAutoEntries: _openAutoEntries,
+      onOpenDiagnostics: _openDiagnostics,
       updateController: widget.updateController,
     ),
   ];
@@ -262,6 +267,28 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
         unawaited(_openAutoEntries());
       });
     }
+  }
+
+  /// 打开「诊断记录」：把捕获链路每一步的决策摊开，排查「为什么没记账」。
+  Future<void> _openDiagnostics() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CaptureDiagnosticsPage(
+          settings: _captureSettings,
+          platform: _captureChannel,
+          rules: CaptureRuleStore(_appState),
+          diag: CaptureDiagnostics.forDatabase(
+            _db,
+            sink: defaultCaptureDiagSink(),
+          ),
+          lastAutoEntryAt: () async {
+            final rows = await _transactionRepo.recentAutoEntries(limit: 1);
+            return rows.isEmpty ? null : rows.first.transaction.happenedAt;
+          },
+        ),
+      ),
+    );
   }
 
   /// 打开「最近自动记账」列表；返回后补一次刷新（可能改了账）。

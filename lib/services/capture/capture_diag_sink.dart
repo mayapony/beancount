@@ -1,0 +1,1 @@
+export 'capture_diag_sink_stub.dart' if (dart.library.io) 'capture_diag_sink_io.dart';
