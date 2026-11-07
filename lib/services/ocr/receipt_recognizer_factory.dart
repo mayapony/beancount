@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import '../capture/capture_diagnostics.dart';
 import 'receipt_recognizer.dart';
 import 'receipt_recognizer_vision.dart';
 import 'receipt_vision_settings.dart';
@@ -14,6 +15,7 @@ Future<ReceiptRecognizer?> systemReceiptRecognizer({
   required ReceiptVisionSettingsStore settings,
   required ReceiptApiKeyStore keys,
   http.Client? client,
+  CaptureDiagnostics? diag,
 }) async {
   if (kIsWeb) return null;
 
@@ -28,5 +30,6 @@ Future<ReceiptRecognizer?> systemReceiptRecognizer({
     model: config.normalizedModel,
     apiKey: apiKey,
     client: client,
+    diag: diag,
   );
 }

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
+import '../capture/capture_diagnostics.dart';
 import 'entry_matching.dart';
 import 'receipt_guess.dart';
 import 'receipt_recognizer.dart';
@@ -35,6 +36,7 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
     required String apiKey,
     http.Client? client,
     this.timeout = const Duration(seconds: 20),
+    this.diag,
   })  : _baseUrl = ReceiptVisionSettings.normalizeBaseUrl(baseUrl),
         _model = ReceiptVisionSettings.normalizeModel(model),
         _apiKey = apiKey.trim(),
@@ -62,6 +64,9 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
   final http.Client _client;
   final bool _ownsClient;
   final Duration timeout;
+
+  /// 运行记录出口；为 null 时只跳过记录，不影响识别。
+  final CaptureDiagnostics? diag;
 
   Uri get endpoint => Uri.parse('$_baseUrl/chat/completions');
 
@@ -98,6 +103,7 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
       ],
     });
 
+    final stopwatch = Stopwatch()..start();
     final http.Response response;
     try {
       response = await _client
@@ -131,7 +137,31 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
       );
     }
 
-    return _parseGuess(response.bodyBytes);
+    final parsed = _parseGuess(response.bodyBytes);
+    stopwatch.stop();
+    await _record(parsed, elapsedMs: stopwatch.elapsedMilliseconds);
+    return parsed.guess;
+  }
+
+  /// 记下这一次识别：模型原文单独进证据环形，字段对照与丢弃原因留在事件里。
+  Future<void> _record(_ParsedGuess parsed, {required int elapsedMs}) async {
+    final recorder = diag;
+    if (recorder == null) return;
+    final evidenceId = await recorder.saveEvidence(parsed.raw);
+    await recorder.record(
+      kind: CaptureDiagKind.llmRecognize,
+      ok: parsed.guess.amountCents != null,
+      reason: parsed.guess.amountCents != null ? null : 'no_amount',
+      evidenceId: evidenceId,
+      detail: {
+        'model': _model,
+        'elapsed_ms': elapsedMs,
+        'raw_length': parsed.raw.length,
+        'model_fields': parsed.modelFields,
+        'parsed_fields': parsed.parsedFields,
+        if (parsed.dropped.isNotEmpty) 'dropped': parsed.dropped,
+      },
+    );
   }
 
   @override
@@ -140,27 +170,79 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
   }
 
   /// 从响应里取出 `choices[0].message.content`，再映射成 [ReceiptGuess]。
-  ReceiptGuess _parseGuess(Uint8List bodyBytes) {
+  ///
+  /// 同时留下「模型给了什么 / 本地留下了什么 / 丢了什么为什么」，否则识别错了
+  /// 只能靠猜是模型读错还是本地词表把它丢了。
+  _ParsedGuess _parseGuess(Uint8List bodyBytes) {
     final content = _contentOf(bodyBytes);
-    if (content == null || content.trim().isEmpty) return ReceiptGuess.empty;
+    if (content == null || content.trim().isEmpty) {
+      return const _ParsedGuess(
+        guess: ReceiptGuess.empty,
+        raw: '',
+        modelFields: {},
+        parsedFields: {},
+        dropped: {'content': '模型没有返回内容'},
+      );
+    }
 
     final decoded = _decodeObject(content);
     final amountCents = _amountCents(decoded['amount_cents']);
     final category = _category(decoded['category']);
+    final account = _account(decoded['account_hint']);
+    final tags = _tags(decoded['tags']);
+    final paidAt = _paidAt(decoded['paid_at']);
     final note = _text(decoded['merchant']);
 
-    return ReceiptGuess(
-      amountCents: amountCents,
-      categoryName: category,
-      tagNames: _tags(decoded['tags']),
-      accountName: _account(decoded['account_hint']),
-      note: note,
-      happenedAt: _paidAt(decoded['paid_at']),
-      confidence: amountCents != null
-          ? ReceiptConfidence.amount
-          : (category != null || note != null
-              ? ReceiptConfidence.categoryOnly
-              : ReceiptConfidence.none),
+    final dropped = <String, Object?>{};
+    if (amountCents == null && decoded['amount_cents'] != null) {
+      dropped['amount_cents'] = '非数字、非正数或超出单笔上限';
+    }
+    if (category == null && _text(decoded['category']) != null) {
+      dropped['category'] = '不在分类词表内';
+    }
+    if (account == null && _text(decoded['account_hint']) != null) {
+      dropped['account_hint'] = '不在账户词表内';
+    }
+    if (paidAt == null && _text(decoded['paid_at']) != null) {
+      dropped['paid_at'] = '时间格式非法或超出合理年份';
+    }
+    final rawTags = decoded['tags'];
+    if (rawTags is List && rawTags.length > tags.length) {
+      dropped['tags'] = '部分标签不在词表内或被去重';
+    }
+
+    return _ParsedGuess(
+      guess: ReceiptGuess(
+        amountCents: amountCents,
+        categoryName: category,
+        tagNames: tags,
+        accountName: account,
+        note: note,
+        happenedAt: paidAt,
+        confidence: amountCents != null
+            ? ReceiptConfidence.amount
+            : (category != null || note != null
+                ? ReceiptConfidence.categoryOnly
+                : ReceiptConfidence.none),
+      ),
+      raw: content,
+      modelFields: {
+        'amount_cents': decoded['amount_cents'],
+        'merchant': decoded['merchant'],
+        'paid_at': decoded['paid_at'],
+        'category': decoded['category'],
+        'account_hint': decoded['account_hint'],
+        'tags': decoded['tags'],
+      },
+      parsedFields: {
+        'amount_cents': amountCents,
+        'merchant': note,
+        'paid_at': paidAt?.toIso8601String(),
+        'category': category,
+        'account_hint': account,
+        'tags': tags,
+      },
+      dropped: dropped,
     );
   }
 
@@ -306,4 +388,27 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
     }
     return 'image/jpeg';
   }
+}
+
+/// 一次解析的产物：识别结果 + 模型原文 + 字段对照。
+class _ParsedGuess {
+  const _ParsedGuess({
+    required this.guess,
+    required this.raw,
+    required this.modelFields,
+    required this.parsedFields,
+    required this.dropped,
+  });
+
+  final ReceiptGuess guess;
+  final String raw;
+
+  /// 模型直接给出的值。
+  final Map<String, Object?> modelFields;
+
+  /// 本地校验后真正用上的值。
+  final Map<String, Object?> parsedFields;
+
+  /// 字段 → 被丢弃的原因；空表示模型给的值全部用上了。
+  final Map<String, Object?> dropped;
 }

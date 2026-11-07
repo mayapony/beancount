@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io' show HandshakeException;
 import 'dart:typed_data';
 
+import 'package:bean_count/data/db/app_database.dart';
+import 'package:bean_count/data/db/connection.dart';
+import 'package:bean_count/services/capture/capture_diagnostics.dart';
 import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +37,7 @@ VisionReceiptRecognizer _recognizer(
   String model = 'deepseek-flash',
   String apiKey = 'sk-test',
   Duration timeout = const Duration(seconds: 20),
+  CaptureDiagnostics? diag,
 }) =>
     VisionReceiptRecognizer(
       baseUrl: baseUrl,
@@ -41,6 +45,7 @@ VisionReceiptRecognizer _recognizer(
       apiKey: apiKey,
       client: client,
       timeout: timeout,
+      diag: diag,
     );
 
 /// 真实账单（臻汁煌 2026-10-18 18:20:49 -18.00）跑 deepseek-flash 的原始输出。
@@ -382,5 +387,61 @@ void main() {
     // 注入的 client 仍可继续使用（由调用方负责关闭）
     final response = await client.get(Uri.parse('https://example.com'));
     expect(response.statusCode, 200);
+  });
+
+  group('识别记录', () {
+    late AppDatabase db;
+    late CaptureDiagnostics diag;
+
+    setUp(() async {
+      db = AppDatabase(openInMemoryConnection());
+      diag = CaptureDiagnostics.forDatabase(db);
+      await db.select(db.appState).get();
+    });
+
+    tearDown(() async => db.close());
+
+    test('记录模型原文、字段对照与被丢弃的原因', () async {
+      final recognizer = _recognizer(
+        MockClient((_) async => _ok(
+              '{"amount_cents": 1800, "merchant": "某店", '
+              '"paid_at": "昨天", "category": "量子力学"}',
+            )),
+        diag: diag,
+      );
+
+      await recognizer.recognize(_png);
+
+      final event = (await diag.events()).single;
+      expect(event.kind, CaptureDiagKind.llmRecognize);
+      expect(event.ok, isTrue);
+      expect((event.detail['model_fields'] as Map)['category'], '量子力学');
+      expect((event.detail['parsed_fields'] as Map)['category'], isNull);
+      final dropped = event.detail['dropped'] as Map;
+      expect(dropped.keys, containsAll(['category', 'paid_at']));
+      expect(await diag.evidence.read(event.evidenceId!), contains('1800'));
+    });
+
+    test('没认出金额时记录为失败', () async {
+      final recognizer = _recognizer(
+        MockClient((_) async => _ok('{"amount_cents": null}')),
+        diag: diag,
+      );
+
+      await recognizer.recognize(_png);
+
+      final event = (await diag.events()).single;
+      expect(event.ok, isFalse);
+      expect(event.reason, 'no_amount');
+    });
+
+    test('没有诊断出口时识别照常返回', () async {
+      final recognizer = _recognizer(
+        MockClient((_) async => _ok('{"amount_cents": 1200}')),
+      );
+
+      final guess = await recognizer.recognize(_png);
+      expect(guess.amountCents, 1200);
+    });
   });
 }

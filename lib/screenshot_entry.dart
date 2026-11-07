@@ -9,6 +9,8 @@ import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
 import 'data/repositories/app_state_repository.dart';
 import 'services/capture/capture_candidate.dart';
+import 'services/capture/capture_diag_log.dart';
+import 'services/capture/capture_diagnostics.dart';
 import 'services/capture/capture_evidence.dart';
 import 'services/capture/capture_rule_generator_cloud.dart';
 import 'services/capture/capture_rule_learner.dart';
@@ -82,6 +84,10 @@ Future<Map<String, Object?>> _recognize(
     final recognizer = await systemReceiptRecognizer(
       settings: ReceiptVisionSettingsStore(state),
       keys: SecureReceiptApiKeyStore(),
+      diag: CaptureDiagnostics.forDatabase(
+        db,
+        sink: (line) async => (await openCaptureDiagLog())?.append(line),
+      ),
     );
     if (recognizer == null) {
       const message = '视觉识别未开启，可在设置里配置 API Key';
