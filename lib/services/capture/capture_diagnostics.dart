@@ -2,6 +2,7 @@ library;
 
 import 'dart:convert';
 
+import '../../data/db/app_database.dart';
 import '../../data/repositories/app_state_repository.dart';
 
 /// 一条运行记录的类别：捕获与识别链路上每一个可能「停下」的位置各有一类。
@@ -324,3 +325,80 @@ class CaptureDiagEvidenceStore {
     }
   }
 }
+
+/// 埋点门面：把事件写进环形、追加一份 JSONL，并保证永远不抛异常。
+///
+/// 业务侧只调 [record]，记录失败一律吞掉——记录不能成为采集与入账的前置依赖。
+class CaptureDiagnostics {
+  CaptureDiagnostics({
+    required this.store,
+    required this.evidence,
+    this.sink,
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
+
+  factory CaptureDiagnostics.forDatabase(AppDatabase db, {CaptureDiagSink? sink}) {
+    final state = AppStateRepository(db);
+    return CaptureDiagnostics(
+      store: CaptureDiagStore(state),
+      evidence: CaptureDiagEvidenceStore(state),
+      sink: sink,
+    );
+  }
+
+  final CaptureDiagStore store;
+  final CaptureDiagEvidenceStore evidence;
+
+  /// 文件落点：由宿主（捕获 / 截图引擎）注入，避免把 dart:io 带进共享代码。
+  final CaptureDiagSink? sink;
+
+  final DateTime Function() _clock;
+
+  Future<void> record({
+    required CaptureDiagKind kind,
+    String? packageName,
+    String? target,
+    bool ok = true,
+    String? reason,
+    Map<String, Object?> detail = const {},
+    String? evidenceId,
+  }) async {
+    try {
+      final at = _clock();
+      final stored = await store.record(CaptureDiagEvent(
+        seq: at.microsecondsSinceEpoch,
+        at: at,
+        kind: kind,
+        packageName: packageName,
+        target: target,
+        ok: ok,
+        reason: reason,
+        detail: detail,
+        evidenceId: evidenceId,
+      ));
+      await sink?.call(stored.toJson());
+    } on Object {
+      // 记录失败不影响业务
+    }
+  }
+
+  /// 存一份完整现场并返回 id；存不进去时返回 null，调用方照常继续。
+  Future<String?> saveEvidence(String text) async {
+    if (text.trim().isEmpty) return null;
+    try {
+      return await evidence.save(text, at: _clock());
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<List<CaptureDiagEvent>> events() => store.readAll();
+
+  Future<void> clear() async {
+    await store.clear();
+    await evidence.clear();
+  }
+}
+
+/// JSONL 落点：宿主实现（见 `capture_diag_log.dart`），共享代码里只认这个签名。
+typedef CaptureDiagSink = Future<void> Function(Map<String, Object?> line);
