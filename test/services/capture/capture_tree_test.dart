@@ -96,14 +96,6 @@ void main() {
   test('dumpToTree 空输入返回空树', () {
     expect(dumpToTree('').flattenedText, isEmpty);
   });
-}
-
-CaptureNode _chain(int n) {
-  CaptureNode node = const CaptureNode();
-  for (var i = 1; i < n; i++) {
-    node = CaptureNode(children: [node]);
-  }
-  return node;
   group('isTreeUnreadable', () {
     CaptureNode treeOf(List<String> lines) {
       var dump = '';
@@ -129,4 +121,12 @@ CaptureNode _chain(int n) {
       expect(isTreeUnreadable(treeOf(['实付', '12.50'])), isFalse);
     });
   });
+}
+
+CaptureNode _chain(int n) {
+  CaptureNode node = const CaptureNode();
+  for (var i = 1; i < n; i++) {
+    node = CaptureNode(children: [node]);
+  }
+  return node;
 }
