@@ -1,5 +1,9 @@
 library;
 
+import 'dart:convert';
+
+import '../../data/repositories/app_state_repository.dart';
+
 /// 一条运行记录的类别：捕获与识别链路上每一个可能「停下」的位置各有一类。
 ///
 /// `wire` 是落盘用的稳定字符串，改枚举名不会污染历史记录。
@@ -166,5 +170,67 @@ class CaptureDiagEvent {
     if (raw is int) return raw;
     if (raw is num) return raw.toInt();
     return int.tryParse(raw?.toString() ?? '');
+  }
+}
+
+/// 运行记录的本地存储：`app_state` 里按 `diag_event:` 前缀的环形，只保留最近
+/// [maxEvents] 条，超出淘汰最旧的。
+///
+/// 键名把序号左补零到 19 位，字典序即时间序；淘汰时不必解析每一条 JSON。
+class CaptureDiagStore {
+  CaptureDiagStore(
+    this._state, {
+    this.maxEvents = kMaxEvents,
+  });
+
+  final AppStateRepository _state;
+  final int maxEvents;
+
+  static const kEventPrefix = 'diag_event:';
+  static const kMaxEvents = 200;
+
+  Future<void> record(CaptureDiagEvent event) async {
+    await _state.write(_keyFor(event.seq), jsonEncode(event.toJson()));
+    await _prune(kEventPrefix, maxEvents);
+  }
+
+  /// 按时间升序读出全部事件；解不出来的行跳过，不影响其余记录。
+  Future<List<CaptureDiagEvent>> readAll() async {
+    final events = <CaptureDiagEvent>[];
+    for (final row in await _state.readStartingWith(kEventPrefix)) {
+      final event = _decode(row.value);
+      if (event != null) events.add(event);
+    }
+    events.sort((a, b) {
+      final byTime = a.at.compareTo(b.at);
+      return byTime != 0 ? byTime : a.seq.compareTo(b.seq);
+    });
+    return events;
+  }
+
+  Future<void> clear() async {
+    for (final row in await _state.readStartingWith(kEventPrefix)) {
+      await _state.removeIfPresent(row.key);
+    }
+  }
+
+  static String _keyFor(int seq) => '$kEventPrefix${seq.toString().padLeft(19, '0')}';
+
+  static CaptureDiagEvent? _decode(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      return CaptureDiagEvent.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> _prune(String prefix, int max) async {
+    final rows = await _state.readStartingWith(prefix);
+    if (rows.length <= max) return;
+    rows.sort((a, b) => a.key.compareTo(b.key));
+    for (final row in rows.take(rows.length - max)) {
+      await _state.removeIfPresent(row.key);
+    }
   }
 }
