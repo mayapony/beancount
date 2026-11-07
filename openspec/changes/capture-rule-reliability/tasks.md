@@ -8,7 +8,7 @@
   - 验证：`test/data/db_migration_test.dart` 新增「v5 建库后升级到 v6，旧账仍在、两列为空/false」
 - [x] 1.2 `EntryWriter.submit` 与仓储写入路径支持 `sourcePackage` / `needsReview`，手动记账两列保持默认
   - 验证：`test/services/entry_writer_test.dart` 断言手动记账写入后 `sourcePackage` 为空、`needsReview=false`
-- [ ] 1.3 无障碍 / 通知路径入账时写入 `CaptureCandidate.packageName`
+- [x] 1.3 无障碍 / 通知路径入账时写入 `CaptureCandidate.packageName`
   - 验证：`test/services/capture/capture_runtime_test.dart` 断言自动入账行的 `sourcePackage` 等于候选包名
 - [ ] 1.4 截图自动入账补 `source: EntrySource.auto`，并在写账前解析当前应用包名写入 `sourcePackage`
   - 验证：单测断言截图入账 `source == auto` 且出现在 `recentAutoEntries()` 结果里

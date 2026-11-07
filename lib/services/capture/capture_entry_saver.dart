@@ -62,6 +62,7 @@ class CaptureEntrySaver {
       accountId: account?.id,
       note: (candidate.note ?? '').trim(),
       source: EntrySource.auto,
+      sourcePackage: candidate.packageName,
     );
     return CaptureSaveResult(
       inserted: result.inserted,
