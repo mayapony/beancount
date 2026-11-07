@@ -29,13 +29,13 @@
 
 ## 3. 捕获链路埋点（Dart）
 
-- [ ] 3.1 `CaptureRuntime._match` 返回 null 时记 `no_rule` 或 `pending_rule`；`no_rule` 的 detail 带本次页面指纹与规则库中每条规则的包名、目标、档位、指纹
+- [x] 3.1 `CaptureRuntime._match` 返回 null 时记 `no_rule` 或 `pending_rule`；`no_rule` 的 detail 带本次页面指纹与规则库中每条规则的包名、目标、档位、指纹
   - 验证：扩展 `test/services/capture/capture_runtime_test.dart`，断言空规则库时产生 `no_rule` 且 detail 含 `fingerprint`
-- [ ] 3.2 `CaptureRuleExecutor` 提取为空时记 `no_extraction`，detail 带规则标识、抽取策略、是否命中排除词、页面文本前 200 字
+- [x] 3.2 `CaptureRuleExecutor` 提取为空时记 `no_extraction`，detail 带规则标识、抽取策略、是否命中排除词、页面文本前 200 字
   - 验证：单测覆盖「排除词命中」与「正则不中」两条路径各产生一条事件
-- [ ] 3.3 入账成功记 `entry_written`（金额、方向、来源、分类、账户），写库异常记 `write_failed`
+- [x] 3.3 入账成功记 `entry_written`（金额、方向、来源、分类、账户），写库异常记 `write_failed`
   - 验证：单测断言成功路径 `inserted=true` 时事件金额与实际写入一致
-- [ ] 3.4 采集开关关闭时记 `gate_closed`（原因 `capture_disabled`），`captureEntry` 通道接线上保证同一事件不重复记录
+- [x] 3.4 采集开关关闭时记 `gate_closed`（原因 `capture_disabled`），`captureEntry` 通道接线上保证同一事件不重复记录
   - 验证：单测关闭 `capture_enabled` 后调用 `onTreeCaptured`，只产生 1 条 `gate_closed`
 
 ## 4. 模型调用埋点
