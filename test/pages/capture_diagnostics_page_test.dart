@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/pages/capture_diagnostics_page.dart';
+import 'package:bean_count/services/capture/capture_candidate.dart';
 import 'package:bean_count/services/capture/capture_channel.dart';
 import 'package:bean_count/services/capture/capture_diagnostics.dart';
 import 'package:bean_count/services/capture/capture_rule.dart';
@@ -12,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 假的原生通道：把「服务在跑 / 原生环形」这两件事握在测试手里。
 class _FakePlatform extends CapturePlatform {
-  _FakePlatform({this.service, this.nativeDiag});
+  _FakePlatform({this.service});
 
   Map<String, Object?>? service;
   String? nativeDiag;
@@ -79,7 +82,11 @@ void main() {
 
   tearDown(() async => db.close());
 
-  Widget harness({Future<DateTime?> Function()? lastAutoEntryAt}) => MaterialApp(
+  Widget harness({
+    Future<DateTime?> Function()? lastAutoEntryAt,
+    DiagReportSaver? saveReport,
+  }) =>
+      MaterialApp(
         theme: buildBeanTheme(Brightness.light),
         home: CaptureDiagnosticsPage(
           settings: settings,
@@ -87,6 +94,7 @@ void main() {
           rules: rules,
           diag: diag,
           lastAutoEntryAt: lastAutoEntryAt,
+          saveReport: saveReport,
         ),
       );
 
@@ -194,5 +202,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('未运行'), findsOneWidget);
+  });
+  testWidgets('导出把脱敏报告交给保存回调', (tester) async {
+    String? saved;
+    String? savedName;
+    await settings.setEnabled(true);
+    await rules.save([
+      CaptureRule(
+        id: 'r1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.notification,
+        direction: CaptureDirection.expense,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'支付(\d+)',
+        tier: CaptureRuleTier.grey,
+      ),
+    ]);
+    await diag.store.record(CaptureDiagEvent(
+      seq: 1,
+      at: DateTime(2026, 11, 7, 18, 30),
+      kind: CaptureDiagKind.noRule,
+      packageName: 'com.tencent.mm',
+      ok: false,
+      reason: 'no_rule',
+      detail: const {'fingerprint': 'a1b2c3d4'},
+    ));
+
+    await tester.pumpWidget(harness(
+      saveReport: (name, bytes) async {
+        savedName = name;
+        saved = utf8.decode(bytes);
+        return '/tmp/$name';
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('capture-diag-export')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+
+    expect(savedName, startsWith('jindou-diag-'));
+    expect(saved, contains('金豆 · 自动记账诊断报告'));
+    expect(saved, contains('自动记账: 已开启'));
+    expect(saved, contains('a1b2c3d4'));
+    expect(find.text('已保存并复制到剪贴板'), findsOneWidget);
   });
 }

@@ -1,13 +1,39 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/capture/capture_channel.dart';
+import '../services/capture/capture_diag_export.dart';
+import '../services/capture/capture_diag_export_file.dart';
 import '../services/capture/capture_diagnostics.dart';
 import '../services/capture/capture_rule.dart';
 import '../services/capture/capture_settings.dart';
 import '../theme/tokens.dart';
 import '../widgets/common.dart';
+
+/// 把导出的报告交给系统保存对话框；返回保存位置，null 表示用户取消。
+typedef DiagReportSaver = Future<String?> Function(
+  String fileName,
+  Uint8List bytes,
+);
+
+/// 默认实现：`FilePicker.saveFile` 是 Android 11+ 唯一能被用户看到的写文件路径。
+Future<String?> saveDiagReportWithFilePicker(
+  String fileName,
+  Uint8List bytes,
+) async {
+  final path = await FilePicker.platform.saveFile(
+    dialogTitle: '保存诊断报告',
+    fileName: fileName,
+    bytes: bytes,
+    type: FileType.custom,
+    allowedExtensions: ['txt'],
+  );
+  return path;
+}
 
 /// 「诊断记录」：把自动记账与截图识别链路的每一次判断摊开给用户看。
 ///
@@ -22,6 +48,7 @@ class CaptureDiagnosticsPage extends StatefulWidget {
     required this.rules,
     required this.diag,
     this.lastAutoEntryAt,
+    this.saveReport,
   });
 
   final CaptureSettingsStore settings;
@@ -31,6 +58,9 @@ class CaptureDiagnosticsPage extends StatefulWidget {
 
   /// 最近一笔自动入账的时间；为空表示这次不显示该行。
   final Future<DateTime?> Function()? lastAutoEntryAt;
+
+  /// 把报告交给系统保存对话框；测试注入用，为空时走 file_picker。
+  final DiagReportSaver? saveReport;
 
   @override
   State<CaptureDiagnosticsPage> createState() => _CaptureDiagnosticsPageState();
@@ -122,6 +152,54 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
     await _load();
   }
 
+  /// 导出：先落一份文件（方便 adb pull），再走系统保存，并复制到剪贴板。
+  Future<void> _export() async {
+    final evidence = <String, String>{};
+    for (final event in _events) {
+      final id = event.evidenceId;
+      if (id == null || evidence.containsKey(id)) continue;
+      final text = await widget.diag.evidence.read(id);
+      if (text != null) evidence[id] = text;
+    }
+    final report = buildCaptureDiagExport(
+      settings: _settings,
+      rules: _rules,
+      events: _events.reversed.toList(),
+      evidence: evidence,
+      serviceState: _service,
+    );
+    final now = DateTime.now();
+    final stamp = '${now.year}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}-'
+        '${now.hour.toString().padLeft(2, '0')}'
+        '${now.minute.toString().padLeft(2, '0')}';
+    final name = 'jindou-diag-$stamp.txt';
+    final bytes = Uint8List.fromList(utf8.encode(report));
+
+    // 侧文件只做「adb 能直接取走」的备份，走后台写：它慢或失败都不该拖住导出。
+    unawaited(writeCaptureDiagExport(report));
+    String? saved;
+    try {
+      saved = await (widget.saveReport ?? saveDiagReportWithFilePicker)(
+          name, bytes);
+    } on Object {
+      saved = null;
+    }
+    // 剪贴板同样是旁路：不可用不影响导出，也不该拖住提示。
+    unawaited(
+      Clipboard.setData(ClipboardData(text: report)).catchError((Object _) {}),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          saved != null ? '已保存并复制到剪贴板' : '已复制到剪贴板',
+        ),
+      ),
+    );
+  }
+
   int _countTier(CaptureRuleTier tier) =>
       _rules.where((rule) => rule.tier == tier).length;
 
@@ -144,6 +222,12 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
         ),
         centerTitle: true,
         actions: [
+          IconButton(
+            key: const Key('capture-diag-export'),
+            tooltip: '导出诊断报告',
+            icon: const Icon(Icons.ios_share_rounded, size: 20),
+            onPressed: _loading ? null : _export,
+          ),
           IconButton(
             key: const Key('capture-diag-clear'),
             tooltip: '清空记录',

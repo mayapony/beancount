@@ -42,6 +42,15 @@ class _FakePlatform implements CapturePlatform {
   Future<bool> takeOpenAutoEntries() async => false;
 
   @override
+  Future<String?> readNativeDiag() async => null;
+
+  @override
+  Future<Map<String, Object?>?> nativeServiceState() async => null;
+
+  @override
+  Future<void> clearNativeDiag() async {}
+
+  @override
   void setNativeListeners({Future<void> Function()? onOpenAutoEntries}) {}
 }
 
@@ -76,8 +85,8 @@ void main() {
     );
   }
 
-  SwitchListTile tile(WidgetTester tester) =>
-      tester.widget<SwitchListTile>(find.byKey(const Key('capture-auto-entry-switch')));
+  SwitchListTile tile(WidgetTester tester) => tester.widget<SwitchListTile>(
+      find.byKey(const Key('capture-auto-entry-switch')));
 
   testWidgets('默认关闭，不显示授权引导与列表入口', (tester) async {
     await tester.pumpWidget(harness());
