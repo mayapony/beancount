@@ -40,7 +40,7 @@
 
 ## 4. 模型调用埋点
 
-- [ ] 4.1 `VisionReceiptRecognizer` 记 `llm_recognize`：模型原文、解析后字段、被本地丢弃的字段及原因（金额越界、分类/账户不在词表、时间非法）、耗时
+- [x] 4.1 `VisionReceiptRecognizer` 记 `llm_recognize`：模型原文、解析后字段、被本地丢弃的字段及原因（金额越界、分类/账户不在词表、时间非法）、耗时
   - 验证：扩展 `test/services/ocr/receipt_recognizer_vision_test.dart`，用假响应断言丢弃原因逐条出现
 - [ ] 4.2 `CloudCaptureRuleGenerator` 记 `llm_rule_gen`：模型原文、解析出的规则字段；`CaptureRuleLearner` 在验证后补记 `verified` 与最终档位
   - 验证：扩展 `test/services/capture/capture_rule_generator_test.dart` 与 `capture_rule_learner_test.dart`
