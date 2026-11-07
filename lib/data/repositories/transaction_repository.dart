@@ -26,6 +26,8 @@ class NewTransaction {
     this.currency = 'CNY',
     this.originalAmountCents,
     this.ratePpm,
+    this.sourcePackage,
+    this.needsReview = false,
   });
 
   final EntryType type;
@@ -50,6 +52,12 @@ class NewTransaction {
   final String currency;
   final int? originalAmountCents;
   final int? ratePpm;
+
+  /// 自动入账时的来源应用包名；手动记账为空。
+  final String? sourcePackage;
+
+  /// 账户没定下来、等用户在审计列表里选一次。
+  final bool needsReview;
 
   bool get isForeign => !isBaseCurrency(currency);
 
@@ -298,6 +306,8 @@ class TransactionRepository {
               happenedAt: input.happenedAt,
               dedupeKey: dedupeKey,
               source: Value(input.source),
+              sourcePackage: Value(input.sourcePackage),
+              needsReview: Value(input.needsReview ? true : null),
             ),
           );
 

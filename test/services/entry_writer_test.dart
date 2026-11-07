@@ -132,4 +132,36 @@ void main() {
     expect(extensionOf('a.'), 'jpg');
     expect(extensionOf('a.verylongext'), 'jpg');
   });
+  test('手动记账不带来源应用，也不需要人工确认', () async {
+    await writer.submit(
+      type: EntryType.expense,
+      amountCents: 1200,
+      happenedAt: DateTime(2026, 11, 7, 12),
+      categoryId: await foodId(),
+      note: '午饭',
+    );
+
+    final row = (await db.select(db.transactions).get()).single;
+    expect(row.source, EntrySource.manual);
+    expect(row.sourcePackage, isNull);
+    expect(row.needsReview, isNull);
+  });
+
+  test('自动入账可带来源应用与待确认标记', () async {
+    await writer.submit(
+      type: EntryType.expense,
+      amountCents: 6900,
+      happenedAt: DateTime(2026, 11, 1, 23, 44),
+      categoryId: await foodId(),
+      note: '网易严选',
+      source: EntrySource.auto,
+      sourcePackage: 'com.jingdong.app.mall',
+      needsReview: true,
+    );
+
+    final row = (await db.select(db.transactions).get()).single;
+    expect(row.source, EntrySource.auto);
+    expect(row.sourcePackage, 'com.jingdong.app.mall');
+    expect(row.needsReview, isTrue);
+  });
 }
