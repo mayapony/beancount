@@ -65,7 +65,7 @@
 
 ## 7. 接线与验收
 
-- [ ] 7.1 设置 → 自动记账区块新增「诊断记录」入口并接到诊断页；入口复用 `isSupported` 门，iOS / Web 不渲染
+- [x] 7.1 设置 → 自动记账区块新增「诊断记录」入口并接到诊断页；入口复用 `isSupported` 门，iOS / Web 不渲染
   - 验证：扩展 `test/pages/settings_page_test.dart`，断言不支持平台无该入口、Android 支持时点按可打开
 - [ ] 7.2 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
   - 验证：四条命令输出贴进提交说明
