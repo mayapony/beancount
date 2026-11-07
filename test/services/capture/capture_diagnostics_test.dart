@@ -92,6 +92,7 @@ void main() {
   });
 
   group('CaptureDiagStore', storeTests);
+  group('CaptureDiagEvidenceStore', evidenceTests);
 }
 
 void storeTests() {
@@ -151,5 +152,59 @@ void storeTests() {
     final events = await store.readAll();
     expect(events, hasLength(1));
     expect(events.single.kind, CaptureDiagKind.treeCaptured);
+  });
+}
+
+void evidenceTests() {
+  late AppDatabase db;
+  late CaptureDiagEvidenceStore store;
+
+  setUp(() async {
+    db = AppDatabase(openInMemoryConnection());
+    store = CaptureDiagEvidenceStore(AppStateRepository(db));
+    await db.select(db.appState).get();
+  });
+
+  tearDown(() async => db.close());
+
+  test('存进去能原样读回', () async {
+    final id = await store.save('PageNode|微信支付\n  ¥12.00', at: DateTime(2026, 11, 7, 10));
+    expect(await store.read(id), contains('微信支付'));
+  });
+
+  test('超过上限淘汰最旧的证据', () async {
+    final ids = <String>[];
+    for (var i = 0; i < 12; i++) {
+      ids.add(await store.save('dump-$i', at: DateTime(2026, 11, 7, 10, i)));
+    }
+
+    expect(await store.read(ids[0]), isNull);
+    expect(await store.read(ids[1]), isNull);
+    expect(await store.read(ids[2]), 'dump-2');
+    expect(await store.read(ids[11]), 'dump-11');
+  });
+
+  test('被淘汰证据不影响引用它的事件', () async {
+    final diag = CaptureDiagStore(AppStateRepository(db));
+    final evidence = CaptureDiagEvidenceStore(AppStateRepository(db), maxEvidence: 1);
+    final stale = await evidence.save('old', at: DateTime(2026, 11, 7, 10));
+    await evidence.save('new', at: DateTime(2026, 11, 7, 10, 1));
+
+    await diag.record(CaptureDiagEvent(
+      seq: 1,
+      at: DateTime(2026, 11, 7, 10, 2),
+      kind: CaptureDiagKind.treeCaptured,
+      evidenceId: stale,
+    ));
+
+    final events = await diag.readAll();
+    expect(events.single.evidenceId, stale);
+    expect(await evidence.read(stale), isNull);
+  });
+
+  test('clear 清空证据', () async {
+    await store.save('dump', at: DateTime(2026, 11, 7, 10));
+    await store.clear();
+    expect(await store.read('ev-${DateTime(2026, 11, 7, 10).toUtc().microsecondsSinceEpoch}'), isNull);
   });
 }

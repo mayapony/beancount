@@ -7,9 +7,9 @@
 
 - [x] 1.1 新建 `lib/services/capture/capture_diagnostics.dart`：`CaptureDiagKind` 枚举（13 种）+ `CaptureDiagEvent`（`seq` / `at` / `kind` / `package` / `target` / `outcome` / `reason` / `detail` / `evidenceId`）与 `toJson`/`fromJson`
   - 验证：新增 `test/services/capture/capture_diagnostics_test.dart`，覆盖 round-trip、未知 kind 与缺字段不抛异常
-- [ ] 1.2 `CaptureDiagStore`：`app_state` 前缀 `diag_event:`，环形保留 200 条，按时间升序读出；`clear()` 清空
+- [x] 1.2 `CaptureDiagStore`：`app_state` 前缀 `diag_event:`，环形保留 200 条，按时间升序读出；`clear()` 清空
   - 验证：单测写入 250 条后 `readAll()` 长度为 200，且最旧的 50 条被淘汰
-- [ ] 1.3 证据环形：`diag_evidence:` 前缀单独保留最近 10 条（页面树文本 / 模型原文），事件用 `evidenceId` 引用
+- [x] 1.3 证据环形：`diag_evidence:` 前缀单独保留最近 10 条（页面树文本 / 模型原文），事件用 `evidenceId` 引用
   - 验证：单测写入 12 条证据后只剩最新 10 条，且被淘汰证据对应的事件仍可读（`evidenceId` 悬空时页面显示「证据已淘汰」）
 - [ ] 1.4 同类合并：同 `kind` + 同 `package` 在 1 秒内重复发生时合并为一条并累加 `count`
   - 验证：单测模拟 5 条 200ms 间隔的 `tree_captured`，只产生 1 条事件且 `count == 5`

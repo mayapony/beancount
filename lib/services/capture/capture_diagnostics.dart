@@ -234,3 +234,60 @@ class CaptureDiagStore {
     }
   }
 }
+
+/// 完整现场（页面树文本 / 模型原文）的环形：只保留最近 [kMaxEvidence] 条。
+///
+/// 事件里用 [CaptureDiagEvent.evidenceId] 引用它；被淘汰后事件仍在，重读时为
+/// null，界面显示「证据已淘汰」，不会让整条记录失败。
+class CaptureDiagEvidenceStore {
+  CaptureDiagEvidenceStore(this._state, {this.maxEvidence = kMaxEvidence});
+
+  final AppStateRepository _state;
+  final int maxEvidence;
+
+  static const kEvidencePrefix = 'diag_evidence:';
+  static const kMaxEvidence = 10;
+
+  /// 存入一份现场并返回它的 id；超出容量时淘汰最旧的。
+  Future<String> save(String text, {required DateTime at}) async {
+    final id = 'ev-${at.toUtc().microsecondsSinceEpoch}';
+    await _state.write(
+      '$kEvidencePrefix$id',
+      jsonEncode({
+        'id': id,
+        'at': at.toUtc().toIso8601String(),
+        'text': text,
+      }),
+    );
+    await _prune();
+    return id;
+  }
+
+  /// 读一份现场；已被淘汰时返回 null。
+  Future<String?> read(String id) async {
+    final raw = await _state.read('$kEvidencePrefix$id');
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return decoded['text']?.toString();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> clear() async {
+    for (final row in await _state.readStartingWith(kEvidencePrefix)) {
+      await _state.removeIfPresent(row.key);
+    }
+  }
+
+  Future<void> _prune() async {
+    final rows = await _state.readStartingWith(kEvidencePrefix);
+    if (rows.length <= maxEvidence) return;
+    rows.sort((a, b) => a.key.compareTo(b.key));
+    for (final row in rows.take(rows.length - maxEvidence)) {
+      await _state.removeIfPresent(row.key);
+    }
+  }
+}
