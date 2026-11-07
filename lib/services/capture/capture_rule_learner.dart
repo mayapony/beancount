@@ -2,6 +2,7 @@ library;
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/app_state_repository.dart';
+import 'capture_diagnostics.dart';
 import 'capture_evidence.dart';
 import 'capture_rule.dart';
 import 'capture_rule_generator.dart';
@@ -20,12 +21,17 @@ class CaptureRuleLearner {
     required this.db,
     required this.generator,
     required this.isConfigured,
+    this.diag,
     void Function(String)? log,
   }) : _log = log;
 
   final AppDatabase db;
   final CaptureRuleGenerator generator;
   final Future<bool> Function() isConfigured;
+
+  /// 运行记录出口；为 null 时只跳过记录。
+  final CaptureDiagnostics? diag;
+
   final void Function(String)? _log;
 
   CaptureRuleStore get _rules => CaptureRuleStore(AppStateRepository(db));
@@ -73,6 +79,7 @@ class CaptureRuleLearner {
     if (target == RuleTarget.accessibility &&
         dumpToTree(source).flattenedText.trim().isEmpty) {
       _log?.call('learner: skip accessibility (empty tree) pkg=${evidence.packageName}');
+      await _skip(evidence, target: target, reason: 'empty_tree');
       return;
     }
 
@@ -81,6 +88,7 @@ class CaptureRuleLearner {
         fingerprint != null &&
         await _surfaces.isMarked(evidence.packageName, fingerprint)) {
       _log?.call('learner: skip (screenshot-first) pkg=${evidence.packageName}');
+      await _skip(evidence, target: target, reason: 'screenshot_first');
       return;
     }
 
@@ -102,6 +110,7 @@ class CaptureRuleLearner {
     ));
     if (rule == null) {
       _log?.call('learner: unconfigured pkg=${evidence.packageName} target=${target.name}');
+      await _skip(evidence, target: target, reason: 'unconfigured');
       return;
     }
 
@@ -122,7 +131,38 @@ class CaptureRuleLearner {
       'pattern=${rule.amountPattern} truth=${evidence.amountCents} '
       'source=[${source.replaceAll('\n', ' | ').replaceAll(RegExp(r'\s+'), ' ')}]',
     );
-    await _upsert(verified ? RuleTrustLadder.activateGrey(rule) : rule);
+    final applied = verified ? RuleTrustLadder.activateGrey(rule) : rule;
+    await diag?.record(
+      kind: CaptureDiagKind.llmRuleGen,
+      packageName: evidence.packageName,
+      target: target.name,
+      ok: verified,
+      reason: verified ? 'verified' : 'rejected',
+      detail: {
+        'rule': rule.id,
+        'verified': verified,
+        'tier': applied.tier.name,
+        'fingerprint': fingerprint,
+        'truth_cents': evidence.amountCents,
+      },
+    );
+    await _upsert(applied);
+  }
+
+  /// 学习被跳过时记下原因：跳过不等于没发生，用户需要知道这一笔为什么学不到规则。
+  Future<void> _skip(
+    CaptureEvidence evidence, {
+    required RuleTarget target,
+    required String reason,
+  }) async {
+    await diag?.record(
+      kind: CaptureDiagKind.learnSkipped,
+      packageName: evidence.packageName,
+      target: target.name,
+      ok: false,
+      reason: reason,
+      detail: {'evidence': evidence.id},
+    );
   }
 
   /// 同 surface（包 + 目标 + 指纹）的旧规则替换，避免同页反复生成堆积。

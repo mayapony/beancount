@@ -193,6 +193,10 @@ Future<void> _learnFromScreenshot(
   required int amountCents,
 }) async {
   final db = AppDatabase(openDatabaseConnection());
+  final diag = CaptureDiagnostics.forDatabase(
+    db,
+    sink: (line) async => (await openCaptureDiagLog())?.append(line),
+  );
   try {
     // 截图后 MIUI 会弹截图工具栏（系统悬浮窗），无障碍现读时可能还挡在前面，
     // 所以带重试：直到读到「非系统窗口」的树为止。
@@ -240,9 +244,17 @@ Future<void> _learnFromScreenshot(
     final generator = await systemCaptureRuleGenerator(
       settings: ReceiptVisionSettingsStore(state),
       keys: SecureReceiptApiKeyStore(),
+      diag: diag,
     );
     if (generator == null) {
       await _log(channel, 'learn: generator null (vision not configured)');
+      await diag.record(
+        kind: CaptureDiagKind.learnSkipped,
+        packageName: package,
+        ok: false,
+        reason: 'unconfigured',
+        detail: {'evidence_cents': amountCents},
+      );
       return;
     }
     try {
@@ -250,6 +262,7 @@ Future<void> _learnFromScreenshot(
         db: db,
         generator: generator,
         isConfigured: () async => true,
+        diag: diag,
         log: (message) => _log(channel, message),
       );
       await learner.learnAll();

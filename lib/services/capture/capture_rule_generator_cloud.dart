@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../ocr/receipt_vision_settings.dart';
 import 'capture_candidate.dart';
+import 'capture_diagnostics.dart';
 import 'capture_rule.dart';
 import 'capture_rule_generator.dart';
 
@@ -31,6 +32,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     required String apiKey,
     http.Client? client,
     this.timeout = const Duration(seconds: 20),
+    this.diag,
   })  : _baseUrl = ReceiptVisionSettings.normalizeBaseUrl(baseUrl),
         _model = ReceiptVisionSettings.normalizeModel(model),
         _apiKey = apiKey.trim(),
@@ -43,6 +45,9 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
   final http.Client _client;
   final bool _ownsClient;
   final Duration timeout;
+
+  /// 运行记录出口；为 null 时只跳过记录，不影响生成。
+  final CaptureDiagnostics? diag;
 
   static final String prompt = [
     '根据脱敏后的页面内容（控件树快照或通知文本）与真值金额，输出一个 JSON 对象，描述怎么从这页提取金额。',
@@ -60,9 +65,8 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
       throw const RuleGenerationException('还没配置 API Key');
     }
 
-    final sourceLabel = request.target == RuleTarget.notification
-        ? '脱敏通知文本'
-        : '脱敏树快照';
+    final sourceLabel =
+        request.target == RuleTarget.notification ? '脱敏通知文本' : '脱敏树快照';
     final body = jsonEncode({
       'model': _model,
       'stream': false,
@@ -76,7 +80,10 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
           'content': [
             {'type': 'text', 'text': prompt},
             {'type': 'text', 'text': '真值金额（分）：${request.amountCents}'},
-            {'type': 'text', 'text': '$sourceLabel：\n${request.desensitizedTree}'},
+            {
+              'type': 'text',
+              'text': '$sourceLabel：\n${request.desensitizedTree}'
+            },
           ],
         },
       ],
@@ -86,7 +93,40 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     if (response.statusCode != 200) {
       throw RuleGenerationException(_messageForStatus(response.statusCode));
     }
-    return _parseRule(response.bodyBytes, request);
+    final parsed = _parseRule(response.bodyBytes, request);
+    await _record(parsed, request);
+    return parsed.rule;
+  }
+
+  /// 记下模型原文与实际入库的规则内容：规则为什么长这样，事后要能复盘。
+  Future<void> _record(
+    ({CaptureRule rule, String content}) parsed,
+    CaptureRuleGenerationRequest request,
+  ) async {
+    final recorder = diag;
+    if (recorder == null) return;
+    final evidenceId = await recorder.saveEvidence(parsed.content);
+    final rule = parsed.rule;
+    await recorder.record(
+      kind: CaptureDiagKind.llmRuleGen,
+      packageName: request.packageName,
+      target: request.target.name,
+      ok: true,
+      reason: 'generated',
+      evidenceId: evidenceId,
+      detail: {
+        'rule': rule.id,
+        'model': _model,
+        'fingerprint': rule.surfaceFingerprint,
+        'strategy': rule.amountStrategy.name,
+        'pattern': rule.amountPattern,
+        'label': rule.adjacentLabel,
+        'direction': rule.direction.name,
+        'exclude_keywords': rule.excludeKeywords,
+        'raw_length': parsed.content.length,
+        'truth_cents': request.amountCents,
+      },
+    );
   }
 
   @override
@@ -116,7 +156,7 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     }
   }
 
-  CaptureRule _parseRule(
+  ({CaptureRule rule, String content}) _parseRule(
     Uint8List bodyBytes,
     CaptureRuleGenerationRequest request,
   ) {
@@ -128,21 +168,24 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
     final strategy = _strategy(decoded['amount_strategy']);
     final direction = _direction(decoded['direction']);
 
-    return CaptureRule(
-      id: 'rule-${DateTime.now().microsecondsSinceEpoch}',
-      packageName: request.packageName,
-      target: request.target,
-      surfaceFingerprint: request.surfaceFingerprint,
-      direction: direction,
-      amountStrategy: strategy,
-      amountPattern: _text(decoded['amount_pattern']),
-      adjacentLabel: _text(decoded['adjacent_label']),
-      excludeKeywords: _strings(decoded['exclude_keywords']),
-      version: 1,
-      tier: CaptureRuleTier.pending,
-      confirmations: 0,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
+    return (
+      rule: CaptureRule(
+        id: 'rule-${DateTime.now().microsecondsSinceEpoch}',
+        packageName: request.packageName,
+        target: request.target,
+        surfaceFingerprint: request.surfaceFingerprint,
+        direction: direction,
+        amountStrategy: strategy,
+        amountPattern: _text(decoded['amount_pattern']),
+        adjacentLabel: _text(decoded['adjacent_label']),
+        excludeKeywords: _strings(decoded['exclude_keywords']),
+        version: 1,
+        tier: CaptureRuleTier.pending,
+        confirmations: 0,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+      content: content,
     );
   }
 
@@ -234,6 +277,7 @@ Future<CaptureRuleGenerator?> systemCaptureRuleGenerator({
   required ReceiptVisionSettingsStore settings,
   required ReceiptApiKeyStore keys,
   http.Client? client,
+  CaptureDiagnostics? diag,
 }) async {
   if (kIsWeb) return null;
 
@@ -248,5 +292,6 @@ Future<CaptureRuleGenerator?> systemCaptureRuleGenerator({
     model: config.normalizedModel,
     apiKey: apiKey,
     client: client,
+    diag: diag,
   );
 }

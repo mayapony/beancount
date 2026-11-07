@@ -2,6 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/services/capture/capture_candidate.dart';
+import 'package:bean_count/services/capture/capture_diagnostics.dart';
 import 'package:bean_count/services/capture/capture_evidence.dart';
 import 'package:bean_count/services/capture/capture_rule.dart';
 import 'package:bean_count/services/capture/capture_rule_generator.dart';
@@ -209,5 +210,71 @@ void main() {
     expect(loaded.map((r) => r.target).toSet(),
         {RuleTarget.accessibility, RuleTarget.notification});
     expect(generator.calls, 2);
+  });
+  group('学习记录', () {
+    late CaptureDiagnostics diag;
+
+    setUp(() {
+      diag = CaptureDiagnostics.forDatabase(db);
+    });
+
+    test('验证通过记下 verified 与最终档位', () async {
+      await seedEvidence();
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: _FakeGenerator(),
+        isConfigured: () async => true,
+        diag: diag,
+      ).learnAll();
+
+      final event = (await diag.events())
+          .firstWhere((e) => e.reason == 'verified');
+      expect(event.kind, CaptureDiagKind.llmRuleGen);
+      expect(event.ok, isTrue);
+      expect(event.detail['tier'], 'grey');
+      expect(event.detail['truth_cents'], 1250);
+    });
+
+    test('验证不过记下 rejected', () async {
+      await seedEvidence();
+      final generator = _FakeGenerator()..pattern = r'不存在的模式(\d+)';
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: generator,
+        isConfigured: () async => true,
+        diag: diag,
+      ).learnAll();
+
+      final event = (await diag.events())
+          .firstWhere((e) => e.reason == 'rejected');
+      expect(event.ok, isFalse);
+      expect(event.detail['tier'], 'pending');
+    });
+
+    test('树读不出时记下跳过原因', () async {
+      await evidence.add(CaptureEvidence(
+        id: 'evt-empty',
+        packageName: 'com.tencent.mm',
+        dump: 'android.widget.FrameLayout',
+        amountCents: 1250,
+        direction: CaptureDirection.expense,
+        surfaceFingerprint: 'empty',
+        createdAt: DateTime(2026, 10, 18, 12),
+      ));
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: _FakeGenerator(),
+        isConfigured: () async => true,
+        diag: diag,
+      ).learnAll();
+
+      final event = (await diag.events()).firstWhere(
+        (e) => e.kind == CaptureDiagKind.learnSkipped,
+      );
+      expect(event.reason, 'empty_tree');
+    });
   });
 }
