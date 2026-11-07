@@ -84,6 +84,17 @@ class CaptureRuntime {
     final tree = dumpToTree(dump);
     final fingerprint = surfaceFingerprintOf(tree);
     _log?.call('tree pkg=$packageName fp=$fingerprint nodes=${tree.totalNodeCount}');
+    // 抓到一帧就留一条：否则「服务活着但一帧都没读到」和「根本没触发」区分不开。
+    await diag?.record(
+      kind: CaptureDiagKind.treeCaptured,
+      packageName: packageName,
+      target: RuleTarget.accessibility.name,
+      detail: {
+        'fingerprint': fingerprint,
+        'nodes': tree.totalNodeCount,
+        'text_length': tree.flattenedText.length,
+      },
+    );
     final match = await _match(
       packageName: packageName,
       target: RuleTarget.accessibility,

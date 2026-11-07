@@ -231,7 +231,11 @@ void main() {
     await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
 
     final events = await diag.events();
-    final event = events.single;
+    expect(
+      events.where((e) => e.kind == CaptureDiagKind.treeCaptured),
+      hasLength(1),
+    );
+    final event = events.firstWhere((e) => e.kind == CaptureDiagKind.noRule);
     expect(event.kind, CaptureDiagKind.noRule);
     expect(event.reason, 'no_rule');
     expect(event.detail['fingerprint'], fingerprint);
@@ -257,7 +261,9 @@ void main() {
     final r = runtime(withDiag: diag);
     await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
 
-    final rules0 = (await diag.events()).single.detail['rules'] as List;
+    final rules0 = (await diag.events())
+        .firstWhere((e) => e.kind == CaptureDiagKind.noRule)
+        .detail['rules'] as List;
     expect(rules0.single, containsPair('fingerprint', 'deadbeef'));
     expect(rules0.single, containsPair('tier', 'grey'));
   });
