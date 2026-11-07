@@ -10,6 +10,22 @@ import '../../data/repositories/transaction_repository.dart';
 import '../entry/entry_writer.dart';
 import 'capture_candidate.dart';
 
+/// 一次自动入账的结果：除了是否新增，还带上最终落到的分类与账户，供运行记录
+/// 直接显示「这笔记到哪了」。
+class CaptureSaveResult {
+  const CaptureSaveResult({
+    required this.inserted,
+    required this.transactionId,
+    required this.categoryName,
+    required this.accountName,
+  });
+
+  final bool inserted;
+  final String transactionId;
+  final String categoryName;
+  final String? accountName;
+}
+
 /// 把一条捕获候选落成交易。
 ///
 /// 候选只有金额 + 方向 + 备注，没有分类 / 账户，这里按方向兜底：
@@ -22,7 +38,7 @@ class CaptureEntrySaver {
   final AppDatabase db;
   final AttachmentRepository _attachments;
 
-  Future<CreateResult> save(CaptureCandidate candidate, {required DateTime now}) async {
+  Future<CaptureSaveResult> save(CaptureCandidate candidate, {required DateTime now}) async {
     final amount = candidate.amountCents;
     if (amount == null || amount <= 0) {
       throw StateError('没有可用的金额');
@@ -38,7 +54,7 @@ class CaptureEntrySaver {
       transactions: TransactionRepository(db, attachments: _attachments),
       attachments: _attachments,
     );
-    return writer.submit(
+    final result = await writer.submit(
       type: type,
       amountCents: amount,
       happenedAt: candidate.happenedAt ?? now,
@@ -46,6 +62,12 @@ class CaptureEntrySaver {
       accountId: account?.id,
       note: (candidate.note ?? '').trim(),
       source: EntrySource.auto,
+    );
+    return CaptureSaveResult(
+      inserted: result.inserted,
+      transactionId: result.transactionId,
+      categoryName: category.name,
+      accountName: account?.name,
     );
   }
 

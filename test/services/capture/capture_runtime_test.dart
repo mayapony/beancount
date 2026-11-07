@@ -3,6 +3,7 @@ import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/services/capture/capture_candidate.dart';
+import 'package:bean_count/services/capture/capture_diagnostics.dart';
 import 'package:bean_count/services/capture/capture_rule.dart';
 import 'package:bean_count/services/capture/capture_runtime.dart';
 import 'package:bean_count/services/capture/capture_settings.dart';
@@ -23,12 +24,14 @@ void main() {
   late CaptureRuleStore rules;
   late CaptureSettingsStore settings;
   late _FakeNotifier notifier;
+  late CaptureDiagnostics diag;
 
   final now = DateTime(2026, 10, 18, 19, 27, 30);
 
-  CaptureRuntime runtime() => CaptureRuntime(
+  CaptureRuntime runtime({CaptureDiagnostics? withDiag}) => CaptureRuntime(
         db: db,
         notifier: notifier,
+        diag: withDiag,
         clock: () => now,
       );
 
@@ -37,6 +40,7 @@ void main() {
     rules = CaptureRuleStore(AppStateRepository(db));
     settings = CaptureSettingsStore(AppStateRepository(db));
     notifier = _FakeNotifier();
+    diag = CaptureDiagnostics.forDatabase(db);
     await db.select(db.categories).get(); // 建库 + 种子分类
     await settings.setEnabled(true);
   });
@@ -217,5 +221,133 @@ void main() {
     final row = (await db.select(db.transactions).get()).single;
     expect(row.type, EntryType.income);
     expect(row.amountCents, 5000);
+  });
+  test('空规则库时记录「没有可用规则」并带页面指纹', () async {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|¥12.50';
+    final fingerprint = surfaceFingerprintOf(dumpToTree(dump));
+
+    final r = runtime(withDiag: diag);
+    await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
+
+    final events = await diag.events();
+    final event = events.single;
+    expect(event.kind, CaptureDiagKind.noRule);
+    expect(event.reason, 'no_rule');
+    expect(event.detail['fingerprint'], fingerprint);
+    expect(event.detail['rules'], isEmpty);
+    expect(await diag.evidence.read(event.evidenceId!), contains('¥12.50'));
+  });
+
+  test('无规则时记录规则库现有指纹，便于直接比对', () async {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|¥12.50';
+    await rules.save([
+      CaptureRule(
+        id: 'old',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.accessibility,
+        surfaceFingerprint: 'deadbeef',
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'¥(\d+(?:\.\d{1,2})?)',
+        tier: CaptureRuleTier.grey,
+      ),
+    ]);
+
+    final r = runtime(withDiag: diag);
+    await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
+
+    final rules0 = (await diag.events()).single.detail['rules'] as List;
+    expect(rules0.single, containsPair('fingerprint', 'deadbeef'));
+    expect(rules0.single, containsPair('tier', 'grey'));
+  });
+
+  test('命中待定规则时记录「规则待定」而不是「没有规则」', () async {
+    await rules.save([notificationRule(tier: CaptureRuleTier.pending)]);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '支付 ¥12.00',
+    );
+
+    final events = await diag.events();
+    expect(events.where((e) => e.kind == CaptureDiagKind.pendingRule), hasLength(1));
+    expect(events.where((e) => e.kind == CaptureDiagKind.noRule), isEmpty);
+  });
+
+  test('规则命中了但没抽出金额时记录抽取细节', () async {
+    await rules.save([
+      notificationRule(pattern: r'支付\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)'),
+    ]);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '你的红包已到账',
+    );
+
+    final event = (await diag.events())
+        .firstWhere((e) => e.kind == CaptureDiagKind.noExtraction);
+    expect(event.reason, 'no_match');
+    expect(event.detail['rule'], 'n1');
+    expect(event.detail['pattern'], contains('支付'));
+    expect(event.detail['text'], contains('红包'));
+  });
+
+  test('排除词命中单独标出原因', () async {
+    await rules.save([
+      CaptureRule(
+        id: 'x1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.notification,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'[¥￥]\s*(\d+(?:\.\d{1,2})?)',
+        excludeKeywords: const ['余额'],
+        tier: CaptureRuleTier.active,
+      ),
+    ]);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '余额变动 ¥12.00',
+    );
+
+    final event = (await diag.events())
+        .firstWhere((e) => e.kind == CaptureDiagKind.noExtraction);
+    expect(event.reason, 'excluded_keyword');
+  });
+
+  test('入账成功记录金额、方向、分类与账户', () async {
+    await rules.save([notificationRule()]);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '支付 ¥12.00',
+    );
+    await r.flush();
+
+    final event = (await diag.events())
+        .firstWhere((e) => e.kind == CaptureDiagKind.entryWritten);
+    expect(event.ok, isTrue);
+    expect(event.detail['amount_cents'], 1200);
+    expect(event.detail['direction'], 'expense');
+    expect(event.detail['category'], isNotNull);
+  });
+
+  test('开关关闭时记录前置条件未满足', () async {
+    await settings.setEnabled(false);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '支付 ¥12.00',
+    );
+
+    final event = (await diag.events()).single;
+    expect(event.kind, CaptureDiagKind.gateClosed);
+    expect(event.reason, 'capture_disabled');
   });
 }
