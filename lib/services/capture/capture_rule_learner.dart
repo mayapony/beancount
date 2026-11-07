@@ -114,6 +114,32 @@ class CaptureRuleLearner {
       return;
     }
 
+    // 锚点自检：先确认规则说清了「哪一行是金额」，再做回放验证。
+    final problem = anchorProblem(rule, source: source);
+    if (problem != null) {
+      _log?.call(
+        'learner: rule=${rule.id} unanchored problem=$problem '
+        'strategy=${rule.amountStrategy.name} label=${rule.adjacentLabel} '
+        'pattern=${rule.amountPattern}',
+      );
+      await diag?.record(
+        kind: CaptureDiagKind.llmRuleGen,
+        packageName: evidence.packageName,
+        target: target.name,
+        ok: false,
+        reason: 'unanchored',
+        detail: {
+          'rule': rule.id,
+          'problem': problem,
+          'strategy': rule.amountStrategy.name,
+          'label': rule.adjacentLabel,
+          'pattern': rule.amountPattern,
+        },
+      );
+      await _upsert(rule);
+      return;
+    }
+
     // 回放验证：正例必须解出当次真值金额。
     final sample = target == RuleTarget.accessibility
         ? RuleReplaySample(

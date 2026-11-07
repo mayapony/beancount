@@ -108,6 +108,23 @@ class CaptureRuleExecutor {
     }
   }
 
+  /// 同一条 regex 在页面上命中的不同金额集合。用于判断规则是不是「只会抓第一个
+  /// 数字」——同一页命中多个不同金额，说明它没锚定到实付。
+  Set<int> distinctRegexAmounts(String pattern, String source) {
+    final out = <int>{};
+    try {
+      for (final match in RegExp(pattern).allMatches(source)) {
+        final group = match.groupCount >= 1 ? match.group(1) : match.group(0);
+        if (group == null) continue;
+        final amount = _parseAmountString(group);
+        if (amount != null) out.add(amount);
+      }
+    } on FormatException {
+      return out;
+    }
+    return out;
+  }
+
   int? _extract(CaptureRule rule, String source, CaptureNode? tree) {
     switch (rule.amountStrategy) {
       case AmountStrategy.regex:

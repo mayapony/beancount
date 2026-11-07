@@ -15,6 +15,8 @@ class _FakeGenerator implements CaptureRuleGenerator {
   _FakeGenerator();
 
   String pattern = r'¥(\d+(?:\.\d{1,2})?)';
+  AmountStrategy strategy = AmountStrategy.regex;
+  String? label;
   int calls = 0;
 
   @override
@@ -26,8 +28,9 @@ class _FakeGenerator implements CaptureRuleGenerator {
       target: request.target,
       surfaceFingerprint: request.surfaceFingerprint,
       direction: request.direction,
-      amountStrategy: AmountStrategy.regex,
-      amountPattern: pattern,
+      amountStrategy: strategy,
+      amountPattern: strategy == AmountStrategy.regex ? pattern : null,
+      adjacentLabel: label,
       tier: CaptureRuleTier.pending,
     );
   }
@@ -275,6 +278,62 @@ void main() {
         (e) => e.kind == CaptureDiagKind.learnSkipped,
       );
       expect(event.reason, 'empty_tree');
+    });
+  });
+  group('锚点自检', () {
+    late CaptureDiagnostics diag;
+
+    setUp(() {
+      diag = CaptureDiagnostics.forDatabase(db);
+    });
+
+    test('相邻标签在页面里不存在时直接拒绝', () async {
+      await seedEvidence();
+      final generator = _FakeGenerator()
+        ..strategy = AmountStrategy.adjacentLabel
+        ..label = '实付金额';  // 页面里只有「支付成功 / ¥12.50」
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: generator,
+        isConfigured: () async => true,
+        diag: diag,
+      ).learnAll();
+
+      final event = (await diag.events())
+          .firstWhere((e) => e.reason == 'unanchored');
+      expect(event.detail['problem'], 'label_not_found');
+      expect(
+        (await rules.load()).single.tier,
+        CaptureRuleTier.pending,
+      );
+    });
+
+    test('regex 同页命中多个不同金额时拒绝', () async {
+      await evidence.add(CaptureEvidence(
+        id: 'evt-two-prices',
+        packageName: 'com.taobao.taobao',
+        dump: 'android.widget.TextView|商品总价 ¥39.9\n'
+            'android.widget.TextView|实付款 ¥36.9',
+        amountCents: 3690,
+        direction: CaptureDirection.expense,
+        surfaceFingerprint: 'fp-two',
+        createdAt: DateTime(2026, 10, 18, 12),
+      ));
+      final generator = _FakeGenerator()
+        ..strategy = AmountStrategy.regex
+        ..pattern = r'¥\s*(\d+(?:\.\d{1,2})?)';
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: generator,
+        isConfigured: () async => true,
+        diag: diag,
+      ).learnAll();
+
+      final event = (await diag.events())
+          .firstWhere((e) => e.reason == 'unanchored');
+      expect(event.detail['problem'], 'ambiguous_regex');
     });
   });
 }

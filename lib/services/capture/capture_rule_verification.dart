@@ -66,3 +66,25 @@ class RuleTrustLadder {
   static CaptureRule demote(CaptureRule rule) =>
       rule.copyWith(tier: CaptureRuleTier.grey, confirmations: 0);
 }
+/// 锚点自检：规则能不能说清「哪一行是金额」。
+///
+/// 回放验证只能证明「这一次解对了」，证明不了「换一笔还对」。这里的自检专挡
+/// 两类看似通过、实则随便抓的规则：
+/// - 相邻标签在页面原文里根本不存在（模型改写了标签文字）；
+/// - regex 在同一页命中多个不同金额（说明它只会抓第一个数字，比如把原价当实付）。
+String? anchorProblem(CaptureRule rule, {required String source}) {
+  switch (rule.amountStrategy) {
+    case AmountStrategy.adjacentLabel:
+      final label = rule.adjacentLabel?.trim();
+      if (label == null || label.isEmpty) return 'no_label';
+      if (!source.contains(label)) return 'label_not_found';
+      return null;
+    case AmountStrategy.regex:
+      final pattern = rule.amountPattern;
+      if (pattern == null || pattern.isEmpty) return 'no_pattern';
+      final amounts =
+          const CaptureRuleExecutor().distinctRegexAmounts(pattern, source);
+      if (amounts.length > 1) return 'ambiguous_regex';
+      return null;
+  }
+}

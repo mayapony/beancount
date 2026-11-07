@@ -52,9 +52,10 @@ class CloudCaptureRuleGenerator implements CaptureRuleGenerator {
   static final String prompt = [
     '根据脱敏后的页面内容（控件树快照或通知文本）与真值金额，输出一个 JSON 对象，描述怎么从这页提取金额。',
     '只输出 JSON，不要解释，不要 markdown 代码块。',
-    'amount_strategy：regex / adjacent_label 二选一。',
-    'amount_pattern：amount_strategy 为 regex 时必填，正则的第一捕获组是金额数字。',
-    'adjacent_label：amount_strategy 为 adjacent_label 时必填，金额旁边的标签文字。',
+    'amount_strategy：优先用 adjacent_label。页面上一眼能看到「实付款 / 实付金额 / 支付金额 / 交易成功」这类标签时，必须用它。',
+    'adjacent_label：amount_strategy 为 adjacent_label 时必填。写页面原文里**逐字出现**的标签，不要改写、不要加语气词；金额就在它相邻的行里。',
+    'amount_pattern：只有页面上找不到任何可用标签时才用 regex；正则的第一捕获组是金额数字。',
+    '注意：页面上常同时出现原价与实付价，取的那个必须是实付；不要用「页面上第一个带 ¥ 的数字」。',
     'exclude_keywords：字符串数组，命中的文本不当作支付（如余额、优惠）。',
     'direction：expense / income / refund 三选一。',
   ].join('\n');
