@@ -30,7 +30,16 @@ class AccessibilityCaptureService : AccessibilityService() {
         pending = false
         val found = findAppWindow { CapturePrefs.isKnown(this, it) }
         if (found == null) {
-            Log.i(TAG, "dump: no known window active=${rootInActiveWindow?.packageName ?: "null"}")
+            val active = rootInActiveWindow?.packageName?.toString() ?: "null"
+            Log.i(TAG, "dump: no known window active=$active")
+            CaptureDiag.record(
+                this,
+                kind = "window_missing",
+                packageName = active.takeIf { it != "null" },
+                ok = false,
+                reason = "no_known_window",
+                detail = mapOf("active" to active),
+            )
             return@Runnable
         }
         val (packageName, root) = found
@@ -78,7 +87,16 @@ class AccessibilityCaptureService : AccessibilityService() {
     fun dumpCurrentTree(): Pair<String, String>? {
         val found = findAppWindow { true }
         if (found == null) {
-            Log.i(TAG, "dumpCurrentTree: no app window active=${rootInActiveWindow?.packageName ?: "null"}")
+            val active = rootInActiveWindow?.packageName?.toString() ?: "null"
+            Log.i(TAG, "dumpCurrentTree: no app window active=$active")
+            CaptureDiag.record(
+                this,
+                kind = "window_missing",
+                packageName = active.takeIf { it != "null" },
+                ok = false,
+                reason = "no_app_window",
+                detail = mapOf("active" to active),
+            )
             return null
         }
         val (packageName, root) = found
