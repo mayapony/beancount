@@ -31,6 +31,8 @@ class CaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        CaptureRuntime.appContext = applicationContext
+        CaptureDiag.setServiceRunning(this, true)
         createNotificationChannel()
         createEngine()
         startForeground(ONGOING_ID, ongoingNotification())
@@ -43,6 +45,7 @@ class CaptureService : Service() {
         engine = null
         CaptureRuntime.channel = null
         CaptureRuntime.dartReady = false
+        CaptureDiag.setServiceRunning(this, false)
         super.onDestroy()
     }
 

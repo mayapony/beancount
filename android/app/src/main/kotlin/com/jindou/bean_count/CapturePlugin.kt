@@ -55,6 +55,15 @@ class CapturePlugin(private val activity: Activity) : MethodChannel.MethodCallHa
             "takeOpenAutoEntries" ->
                 result.success(CapturePrefs.takePendingOpenAutoEntries(activity))
 
+            "readDiag" -> result.success(CaptureDiag.readAll(activity))
+
+            "clearDiag" -> {
+                CaptureDiag.clear(activity)
+                result.success(true)
+            }
+
+            "diagServiceState" -> result.success(CaptureDiag.serviceState(activity))
+
             else -> result.notImplemented()
         }
     }
