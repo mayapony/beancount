@@ -104,4 +104,29 @@ CaptureNode _chain(int n) {
     node = CaptureNode(children: [node]);
   }
   return node;
+  group('isTreeUnreadable', () {
+    CaptureNode treeOf(List<String> lines) {
+      var dump = '';
+      for (final line in lines) {
+        dump += 'android.widget.TextView|$line\n';
+      }
+      return dumpToTree(dump);
+    }
+
+    test('空树判为读不出', () {
+      expect(isTreeUnreadable(const CaptureNode()), isTrue);
+    });
+
+    test('只有文字没有金额判为读不出', () {
+      expect(isTreeUnreadable(treeOf(['已取货', '查看物流', '卖家已发货'])), isTrue);
+    });
+
+    test('带货币符号的正常支付页可读', () {
+      expect(isTreeUnreadable(treeOf(['支付成功', '¥12.50'])), isFalse);
+    });
+
+    test('没有货币符号但有数字也可读', () {
+      expect(isTreeUnreadable(treeOf(['实付', '12.50'])), isFalse);
+    });
+  });
 }

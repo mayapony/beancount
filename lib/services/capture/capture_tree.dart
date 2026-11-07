@@ -97,6 +97,19 @@ String _stableHash(String source) {
   return hash.toRadixString(16).padLeft(8, '0');
 }
 
+/// 这棵树是不是「读不出金额」。
+///
+/// 判据不是文本长度——那会把只有两行字的正常支付页也判死——而是：文本为空，
+/// 或整页既没有货币符号也没有任何数字。微信整页只有 1 行且无文本；支付宝一页
+/// 110 个节点只吐 186 个字符、金额在画布里，两种情况都命中这条。
+bool isTreeUnreadable(CaptureNode tree) {
+  final text = tree.flattenedText.trim();
+  if (text.isEmpty) return true;
+  final hasCurrency =
+      text.contains('¥') || text.contains('￥') || text.contains('元');
+  if (hasCurrency) return false;
+  return !RegExp(r'\d').hasMatch(text);
+}
 /// 把原生侧 dump 出的缩进文本（`className|text` 行，每层缩进 2 空格）解析回树。
 ///
 /// 无障碍 shim 为了在 Kotlin 侧不引入 JSON 序列化，直接产出缩进文本；这里按缩进

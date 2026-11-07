@@ -336,4 +336,52 @@ void main() {
       expect(event.detail['problem'], 'ambiguous_regex');
     });
   });
+  group('通知规则与树判定', () {
+    test('无关通知不生成通知规则', () async {
+      await evidence.add(CaptureEvidence(
+        id: 'evt-chat',
+        packageName: 'com.tencent.mm',
+        dump: dump,
+        amountCents: 1190,
+        direction: CaptureDirection.expense,
+        surfaceFingerprint: surfaceFingerprintOf(dumpToTree(dump)),
+        notificationText: '马淑慧: 在吗',
+        createdAt: DateTime(2026, 10, 18, 12),
+      ));
+
+      final generator = _FakeGenerator();
+      await CaptureRuleLearner(
+        db: db,
+        generator: generator,
+        isConfigured: () async => true,
+      ).learnAll();
+
+      expect((await rules.load()).where((r) => r.target == RuleTarget.notification),
+          isEmpty);
+    });
+
+    test('通知文本含这笔金额时正常生成', () async {
+      await evidence.add(CaptureEvidence(
+        id: 'evt-pay',
+        packageName: 'com.eg.android.AlipayGphone',
+        dump: dump,
+        amountCents: 1190,
+        direction: CaptureDirection.expense,
+        surfaceFingerprint: surfaceFingerprintOf(dumpToTree(dump)),
+        notificationText: '支付宝 支付成功 11.90元',
+        createdAt: DateTime(2026, 10, 18, 12),
+      ));
+
+      await CaptureRuleLearner(
+        db: db,
+        generator: _FakeGenerator(),
+        isConfigured: () async => true,
+      ).learnAll();
+
+      expect(
+        (await rules.load()).where((r) => r.target == RuleTarget.notification),
+        hasLength(1),
+      );
+    });
+  });
 }

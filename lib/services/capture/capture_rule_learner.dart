@@ -75,11 +75,20 @@ class CaptureRuleLearner {
   }) async {
     if (source.trim().isEmpty) return;
 
-    // 无障碍规则：树里没有文字（Flutter/自绘页）时学不出金额，直接跳过。
+    // 无障碍规则：树读不出内容时学不出金额，直接跳过。
     if (target == RuleTarget.accessibility &&
-        dumpToTree(source).flattenedText.trim().isEmpty) {
-      _log?.call('learner: skip accessibility (empty tree) pkg=${evidence.packageName}');
+        isTreeUnreadable(dumpToTree(source))) {
+      _log?.call('learner: skip accessibility (unreadable tree) pkg=${evidence.packageName}');
       await _skip(evidence, target: target, reason: 'empty_tree');
+      return;
+    }
+
+    // 通知规则：只有通知文本里真能找到这笔金额，才拿它生成规则；否则宁可跳过，
+    // 也不要拿一条无关的聊天通知去编一个「抓任意数字」的正则。
+    if (target == RuleTarget.notification &&
+        !_notificationCarriesAmount(source, evidence.amountCents)) {
+      _log?.call('learner: skip notification (no matching amount) pkg=${evidence.packageName}');
+      await _skip(evidence, target: target, reason: 'no_matching_notification');
       return;
     }
 
@@ -173,6 +182,17 @@ class CaptureRuleLearner {
       },
     );
     await _upsert(applied);
+  }
+
+  /// 通知文本里能不能找到这笔金额（「¥12.00」「12.00」「12」都算）。
+  static bool _notificationCarriesAmount(String text, int amountCents) {
+    final yuan = amountCents ~/ 100;
+    final cents = (amountCents % 100).toString().padLeft(2, '0');
+    final candidates = <String>{
+      '$yuan.$cents',
+      if (amountCents % 100 == 0) '$yuan',
+    };
+    return candidates.any(text.contains);
   }
 
   /// 学习被跳过时记下原因：跳过不等于没发生，用户需要知道这一笔为什么学不到规则。

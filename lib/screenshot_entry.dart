@@ -248,8 +248,8 @@ Future<void> _learnFromScreenshot(
     final state = AppStateRepository(db);
     final surfaces = CaptureSurfaceStore(state);
 
-    if (tree.flattenedText.trim().isEmpty) {
-      await _log(channel, 'learn: tree empty → mark screenshot-first pkg=$package');
+    if (isTreeUnreadable(tree)) {
+      await _log(channel, 'learn: tree unreadable → mark screenshot-first pkg=$package');
       await surfaces.mark(package, fingerprint);
     }
 
