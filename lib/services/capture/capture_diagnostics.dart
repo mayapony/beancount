@@ -46,7 +46,10 @@ enum CaptureDiagKind {
   eventDropped('event_dropped', '事件被丢弃'),
 
   /// 找不到可读的应用窗口（原生侧记录）。
-  windowMissing('window_missing', '读不到窗口');
+  windowMissing('window_missing', '读不到窗口'),
+
+  /// 页面一直在变，等不到稳定帧（原生侧记录）。
+  frameUnstable('frame_unstable', '页面未稳定');
 
   const CaptureDiagKind(this.wire, this.label);
 

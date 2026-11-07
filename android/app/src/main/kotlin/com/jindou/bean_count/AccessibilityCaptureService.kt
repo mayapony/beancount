@@ -25,11 +25,27 @@ class AccessibilityCaptureService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var pending = false
 
-    private val dumpRunnable = Runnable {
-        if (!pending) return@Runnable
-        pending = false
+    /** 上一次取到的帧，用于稳定判定；null 表示还没取过。 */
+    private var lastDump: String? = null
+    private var lastPackage: String? = null
+    private var attempts = 0
+
+    private val dumpRunnable = Runnable { captureFrame() }
+
+    /**
+     * 取一帧并判断页面是否已经稳定。
+     *
+     * 页面刚切换时节点还在长（实测同一页 1 秒内从 46 个节点变成 64 个），这时算出的
+     * 指纹和稳定态不是一个值，规则就会莫名其妙匹配不上。所以：先取一帧，等
+     * [STABLE_GAP_MS] 再取一帧，两帧一致才上报；不一致就再来，最多
+     * [MAX_ATTEMPTS] 次，仍不一致则用最后一帧并留一条记录。
+     */
+    private fun captureFrame() {
+        if (!pending) return
         val found = findAppWindow { CapturePrefs.isKnown(this, it) }
         if (found == null) {
+            pending = false
+            lastDump = null
             val active = rootInActiveWindow?.packageName?.toString() ?: "null"
             Log.i(TAG, "dump: no known window active=$active")
             CaptureDiag.record(
@@ -40,19 +56,17 @@ class AccessibilityCaptureService : AccessibilityService() {
                 reason = "no_known_window",
                 detail = mapOf("active" to active),
             )
-            return@Runnable
+            return
         }
         val (packageName, root) = found
         val dump = dumpTree(root)
         val lines = dump.lineSequence().count()
-        Log.i(
-            TAG,
-            "dumpTree package=$packageName lines=$lines " +
-                "text=${dump.replace('\n', ' ').take(160)}",
-        )
         if (lines <= 1) {
             // 树是空的（自绘 / WebView / FLAG_SECURE）：以前这里静默返回，用户
             // 只会看到「自动记账没反应」。留一条记录，让截图优先的判定有据可查。
+            pending = false
+            lastDump = null
+            Log.i(TAG, "dumpTree package=$packageName lines=$lines (empty)")
             CaptureDiag.record(
                 this,
                 kind = "window_missing",
@@ -61,9 +75,40 @@ class AccessibilityCaptureService : AccessibilityService() {
                 reason = "empty_tree",
                 detail = mapOf("lines" to lines),
             )
-            return@Runnable
+            return
         }
-        CaptureRuntime.onTreeCaptured(packageName, dump)
+
+        val stable = pending && lastDump == dump && lastPackage == packageName
+        if (stable) {
+            pending = false
+            lastDump = null
+            Log.i(TAG, "stable frame package=$packageName lines=$lines attempts=$attempts")
+            CaptureRuntime.onTreeCaptured(packageName, dump)
+            return
+        }
+
+        if (attempts >= MAX_ATTEMPTS) {
+            pending = false
+            lastDump = null
+            Log.i(TAG, "unstable frame package=$packageName lines=$lines attempts=$attempts")
+            CaptureDiag.record(
+                this,
+                kind = "frame_unstable",
+                packageName = packageName,
+                ok = false,
+                reason = "unstable",
+                detail = mapOf("attempts" to attempts, "lines" to lines),
+            )
+            // 用最后一帧，至少还有机会命中；同时留下「这帧没稳定」的记录。
+            CaptureRuntime.onTreeCaptured(packageName, dump)
+            return
+        }
+
+        attempts++
+        lastDump = dump
+        lastPackage = packageName
+        Log.i(TAG, "retry frame package=$packageName lines=$lines attempt=$attempts")
+        handler.postDelayed(dumpRunnable, STABLE_GAP_MS)
     }
 
     override fun onServiceConnected() {
@@ -85,6 +130,9 @@ class AccessibilityCaptureService : AccessibilityService() {
         }
         // 页面稳定后再取一帧：内容变化事件很密集，只关心最终态。
         pending = true
+        attempts = 0
+        lastDump = null
+        lastPackage = null
         handler.removeCallbacks(dumpRunnable)
         handler.postDelayed(dumpRunnable, DUMP_DELAY_MS)
     }
@@ -160,5 +208,11 @@ class AccessibilityCaptureService : AccessibilityService() {
     companion object {
         private const val TAG = "BeanCapture"
         private const val DUMP_DELAY_MS = 300L
+
+        /** 两帧之间等多久算「页面没在变」。 */
+        private const val STABLE_GAP_MS = 400L
+
+        /** 最多重试几次；最坏多等约 1.2 秒。 */
+        private const val MAX_ATTEMPTS = 3
     }
 }
