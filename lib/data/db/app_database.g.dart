@@ -1906,6 +1906,12 @@ class $TransactionsTable extends Transactions
   late final GeneratedColumn<String> sourcePackage = GeneratedColumn<String>(
       'source_package', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sourceChannelMeta =
+      const VerificationMeta('sourceChannel');
+  @override
+  late final GeneratedColumn<String> sourceChannel = GeneratedColumn<String>(
+      'source_channel', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _needsReviewMeta =
       const VerificationMeta('needsReview');
   @override
@@ -1941,6 +1947,7 @@ class $TransactionsTable extends Transactions
         dedupeKey,
         source,
         sourcePackage,
+        sourceChannel,
         needsReview,
         createdAt
       ];
@@ -2033,6 +2040,12 @@ class $TransactionsTable extends Transactions
           sourcePackage.isAcceptableOrUnknown(
               data['source_package']!, _sourcePackageMeta));
     }
+    if (data.containsKey('source_channel')) {
+      context.handle(
+          _sourceChannelMeta,
+          sourceChannel.isAcceptableOrUnknown(
+              data['source_channel']!, _sourceChannelMeta));
+    }
     if (data.containsKey('needs_review')) {
       context.handle(
           _needsReviewMeta,
@@ -2086,6 +2099,8 @@ class $TransactionsTable extends Transactions
           .read(DriftSqlType.string, data['${effectivePrefix}source'])!),
       sourcePackage: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}source_package']),
+      sourceChannel: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_channel']),
       needsReview: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}needs_review']),
       createdAt: attachedDatabase.typeMapping
@@ -2141,6 +2156,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   /// 它选过一次账户之后，后续同一组合就直接套用。
   final String? sourcePackage;
 
+  /// 自动入账时模型给出的渠道词（如「银行卡」「余额宝」），参与账户映射。
+  final String? sourceChannel;
+
   /// 账户没能自动确定、等用户在审计列表里选一次。
   ///
   /// 可空：`null` 与 `false` 同义（不需要人工处理）。不用非空 + 默认值，是因为
@@ -2164,6 +2182,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       required this.dedupeKey,
       required this.source,
       this.sourcePackage,
+      this.sourceChannel,
       this.needsReview,
       required this.createdAt});
   @override
@@ -2207,6 +2226,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     if (!nullToAbsent || sourcePackage != null) {
       map['source_package'] = Variable<String>(sourcePackage);
     }
+    if (!nullToAbsent || sourceChannel != null) {
+      map['source_channel'] = Variable<String>(sourceChannel);
+    }
     if (!nullToAbsent || needsReview != null) {
       map['needs_review'] = Variable<bool>(needsReview);
     }
@@ -2248,6 +2270,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       sourcePackage: sourcePackage == null && nullToAbsent
           ? const Value.absent()
           : Value(sourcePackage),
+      sourceChannel: sourceChannel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceChannel),
       needsReview: needsReview == null && nullToAbsent
           ? const Value.absent()
           : Value(needsReview),
@@ -2278,6 +2303,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       source: $TransactionsTable.$convertersource
           .fromJson(serializer.fromJson<String>(json['source'])),
       sourcePackage: serializer.fromJson<String?>(json['sourcePackage']),
+      sourceChannel: serializer.fromJson<String?>(json['sourceChannel']),
       needsReview: serializer.fromJson<bool?>(json['needsReview']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
@@ -2304,6 +2330,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       'source': serializer
           .toJson<String>($TransactionsTable.$convertersource.toJson(source)),
       'sourcePackage': serializer.toJson<String?>(sourcePackage),
+      'sourceChannel': serializer.toJson<String?>(sourceChannel),
       'needsReview': serializer.toJson<bool?>(needsReview),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
@@ -2326,6 +2353,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           String? dedupeKey,
           EntrySource? source,
           Value<String?> sourcePackage = const Value.absent(),
+          Value<String?> sourceChannel = const Value.absent(),
           Value<bool?> needsReview = const Value.absent(),
           DateTime? createdAt}) =>
       Transaction(
@@ -2352,6 +2380,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
         source: source ?? this.source,
         sourcePackage:
             sourcePackage.present ? sourcePackage.value : this.sourcePackage,
+        sourceChannel:
+            sourceChannel.present ? sourceChannel.value : this.sourceChannel,
         needsReview: needsReview.present ? needsReview.value : this.needsReview,
         createdAt: createdAt ?? this.createdAt,
       );
@@ -2385,6 +2415,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       sourcePackage: data.sourcePackage.present
           ? data.sourcePackage.value
           : this.sourcePackage,
+      sourceChannel: data.sourceChannel.present
+          ? data.sourceChannel.value
+          : this.sourceChannel,
       needsReview:
           data.needsReview.present ? data.needsReview.value : this.needsReview,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -2410,6 +2443,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('dedupeKey: $dedupeKey, ')
           ..write('source: $source, ')
           ..write('sourcePackage: $sourcePackage, ')
+          ..write('sourceChannel: $sourceChannel, ')
           ..write('needsReview: $needsReview, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
@@ -2434,6 +2468,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       dedupeKey,
       source,
       sourcePackage,
+      sourceChannel,
       needsReview,
       createdAt);
   @override
@@ -2456,6 +2491,7 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.dedupeKey == this.dedupeKey &&
           other.source == this.source &&
           other.sourcePackage == this.sourcePackage &&
+          other.sourceChannel == this.sourceChannel &&
           other.needsReview == this.needsReview &&
           other.createdAt == this.createdAt);
 }
@@ -2477,6 +2513,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String> dedupeKey;
   final Value<EntrySource> source;
   final Value<String?> sourcePackage;
+  final Value<String?> sourceChannel;
   final Value<bool?> needsReview;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
@@ -2497,6 +2534,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.dedupeKey = const Value.absent(),
     this.source = const Value.absent(),
     this.sourcePackage = const Value.absent(),
+    this.sourceChannel = const Value.absent(),
     this.needsReview = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2518,6 +2556,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     required String dedupeKey,
     this.source = const Value.absent(),
     this.sourcePackage = const Value.absent(),
+    this.sourceChannel = const Value.absent(),
     this.needsReview = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2543,6 +2582,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<String>? dedupeKey,
     Expression<String>? source,
     Expression<String>? sourcePackage,
+    Expression<String>? sourceChannel,
     Expression<bool>? needsReview,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
@@ -2565,6 +2605,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (dedupeKey != null) 'dedupe_key': dedupeKey,
       if (source != null) 'source': source,
       if (sourcePackage != null) 'source_package': sourcePackage,
+      if (sourceChannel != null) 'source_channel': sourceChannel,
       if (needsReview != null) 'needs_review': needsReview,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
@@ -2588,6 +2629,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       Value<String>? dedupeKey,
       Value<EntrySource>? source,
       Value<String?>? sourcePackage,
+      Value<String?>? sourceChannel,
       Value<bool?>? needsReview,
       Value<DateTime>? createdAt,
       Value<int>? rowid}) {
@@ -2608,6 +2650,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       dedupeKey: dedupeKey ?? this.dedupeKey,
       source: source ?? this.source,
       sourcePackage: sourcePackage ?? this.sourcePackage,
+      sourceChannel: sourceChannel ?? this.sourceChannel,
       needsReview: needsReview ?? this.needsReview,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
@@ -2667,6 +2710,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     if (sourcePackage.present) {
       map['source_package'] = Variable<String>(sourcePackage.value);
     }
+    if (sourceChannel.present) {
+      map['source_channel'] = Variable<String>(sourceChannel.value);
+    }
     if (needsReview.present) {
       map['needs_review'] = Variable<bool>(needsReview.value);
     }
@@ -2698,6 +2744,7 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('dedupeKey: $dedupeKey, ')
           ..write('source: $source, ')
           ..write('sourcePackage: $sourcePackage, ')
+          ..write('sourceChannel: $sourceChannel, ')
           ..write('needsReview: $needsReview, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
@@ -5146,6 +5193,7 @@ typedef $$TransactionsTableCreateCompanionBuilder = TransactionsCompanion
   required String dedupeKey,
   Value<EntrySource> source,
   Value<String?> sourcePackage,
+  Value<String?> sourceChannel,
   Value<bool?> needsReview,
   Value<DateTime> createdAt,
   Value<int> rowid,
@@ -5168,6 +5216,7 @@ typedef $$TransactionsTableUpdateCompanionBuilder = TransactionsCompanion
   Value<String> dedupeKey,
   Value<EntrySource> source,
   Value<String?> sourcePackage,
+  Value<String?> sourceChannel,
   Value<bool?> needsReview,
   Value<DateTime> createdAt,
   Value<int> rowid,
@@ -5321,6 +5370,9 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<String> get sourcePackage => $composableBuilder(
       column: $table.sourcePackage, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceChannel => $composableBuilder(
+      column: $table.sourceChannel, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<bool> get needsReview => $composableBuilder(
       column: $table.needsReview, builder: (column) => ColumnFilters(column));
@@ -5499,6 +5551,10 @@ class $$TransactionsTableOrderingComposer
       column: $table.sourcePackage,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get sourceChannel => $composableBuilder(
+      column: $table.sourceChannel,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<bool> get needsReview => $composableBuilder(
       column: $table.needsReview, builder: (column) => ColumnOrderings(column));
 
@@ -5630,6 +5686,9 @@ class $$TransactionsTableAnnotationComposer
 
   GeneratedColumn<String> get sourcePackage => $composableBuilder(
       column: $table.sourcePackage, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceChannel => $composableBuilder(
+      column: $table.sourceChannel, builder: (column) => column);
 
   GeneratedColumn<bool> get needsReview => $composableBuilder(
       column: $table.needsReview, builder: (column) => column);
@@ -5805,6 +5864,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             Value<String> dedupeKey = const Value.absent(),
             Value<EntrySource> source = const Value.absent(),
             Value<String?> sourcePackage = const Value.absent(),
+            Value<String?> sourceChannel = const Value.absent(),
             Value<bool?> needsReview = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -5826,6 +5886,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             dedupeKey: dedupeKey,
             source: source,
             sourcePackage: sourcePackage,
+            sourceChannel: sourceChannel,
             needsReview: needsReview,
             createdAt: createdAt,
             rowid: rowid,
@@ -5847,6 +5908,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             required String dedupeKey,
             Value<EntrySource> source = const Value.absent(),
             Value<String?> sourcePackage = const Value.absent(),
+            Value<String?> sourceChannel = const Value.absent(),
             Value<bool?> needsReview = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
@@ -5868,6 +5930,7 @@ class $$TransactionsTableTableManager extends RootTableManager<
             dedupeKey: dedupeKey,
             source: source,
             sourcePackage: sourcePackage,
+            sourceChannel: sourceChannel,
             needsReview: needsReview,
             createdAt: createdAt,
             rowid: rowid,

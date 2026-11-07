@@ -45,11 +45,11 @@
 
 ## 6. 账户待人工处理与渠道映射
 
-- [ ] 6.1 `app_state` 新增 `capture_account_map`（`包名|渠道词 → 账户 id`）的读写
+- [x] 6.1 `app_state` 新增 `capture_account_map`（`包名|渠道词 → 账户 id`）的读写
   - 验证：单测覆盖读写、坏数据与未知键
-- [ ] 6.2 入账时按「精确同名 → 渠道映射 → 待人工处理」三级决定账户；写 `needsReview`
+- [x] 6.2 入账时按「精确同名 → 渠道映射 → 待人工处理」三级决定账户；写 `needsReview`
   - 验证：`test/services/screenshot/auto_entry_test.dart` 断言三级顺序各命中一次
-- [ ] 6.3 「最近自动记账」把 `needsReview` 的笔置顶并标注「待处理」，点开可选账户；选定后写映射、清标记、补账户
+- [x] 6.3 「最近自动记账」把 `needsReview` 的笔置顶并标注「待处理」，点开可选账户；选定后写映射、清标记、补账户
   - 验证：`test/pages/auto_entries_page_test.dart` 断言待处理置顶、选择后列表刷新且该笔移出待处理
 
 ## 7. 门禁与真机回归

@@ -33,6 +33,7 @@ class EntryWriter {
     int? ratePpm,
     EntrySource source = EntrySource.manual,
     String? sourcePackage,
+    String? sourceChannel,
     bool needsReview = false,
   }) async {
     final result = await _transactions.create(
@@ -50,6 +51,7 @@ class EntryWriter {
         ratePpm: ratePpm,
         source: source,
         sourcePackage: sourcePackage,
+        sourceChannel: sourceChannel,
         needsReview: needsReview,
       ),
     );

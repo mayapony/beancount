@@ -5,6 +5,7 @@ import '../data/repositories/account_repository.dart';
 import '../data/repositories/attachment_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/attachments/image_picker_service.dart';
+import '../services/capture/capture_account_map.dart';
 import '../services/capture/source_app.dart';
 import '../theme/tokens.dart';
 import '../utils/dates.dart';
@@ -25,6 +26,7 @@ class AutoEntriesPage extends StatefulWidget {
     this.categories = const <Category>[],
     this.accounts = const <AccountBalance>[],
     this.pickImage,
+    this.accountMap,
   });
 
   final TransactionRepository repository;
@@ -32,6 +34,9 @@ class AutoEntriesPage extends StatefulWidget {
   final List<Category> categories;
   final List<AccountBalance> accounts;
   final ImagePickFn? pickImage;
+
+  /// 「包名 + 渠道词 → 账户」的记忆；为空时只补账户、不记忆。
+  final CaptureAccountMap? accountMap;
 
   @override
   State<AutoEntriesPage> createState() => _AutoEntriesPageState();
@@ -49,11 +54,35 @@ class _AutoEntriesPageState extends State<AutoEntriesPage> {
 
   Future<void> _load() async {
     final rows = await widget.repository.recentAutoEntries();
+    // 待人工处理的置顶：它们卡着账户没补，用户得先看见。
+    final sorted = [
+      ...rows.where((row) => row.transaction.needsReview == true),
+      ...rows.where((row) => row.transaction.needsReview != true),
+    ];
     if (!mounted) return;
     setState(() {
-      _rows = rows;
+      _rows = sorted;
       _loading = false;
     });
+  }
+
+  /// 给待处理的一笔补账户，并把这次选择记成「该应用 + 该渠道」的默认账户。
+  Future<void> _assignAccount(TransactionRow row) async {
+    final account = await showModalBottomSheet<Account>(
+      context: context,
+      builder: (context) => _AccountPicker(accounts: widget.accounts),
+    );
+    if (account == null) return;
+    await widget.repository.assignAccountAndClearReview(
+      row.transaction.id,
+      account.id,
+    );
+    await widget.accountMap?.remember(
+      row.transaction.sourcePackage ?? '',
+      row.transaction.sourceChannel,
+      account.id,
+    );
+    await _load();
   }
 
   int get _todayCount {
@@ -123,7 +152,13 @@ class _AutoEntriesPageState extends State<AutoEntriesPage> {
                         children: [
                           for (var i = 0; i < _rows.length; i++) ...[
                             if (i > 0) _divider(palette),
-                            _EntryRow(row: _rows[i], onTap: () => _open(_rows[i])),
+                            _EntryRow(
+                              row: _rows[i],
+                              onTap: () => _open(_rows[i]),
+                              onAssign: _rows[i].transaction.needsReview == true
+                                  ? () => _assignAccount(_rows[i])
+                                  : null,
+                            ),
                           ],
                         ],
                       ),
@@ -142,10 +177,17 @@ class _AutoEntriesPageState extends State<AutoEntriesPage> {
 }
 
 class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.row, required this.onTap});
+  const _EntryRow({
+    required this.row,
+    required this.onTap,
+    this.onAssign,
+  });
 
   final TransactionRow row;
   final VoidCallback onTap;
+
+  /// 待人工处理时提供的「选账户」动作。
+  final VoidCallback? onAssign;
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +225,19 @@ class _EntryRow extends StatelessWidget {
                     ].join(' · '),
                     style: TextStyle(fontSize: 12, color: palette.textSecondary),
                   ),
+                  if (onAssign != null) ...[
+                    const SizedBox(height: 4),
+                    TextButton(
+                      key: Key('auto-entry-assign-${row.transaction.id}'),
+                      onPressed: onAssign,
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('待处理 · 选账户', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -210,6 +265,35 @@ class _EmptyList extends StatelessWidget {
       icon: Icons.auto_awesome_rounded,
       title: '还没有自动记账',
       subtitle: '开启自动记账后，支付完成会自动记到这里',
+    );
+  }
+}
+/// 待处理那笔的账户选择器。
+class _AccountPicker extends StatelessWidget {
+  const _AccountPicker({required this.accounts});
+
+  final List<AccountBalance> accounts;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('这笔用哪个账户？', style: TextStyle(fontSize: 15)),
+          ),
+          for (final balance in accounts)
+            ListTile(
+              key: Key('auto-entry-account-${balance.account.id}'),
+              leading: const Icon(Icons.account_balance_wallet_outlined, size: 20),
+              title: Text(balance.account.name),
+              onTap: () => Navigator.of(context).pop(balance.account),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 }

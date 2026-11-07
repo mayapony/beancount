@@ -5,7 +5,9 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/account_repository.dart';
+import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
+import 'package:bean_count/services/capture/capture_account_map.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/services/ocr/receipt_guess.dart';
@@ -176,5 +178,63 @@ void main() {
     // 关键：它必须能被「最近自动记账」查到，否则用户核对时看不见
     final recent = await transactions.recentAutoEntries();
     expect(recent.map((r) => r.transaction.id), contains(row.id));
+  });
+  group('账户三级匹配', () {
+    test('渠道词对不上任何账户时进入待人工处理', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(account: '银行卡'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+        sourcePackage: 'com.jingdong.app.mall',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      expect(row.accountId, isNull);
+      expect(row.needsReview, isTrue);
+      expect(row.sourceChannel, '银行卡');
+    });
+
+    test('记住映射后同一组合自动套用', () async {
+      final bank = await accounts.ensure(name: '招商银行');
+      await CaptureAccountMap(AppStateRepository(db)).remember(
+        'com.jingdong.app.mall',
+        '银行卡',
+        bank.id,
+      );
+
+      await saver.save(
+        guess: guess(account: '银行卡'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+        sourcePackage: 'com.jingdong.app.mall',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      expect(row.accountId, bank.id);
+      expect(row.needsReview, isNull);
+    });
+
+    test('同名账户优先，不进待处理', () async {
+      final alipay = await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(account: '支付宝'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+        sourcePackage: 'com.eg.android.AlipayGphone',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      expect(row.accountId, alipay.id);
+      expect(row.needsReview, isNull);
+    });
   });
 }

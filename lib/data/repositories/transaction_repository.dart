@@ -27,6 +27,7 @@ class NewTransaction {
     this.originalAmountCents,
     this.ratePpm,
     this.sourcePackage,
+    this.sourceChannel,
     this.needsReview = false,
   });
 
@@ -55,6 +56,9 @@ class NewTransaction {
 
   /// 自动入账时的来源应用包名；手动记账为空。
   final String? sourcePackage;
+
+  /// 自动入账时模型给出的渠道词，用来和账户做映射。
+  final String? sourceChannel;
 
   /// 账户没定下来、等用户在审计列表里选一次。
   final bool needsReview;
@@ -307,6 +311,7 @@ class TransactionRepository {
               dedupeKey: dedupeKey,
               source: Value(input.source),
               sourcePackage: Value(input.sourcePackage),
+              sourceChannel: Value(input.sourceChannel),
               needsReview: Value(input.needsReview ? true : null),
             ),
           );
@@ -798,6 +803,21 @@ class TransactionRepository {
       toAccount: toAccount,
       attachmentCount: attachments.length,
       thumbnailFileName: attachments.isEmpty ? null : attachments.first.fileName,
+    );
+  }
+
+  /// 给一笔自动入账补上账户，并清掉「待人工处理」标记。
+  Future<void> assignAccountAndClearReview(
+    String transactionId,
+    String accountId,
+  ) async {
+    await (_db.update(_db.transactions)
+          ..where((t) => t.id.equals(transactionId)))
+        .write(
+      TransactionsCompanion(
+        accountId: Value(accountId),
+        needsReview: const Value(null),
+      ),
     );
   }
 

@@ -41,6 +41,8 @@ void main() {
     required DateTime at,
     String note = '',
     String? sourcePackage,
+    bool needsReview = false,
+    String? sourceChannel,
   }) async {
     final category = (await categories.all(CategoryType.expense)).first;
     await repo.create(NewTransaction(
@@ -51,6 +53,8 @@ void main() {
       note: note,
       source: EntrySource.auto,
       sourcePackage: sourcePackage,
+      sourceChannel: sourceChannel,
+      needsReview: needsReview,
     ));
   }
 
@@ -172,5 +176,40 @@ void main() {
     await pumpPage(tester);
 
     expect(find.textContaining('来自'), findsNothing);
+  });
+  testWidgets('待人工处理的排在最前并可以补账户', (tester) async {
+    final now = DateTime.now();
+    final bank = await accounts.ensure(name: '招商银行');
+    await seedAuto(amountCents: 1200, at: now, note: '正常一笔');
+    await seedAuto(
+      amountCents: 6900,
+      at: now.subtract(const Duration(hours: 1)),
+      note: '网易严选',
+      sourcePackage: 'com.jingdong.app.mall',
+      sourceChannel: '银行卡',
+      needsReview: true,
+    );
+
+    await pumpPage(tester);
+
+    // 待处理的那笔虽然更早，但排在第一位
+    final rows = await repo.recentAutoEntries();
+    expect(
+      rows.firstWhere((r) => r.transaction.needsReview == true).transaction.note,
+      '网易严选',
+    );
+    expect(find.text('待处理 · 选账户'), findsOneWidget);
+
+    final pending = rows.firstWhere((r) => r.transaction.needsReview == true);
+    await tester.tap(find.byKey(Key('auto-entry-assign-${pending.transaction.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('auto-entry-account-${bank.id}')));
+    await tester.pumpAndSettle();
+
+    final updated = (await repo.recentAutoEntries())
+        .firstWhere((r) => r.transaction.id == pending.transaction.id);
+    expect(updated.transaction.needsReview, isNull);
+    expect(updated.transaction.accountId, bank.id);
+    expect(find.text('待处理 · 选账户'), findsNothing);
   });
 }

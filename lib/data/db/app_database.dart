@@ -112,6 +112,9 @@ class Transactions extends Table {
   /// 它选过一次账户之后，后续同一组合就直接套用。
   TextColumn get sourcePackage => text().nullable()();
 
+  /// 自动入账时模型给出的渠道词（如「银行卡」「余额宝」），参与账户映射。
+  TextColumn get sourceChannel => text().nullable()();
+
   /// 账户没能自动确定、等用户在审计列表里选一次。
   ///
   /// 可空：`null` 与 `false` 同义（不需要人工处理）。不用非空 + 默认值，是因为
@@ -225,6 +228,9 @@ class AppDatabase extends _$AppDatabase {
             // 并复制数据，旧表里没有这两列的话那几步会直接失败。
             await customStatement(
               'ALTER TABLE transactions ADD COLUMN source_package TEXT NULL',
+            );
+            await customStatement(
+              'ALTER TABLE transactions ADD COLUMN source_channel TEXT NULL',
             );
             await customStatement(
               'ALTER TABLE transactions ADD COLUMN needs_review INTEGER NULL',

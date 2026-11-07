@@ -8,6 +8,7 @@ import '../../data/repositories/attachment_repository.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
 import '../attachments/image_picker_service.dart';
+import '../capture/capture_account_map.dart';
 import '../entry/entry_writer.dart';
 import '../ocr/entry_matching.dart';
 import '../ocr/receipt_guess.dart';
@@ -75,8 +76,20 @@ class AutoScreenshotSaver {
     category ??= expenseCategories.first;
 
     final accounts = await AccountRepository(db).all();
-    final account = matchAccount(guess.accountName, accounts) ??
-        _accountById(accounts, selection.accountId);
+    final channel = guess.accountName?.trim();
+    final accountMap = CaptureAccountMap(state);
+    Account? account = matchAccount(channel, accounts);
+
+    // 模型给的是渠道泛称（银行卡 / 零钱 / 花呗），账本里是具体账户，
+    // 字面上永远对不上。三级处理：同名 → 记住的映射 → 待人工确认。
+    var needsReview = false;
+    if (account == null && channel != null && channel.isNotEmpty) {
+      final rememberedId = await accountMap.lookup(sourcePackage ?? '', channel);
+      account = _accountById(accounts, rememberedId);
+      needsReview = account == null;
+    }
+    // 模型没给渠道、也没记住过映射：沿用上次用的账户（老行为，不打扰用户）。
+    account ??= needsReview ? null : _accountById(accounts, selection.accountId);
 
     final writer = EntryWriter(
       transactions: TransactionRepository(db, attachments: _attachments),
@@ -94,6 +107,8 @@ class AutoScreenshotSaver {
       // 截图入账也是自动入账：标记来源，才进得了「最近自动记账」审计列表。
       source: EntrySource.auto,
       sourcePackage: sourcePackage,
+      sourceChannel: channel,
+      needsReview: needsReview,
     );
 
     return AutoScreenshotSave(

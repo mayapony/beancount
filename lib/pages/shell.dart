@@ -18,6 +18,7 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../services/capture/capture_account_map.dart';
 import '../services/capture/capture_channel.dart';
 import '../services/capture/capture_diag_sink.dart';
 import '../services/capture/capture_diagnostics.dart';
@@ -302,6 +303,7 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
           categories: _categories,
           accounts: _accounts,
           pickImage: kIsWeb ? null : systemImagePicker(),
+          accountMap: CaptureAccountMap(_appState),
         ),
       ),
     );
