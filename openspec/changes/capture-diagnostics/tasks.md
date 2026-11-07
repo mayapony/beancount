@@ -67,7 +67,7 @@
 
 - [x] 7.1 设置 → 自动记账区块新增「诊断记录」入口并接到诊断页；入口复用 `isSupported` 门，iOS / Web 不渲染
   - 验证：扩展 `test/pages/settings_page_test.dart`，断言不支持平台无该入口、Android 支持时点按可打开
-- [ ] 7.2 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
+- [x] 7.2 门禁：`flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
   - 验证：四条命令输出贴进提交说明
 - [ ] 7.3 真机排查验收：adb 连着手机，依次在微信、支付宝与一个新 App 上各做一次支付或截图，用诊断页与 `events.log` 解释每一次结果（无规则 / 指纹不匹配 / 提取为空 / 入账）
   - 验证：`adb pull` 出的 `events.log` 片段能对每一笔给出明确结论，并把结论记入下一位修复提案的输入
