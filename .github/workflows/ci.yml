@@ -11,6 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 钉住 JDK 17：ubuntu-latest 镜像默认 JDK 已升到 25，而项目用的
+      # Gradle 8.3 读不了 Java 25 的 class 文件（major version 69），
+      # 会以「BUG! exception in phase 'semantic analysis'」直接失败。
+      - name: 固定 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.3'
