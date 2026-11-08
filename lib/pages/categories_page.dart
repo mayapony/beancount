@@ -378,6 +378,20 @@ class _CategoryEditor extends StatefulWidget {
 class _CategoryEditorState extends State<_CategoryEditor> {
   late final TextEditingController _name =
       TextEditingController(text: widget.existing?.name ?? '');
+  final FocusNode _nameFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // 面板里的 autofocus 在真机上常常不生效：显式在首帧后请求焦点，
+    // 输入法才会真的弹出来。
+    if (_isNew) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _nameFocus.requestFocus();
+      });
+    }
+  }
   late String _icon = widget.existing?.icon ?? _iconChoices.first;
   late String? _parentId = widget.existing?.parentId ?? widget.initialParentId;
   String? _error;
@@ -385,6 +399,7 @@ class _CategoryEditorState extends State<_CategoryEditor> {
 
   @override
   void dispose() {
+    _nameFocus.dispose();
     _name.dispose();
     super.dispose();
   }
@@ -453,6 +468,7 @@ class _CategoryEditorState extends State<_CategoryEditor> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+          focusNode: _nameFocus,
                 controller: _name,
                 autofocus: _isNew,
                 decoration: const InputDecoration(
