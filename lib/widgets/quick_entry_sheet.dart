@@ -830,6 +830,8 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       context: context,
       builder: (_) => _NewCategorySheet(
         title: parentId == null ? '新增分类' : '新增二级分类',
+        // 二级上下文里只列二级分类，否则点一级会把一级挂到当前一级下面
+        childOnly: parentId != null,
         type: _isIncome ? CategoryType.income : CategoryType.expense,
         existingNames: {
           for (final c in widget.categories) c.name,
@@ -2426,11 +2428,15 @@ class _NewCategorySheet extends StatefulWidget {
     required this.title,
     required this.type,
     required this.existingNames,
+    this.childOnly = false,
   });
 
   final String title;
   final CategoryType type;
   final Set<String> existingNames;
+
+  /// 只列二级分类（从某个一级的二级区进来时）。
+  final bool childOnly;
 
   @override
   State<_NewCategorySheet> createState() => _NewCategorySheetState();
@@ -2457,8 +2463,14 @@ class _NewCategorySheetState extends State<_NewCategorySheet> {
     super.dispose();
   }
 
-  List<LibraryEntry> get _entries =>
-      searchCategoryLibrary(_query, type: widget.type);
+  List<LibraryEntry> get _entries {
+    final all = searchCategoryLibrary(_query, type: widget.type);
+    if (!widget.childOnly) return all;
+    return [
+      for (final entry in all)
+        if (entry.parent != null) entry,
+    ];
+  }
 
   /// 输入的名字在库里没有完全同名时，允许「用这个名字新建」。
   bool get _canCreateCustom {

@@ -1586,5 +1586,24 @@ void main() {
       expect(calls.last.$1, '加油');
       expect(calls.last.$2, 'lib-1');
     });
+    testWidgets('二级上下文里不列一级分类，避免挂错父级', (tester) async {
+      await pumpSheet(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('出行交通'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('category-add-child')));
+      await tester.pumpAndSettle();
+
+      // 用关键词过滤后再断言，避免 ListView 懒加载导致条目没构建
+      await tester.enterText(find.byType(TextField).last, '油');
+      await tester.pumpAndSettle();
+
+      // 一级条目（displayPath 只有名字）不该出现；二级条目应该出现。
+      // 注意二级行的副标题会重复父级名，所以按 key 判断而不是按文字。
+      expect(find.byKey(const Key('library-出行交通')), findsNothing);
+      expect(find.byKey(const Key('library-出行交通 / 加油')), findsOneWidget);
+    });
   });
 }
