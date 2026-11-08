@@ -483,4 +483,35 @@ void main() {
       expect(body, contains('出行交通'));
     });
   });
+  group('分类白名单来自账本', () {
+    VisionReceiptRecognizer build(String content) => VisionReceiptRecognizer(
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-flash',
+          apiKey: 'sk-test',
+          categoryChoices: const [
+            CategoryChoice('出行交通', ['打车']),
+            CategoryChoice('数码'),
+            CategoryChoice('食品餐饮', ['外卖']),
+          ],
+          client: MockClient((_) async => _ok(content)),
+        );
+
+    test('模型返回账本里的一级分类时保留', () async {
+      final guess = await build('{"amount_cents": 5000, "category": "数码"}')
+          .recognize(_png);
+      expect(guess.categoryName, '数码');
+    });
+
+    test('模型返回账本里的二级分类时保留', () async {
+      final guess = await build('{"amount_cents": 1380, "category": "外卖"}')
+          .recognize(_png);
+      expect(guess.categoryName, '外卖');
+    });
+
+    test('账本里没有的分类仍然丢弃', () async {
+      final guess = await build('{"amount_cents": 1380, "category": "量子力学"}')
+          .recognize(_png);
+      expect(guess.categoryName, isNull);
+    });
+  });
 }

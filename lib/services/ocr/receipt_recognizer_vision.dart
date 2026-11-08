@@ -327,14 +327,35 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
     return text.isEmpty ? null : text;
   }
 
-  /// 分类只接受词表内的规范名（含别名归一化），模型自创的一律丢掉。
-  static String? _category(Object? raw) {
+  /// 分类白名单：账本里的真实分类（一级 + 二级名）。
+  ///
+  /// 之前这里用的是硬编码的 `kCategoryKeywords`（只有 6 个），导致模型明明按
+  /// 账本返回了「外卖」「数码」，却被本地判成「不在词表」直接丢掉——提示词换
+  /// 成真实分类树之后，校验必须一起换。
+  Set<String> get _allowedCategoryNames {
+    final choices =
+        categoryChoices.isEmpty ? kFallbackCategoryChoices : categoryChoices;
+    return {
+      for (final choice in choices) choice.name,
+      for (final choice in choices) ...choice.children,
+    };
+  }
+
+  /// 分类只接受白名单内的名字（含别名归一化），模型自创的一律丢掉。
+  String? _category(Object? raw) {
     final text = _text(raw);
     if (text == null) return null;
+    final wanted = normalizeName(text);
+    for (final name in _allowedCategoryNames) {
+      if (normalizeName(name) == wanted) return name;
+    }
     final canonical = canonicalCategoryName(text);
-    if (canonical == null) return null;
-    for (final name in kCategoryKeywords.keys) {
-      if (normalizeName(name) == normalizeName(canonical)) return name;
+    if (canonical != null) {
+      for (final name in _allowedCategoryNames) {
+        if (normalizeName(name) == normalizeName(canonical)) return name;
+      }
+      // 兜底：没在账本里、但属于内置词表的规范名，仍然接受（避免老数据回归）
+      if (kCategoryKeywords.containsKey(canonical)) return canonical;
     }
     return null;
   }
