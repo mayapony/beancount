@@ -241,7 +241,6 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
             c,
       ];
 
-  bool _hasChildren(String rootId) => _childrenOfRoot(rootId).isNotEmpty;
 
   /// 当前展开的一级的子分类；没展开或没有子分类时为空。
   List<Category> get _expandedChildren =>
@@ -1040,11 +1039,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                                                 _categoryId = picked.id;
                                                 _newCategoryName = null;
                                                 _newCategoryParentId = null;
-                                                // 有子分类的一级顺带展开；没有就直接选中
-                                                _expandedRootId =
-                                                    _hasChildren(picked.id)
-                                                        ? picked.id
-                                                        : null;
+                                                // 选中一级就展开二级区：即使还没有
+                                                // 子分类，那里也有「新增」入口。
+                                                _expandedRootId = picked.id;
                                               });
                                             },
                                           )
@@ -1076,7 +1073,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                 ),
               ),
             ),
-          if (!_isTransfer && _expandedChildren.isNotEmpty)
+          if (!_isTransfer && _expandedRootId != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 2),
               child: SizedBox(
