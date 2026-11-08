@@ -20,9 +20,9 @@
 
 ## 2. 分类树进提示词
 
-- [ ] 2.1 `VisionReceiptRecognizer` 接收分类树（一级 → 二级名列表），提示词按「一级（二级、二级）/ 一级」渲染；不再使用硬编码 `kCategoryKeywords`
+- [x] 2.1 `VisionReceiptRecognizer` 接收分类树（一级 → 二级名列表），提示词按「一级（二级、二级）/ 一级」渲染；不再使用硬编码 `kCategoryKeywords`
   - 验证：单测断言自建分类「日用品」出现在提示词里、二级名出现在对应父级括号内
-- [ ] 2.2 `systemReceiptRecognizer` 从 `CategoryRepository` 读真实分类树并传入
+- [x] 2.2 `systemReceiptRecognizer` 从 `CategoryRepository` 读真实分类树并传入
   - 验证：工厂单测断言传入的分类被渲染进提示词
 
 ## 3. 缺分类时自动新建

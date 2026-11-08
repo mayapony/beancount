@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/services/capture/capture_diagnostics.dart';
+import 'package:bean_count/data/category_library.dart';
 import 'package:bean_count/services/ocr/receipt_guess.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -442,6 +443,44 @@ void main() {
 
       final guess = await recognizer.recognize(_png);
       expect(guess.amountCents, 1200);
+    });
+  });
+  group('分类候选来自账本', () {
+    test('自建分类与二级分类都进提示词', () async {
+      String? body;
+      final recognizer = VisionReceiptRecognizer(
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-flash',
+        apiKey: 'sk-test',
+        categoryChoices: const [
+          CategoryChoice('出行交通', ['打车', '停车费']),
+          CategoryChoice('日用品'),
+        ],
+        client: MockClient((request) async {
+          body = request.body;
+          return _ok('{"amount_cents": 100}');
+        }),
+      );
+
+      await recognizer.recognize(_png);
+
+      expect(body, contains('出行交通（打车、停车费）'));
+      expect(body, contains('日用品'));
+      // 不能再出现旧的硬编码词表
+      expect(body, isNot(contains('医疗（')));
+    });
+
+    test('没给候选时退回分类库，而不是旧的 6 个分类', () async {
+      String? body;
+      final recognizer = _recognizer(MockClient((request) async {
+        body = request.body;
+        return _ok('{"amount_cents": 100}');
+      }));
+
+      await recognizer.recognize(_png);
+
+      expect(body, contains('食品餐饮'));
+      expect(body, contains('出行交通'));
     });
   });
 }

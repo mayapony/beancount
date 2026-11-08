@@ -1,4 +1,19 @@
-import '../data/db/enums.dart';
+import 'db/app_database.dart';
+import 'db/enums.dart';
+
+/// 一个分类候选：一级名 + 它的二级名。
+///
+/// 提示词里渲染成 `出行交通（打车、停车费）/ 食品餐饮`，模型选二级时也知道它
+/// 属于哪个一级，不会把「打车」当成一级分类。
+class CategoryChoice {
+  const CategoryChoice(this.name, [this.children = const []]);
+
+  final String name;
+  final List<String> children;
+
+  String toPrompt() =>
+      children.isEmpty ? name : '$name（${children.join('、')}）';
+}
 
 /// 分类库里的一条建议分类。
 ///
@@ -249,4 +264,24 @@ List<LibraryEntry> searchCategoryLibrary(String query, {CategoryType? type}) {
     }
   }
   return out;
+}
+/// 把账本里的真实分类树转成识别提示词用的候选（一级 + 二级名）。
+///
+/// 识别器只认这个入口：提示词里的分类 MUST 来自用户账本，而不是内置列表。
+List<CategoryChoice> categoryChoicesFrom(
+  Iterable<Category> categories,
+  CategoryType type,
+) {
+  final all = categories.toList();
+  return [
+    for (final root in all)
+      if (root.parentId == null && root.type == type)
+        CategoryChoice(
+          root.name,
+          [
+            for (final child in all)
+              if (child.parentId == root.id) child.name,
+          ],
+        ),
+  ];
 }

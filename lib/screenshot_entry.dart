@@ -7,7 +7,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'data/db/app_database.dart';
 import 'data/db/connection.dart';
+import 'data/category_library.dart';
+import 'data/db/enums.dart';
 import 'data/repositories/app_state_repository.dart';
+import 'data/repositories/category_repository.dart';
 import 'services/capture/capture_candidate.dart';
 import 'services/capture/capture_diag_log.dart';
 import 'services/capture/capture_diagnostics.dart';
@@ -103,9 +106,11 @@ Future<Map<String, Object?>> _recognize(
       'mime=${VisionReceiptRecognizer.mimeOf(recognitionInput)}',
     );
 
+    final categories = await CategoryRepository(db).allCategories();
     final recognizer = await systemReceiptRecognizer(
       settings: ReceiptVisionSettingsStore(state),
       keys: SecureReceiptApiKeyStore(),
+      categoryChoices: categoryChoicesFrom(categories, CategoryType.expense),
       diag: CaptureDiagnostics.forDatabase(
         db,
         sink: (line) async => (await openCaptureDiagLog())?.append(line),

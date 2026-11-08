@@ -6,11 +6,23 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
+import '../../data/category_library.dart';
+import '../../data/db/enums.dart';
 import '../capture/capture_diagnostics.dart';
 import 'entry_matching.dart';
 import 'receipt_guess.dart';
 import 'receipt_recognizer.dart';
 import 'receipt_vision_settings.dart';
+
+/// 调用方没给分类树时的兜底：用内置分类库的支出一级名。
+///
+/// 兜底也不该退回到「只有 6 个硬编码分类」——那正是模型对自建分类一律返回
+/// null 的原因。
+final List<CategoryChoice> kFallbackCategoryChoices = [
+  for (final root in kCategoryLibrary)
+    if (root.type == CategoryType.expense)
+      CategoryChoice(root.name, [for (final c in root.children) c.name]),
+];
 
 /// 识别失败的可读原因：消息里 MUST NOT 出现 API Key 或图片内容。
 class ReceiptRecognitionException implements Exception {
@@ -37,20 +49,25 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
     http.Client? client,
     this.timeout = const Duration(seconds: 20),
     this.diag,
+    this.categoryChoices = const <CategoryChoice>[],
   })  : _baseUrl = ReceiptVisionSettings.normalizeBaseUrl(baseUrl),
         _model = ReceiptVisionSettings.normalizeModel(model),
         _apiKey = apiKey.trim(),
         _client = client ?? http.Client(),
         _ownsClient = client == null;
 
+  /// 分类候选：一级 + 二级名。为空时退回内置分类库的一级名，绝不会用硬编码的
+  /// 6 个分类——那会让模型对自建分类（如「日用品」）永远返回 null。
+  final List<CategoryChoice> categoryChoices;
+
   /// 提示词只描述 JSON 字段与取值词表：解释、总结都会污染结果。
-  static final String prompt = [
+  String get prompt => [
     '读这张账单或小票图片，只输出一个 JSON 对象，不要解释，不要 markdown 代码块。',
     'amount_cents：整数，本笔实际支付金额，单位「分」（¥18.00 填 1800）；'
         '认不出填 null。',
     'merchant：商家名或商品名；认不出填 null。',
     'paid_at：支付时间，格式 yyyy-MM-dd HH:mm:ss；认不出填 null。',
-    'category：从 ${_categoryChoices()} 里选一个；都不合适填 null。',
+    'category：从 ${_categoryChoicesText()} 里选一个；都不合适填 null。',
     'account_hint：从 ${kAccountHints.keys.join('/')} 里选一个；认不出填 null。',
     'tags：从 ${kTagKeywords.keys.join('/')} 里选 0~2 个；没有合适的返回空数组。',
   ].join('\n');
@@ -70,9 +87,10 @@ class VisionReceiptRecognizer implements ReceiptRecognizer {
 
   Uri get endpoint => Uri.parse('$_baseUrl/chat/completions');
 
-  static String _categoryChoices() => kCategoryKeywords.entries
-      .map((entry) => '${entry.key}（${entry.value.take(4).join('、')}）')
-      .join('/');
+  String _categoryChoicesText() {
+    final choices = categoryChoices.isEmpty ? kFallbackCategoryChoices : categoryChoices;
+    return choices.map((choice) => choice.toPrompt()).join('/');
+  }
 
   @override
   Future<ReceiptGuess> recognize(Uint8List bytes) async {

@@ -18,6 +18,7 @@ import '../data/repositories/recurring_repository.dart';
 import '../data/repositories/transaction_repository.dart';
 import '../services/export/export_service.dart';
 import '../services/import/import_service.dart';
+import '../data/category_library.dart';
 import '../services/capture/capture_account_map.dart';
 import '../services/capture/capture_channel.dart';
 import '../services/capture/capture_diag_sink.dart';
@@ -479,6 +480,10 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     final recognizer = await systemReceiptRecognizer(
       settings: _visionSettings,
       keys: _visionKeys,
+      categoryChoices: categoryChoicesFrom(
+        await _categoryRepo.allCategories(),
+        CategoryType.expense,
+      ),
     );
     if (!mounted) return;
 

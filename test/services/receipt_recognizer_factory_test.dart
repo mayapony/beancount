@@ -2,6 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer.dart';
+import 'package:bean_count/data/category_library.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_factory.dart';
 import 'package:bean_count/services/ocr/receipt_recognizer_vision.dart';
 import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
@@ -65,5 +66,17 @@ void main() {
 
     await keys.clear();
     expect(await build(), isNull);
+  });
+  test('传入的分类候选会带到识别器里', () async {
+    await settings.save(const ReceiptVisionSettings(enabled: true));
+    await keys.write('sk-test');
+    final recognizer = await systemReceiptRecognizer(
+      settings: settings,
+      keys: keys,
+      categoryChoices: const [CategoryChoice('日用品')],
+    );
+    final vision = recognizer! as VisionReceiptRecognizer;
+    expect(vision.categoryChoices.single.name, '日用品');
+    recognizer.close();
   });
 }
