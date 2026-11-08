@@ -36,7 +36,7 @@
 
 ## 4. 门禁
 
-- [ ] 4.1 `flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
+- [x] 4.1 `flutter analyze` 零告警、`flutter test --exclude-tags screenshots` 全绿、`assembleDebug` / `assembleRelease` 构建成功、`openspec validate --all --strict` 通过
   - 验证：四条命令输出贴进提交说明
 - [ ] 4.2 真机：面板选二级 → 记一笔 → 明细按一级汇总；截图识别自建分类 → 落对分类
   - 验证：真机截图 + `adb pull` 的 `events.log`
