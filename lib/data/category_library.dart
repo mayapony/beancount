@@ -285,3 +285,26 @@ List<CategoryChoice> categoryChoicesFrom(
         ),
   ];
 }
+/// 反向匹配：在一段文本里找分类库里出现过的名字或别名。
+///
+/// 用于「通知/无障碍拿到的文本里带商户名」的场景——这里的方向是
+/// 「文本包含分类名」，和 [searchCategoryLibrary]（查询词包含于分类名）相反。
+/// 命中的按词长从长到短排序，长词更具体（「叮咚买菜」优于「买菜」）。
+List<LibraryEntry> libraryEntriesInText(
+  String text, {
+  CategoryType? type,
+}) {
+  if (text.trim().isEmpty) return const [];
+  final hits = <(int, LibraryEntry)>[];
+  for (final entry in flattenCategoryLibrary(type: type)) {
+    final keys = [entry.category.name, ...entry.category.aliases];
+    for (final key in keys) {
+      if (key.length >= 2 && text.contains(key)) {
+        hits.add((key.length, entry));
+        break;
+      }
+    }
+  }
+  hits.sort((a, b) => b.$1.compareTo(a.$1));
+  return [for (final hit in hits) hit.$2];
+}

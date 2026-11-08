@@ -65,4 +65,25 @@ void main() {
       }
     });
   });
+  group('文本反向匹配', () {
+    test('文本里出现商户名能命中分类', () {
+      final hits = libraryEntriesInText('微信支付 滴滴出行 支付 ¥12.00');
+      expect(hits.map((e) => e.displayPath), contains('出行交通 / 打车'));
+    });
+
+    test('长词优先', () {
+      final hits = libraryEntriesInText('叮咚买菜');
+      expect(hits.first.displayPath, contains('买菜'));
+    });
+
+    test('空文本与无命中返回空', () {
+      expect(libraryEntriesInText(''), isEmpty);
+      expect(libraryEntriesInText('支付宝 支付成功 ¥5'), isEmpty);
+    });
+
+    test('按类型过滤', () {
+      final income = libraryEntriesInText('工资到账', type: CategoryType.income);
+      expect(income.map((e) => e.category.name), contains('工资'));
+    });
+  });
 }

@@ -9,6 +9,7 @@ import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
 import '../attachments/image_picker_service.dart';
 import '../capture/capture_account_map.dart';
+import '../ocr/auto_create_policy.dart';
 import '../entry/entry_writer.dart';
 import '../ocr/entry_matching.dart';
 import '../ocr/receipt_guess.dart';
@@ -40,10 +41,18 @@ class AutoScreenshotSaver {
   AutoScreenshotSaver({
     required this.db,
     AttachmentRepository? attachments,
-  }) : _attachments = attachments ?? AttachmentRepository(db);
+    this.autoCreateCategories = false,
+    AutoCreatePolicy? autoCreatePolicy,
+  })  : _attachments = attachments ?? AttachmentRepository(db),
+        _autoCreatePolicy = autoCreatePolicy ?? AutoCreatePolicy(AppStateRepository(db));
 
   final AppDatabase db;
   final AttachmentRepository _attachments;
+
+  /// 用户的「自动新建分类」开关；关闭时一律不新建，退回既有兜底。
+  final bool autoCreateCategories;
+
+  final AutoCreatePolicy _autoCreatePolicy;
 
   Future<AutoScreenshotSave> save({
     required ReceiptGuess guess,
@@ -70,6 +79,10 @@ class AutoScreenshotSaver {
       guess.categoryName,
       expenseCategories,
       CategoryType.expense,
+    );
+    category ??= await _createRecognizedCategory(
+      guess.categoryName,
+      expenseCategories,
     );
     category ??= _categoryById(expenseCategories, selection.categoryId);
     category ??= _categoryByName(expenseCategories, '其他');
@@ -117,6 +130,30 @@ class AutoScreenshotSaver {
       categoryName: category.name,
       accountName: account?.name,
     );
+  }
+
+  /// 识别出的分类账本里没有时，按「自动新建分类」开关与配额决定要不要建。
+  ///
+  /// 开关关闭、配额用尽、或者模型压根没给分类名，都返回 null，由调用方退回
+  /// 「上次用的 →「其他」」的老兜底。
+  Future<Category?> _createRecognizedCategory(
+    String? name,
+    List<Category> existing,
+  ) async {
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    if (!autoCreateCategories) return null;
+    final decision = await _autoCreatePolicy.checkCategory(
+      enabled: true,
+      categoryTotal: existing.length + 1,
+    );
+    if (!decision.allowed) return null;
+    final created = await CategoryRepository(db).ensure(
+      name: trimmed,
+      type: CategoryType.expense,
+    );
+    await _autoCreatePolicy.markCategoryCreated();
+    return created;
   }
 
   static Category? _categoryById(List<Category> categories, String? id) {

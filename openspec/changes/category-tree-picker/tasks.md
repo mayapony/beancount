@@ -27,11 +27,11 @@
 
 ## 3. 缺分类时自动新建
 
-- [ ] 3.1 前台面板：识别出账本没有的分类名时，按 `AutoCreatePolicy` 判定能否新建；允许则显示「将新建」并在保存时创建、记配额
+- [x] 3.1 前台面板：识别出账本没有的分类名时，按 `AutoCreatePolicy` 判定能否新建；允许则显示「将新建」并在保存时创建、记配额
   - 验证：`test/services/ocr/auto_create_policy_test.dart` 与面板单测覆盖「允许 / 开关关闭 / 配额用尽」
-- [ ] 3.2 后台自动入账（`AutoScreenshotSaver`）：匹配不到分类时同样走开关 + 配额，允许则 `ensure` 新建并记配额，不允许则按既有兜底
+- [x] 3.2 后台自动入账（`AutoScreenshotSaver`）：匹配不到分类时同样走开关 + 配额，允许则 `ensure` 新建并记配额，不允许则按既有兜底
   - 验证：`test/services/screenshot/auto_entry_test.dart` 断言开关关闭不建、配额充足时新建且落该分类
-- [ ] 3.3 无障碍/通知入账路径（`CaptureEntrySaver`）复用同一解析，缺分类时同样受配额约束
+- [x] 3.3 无障碍/通知入账路径（`CaptureEntrySaver`）复用同一解析，缺分类时同样受配额约束
   - 验证：`test/services/capture/capture_runtime_test.dart` 断言存在分类树时优先落到匹配分类
 
 ## 4. 门禁

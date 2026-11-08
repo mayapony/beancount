@@ -2,6 +2,7 @@ import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
+import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/services/capture/capture_candidate.dart';
 import 'package:bean_count/services/capture/capture_diagnostics.dart';
 import 'package:bean_count/services/capture/capture_rule.dart';
@@ -356,5 +357,20 @@ void main() {
     final event = (await diag.events()).single;
     expect(event.kind, CaptureDiagKind.gateClosed);
     expect(event.reason, 'capture_disabled');
+  });
+  test('通知文本能推出分类时不再落「其他」', () async {
+    await rules.save([notificationRule()]);
+
+    final r = runtime(withDiag: diag);
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '滴滴出行 支付 ¥12.00',
+    );
+    await r.flush();
+
+    final row = (await db.select(db.transactions).get()).single;
+    final category = await CategoryRepository(db).byId(row.categoryId!);
+    // 账本里叫「交通」，库里的「出行交通」按包含关系复用它，不重复建
+    expect(category!.name, '交通');
   });
 }

@@ -141,7 +141,10 @@ Future<Map<String, Object?>> _recognize(
         // 写账前先取当前应用：截完图 MIUI 可能弹出截图工具栏，这里只读一次、
         // 认不出的系统窗口直接丢弃，宁可不记来源也不记错来源。
         final sourcePackage = await _currentPackage(_screenshotChannel);
-        final saved = await AutoScreenshotSaver(db: db).save(
+        final saved = await AutoScreenshotSaver(
+          db: db,
+          autoCreateCategories: settings.autoCreateCategories,
+        ).save(
           guess: guess,
           imageBytes: bytes,
           fileName: 'screenshot_${now.microsecondsSinceEpoch}.jpg',

@@ -8,6 +8,7 @@ import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/services/capture/capture_account_map.dart';
+import 'package:bean_count/services/ocr/auto_create_policy.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:bean_count/services/ocr/receipt_guess.dart';
@@ -235,6 +236,72 @@ void main() {
       final row = (await db.select(db.transactions).get()).single;
       expect(row.accountId, alipay.id);
       expect(row.needsReview, isNull);
+    });
+  });
+  group('自动新建分类', () {
+    AutoScreenshotSaver saverWith({required bool autoCreate}) =>
+        AutoScreenshotSaver(
+          db: db,
+          attachments: attachments,
+          autoCreateCategories: autoCreate,
+        );
+
+    test('开关关闭时不新建，落到兜底分类', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saverWith(autoCreate: false).save(
+        guess: guess(category: '软件订阅'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      final category = await CategoryRepository(db).byId(row.categoryId!);
+      expect(category!.name, isNot('软件订阅'));
+      expect(await categories.findByName('软件订阅', CategoryType.expense), isNull);
+    });
+
+    test('开关打开时新建并把该笔记到它名下', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saverWith(autoCreate: true).save(
+        guess: guess(category: '软件订阅'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+      );
+
+      final created =
+          await categories.findByName('软件订阅', CategoryType.expense);
+      expect(created, isNotNull);
+      final row = (await db.select(db.transactions).get()).single;
+      expect(row.categoryId, created!.id);
+    });
+
+    test('配额用尽后不再新建', () async {
+      await accounts.ensure(name: '支付宝');
+      // 先把 7 天配额用掉 3 次
+      final policy = AutoCreatePolicy(AppStateRepository(db));
+      for (var i = 0; i < AutoCreatePolicy.kCategoryWeeklyLimit; i++) {
+        await categories.ensure(name: '占位$i', type: CategoryType.expense);
+        await policy.markCategoryCreated();
+      }
+
+      await saverWith(autoCreate: true).save(
+        guess: guess(category: '又一个新分类'),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+      );
+
+      expect(
+        await categories.findByName('又一个新分类', CategoryType.expense),
+        isNull,
+      );
     });
   });
 }
