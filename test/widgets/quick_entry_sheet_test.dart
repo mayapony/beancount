@@ -1509,7 +1509,8 @@ void main() {
       await tester.tap(find.byKey(const Key('category-add-child')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, '过路费');
-      await tester.tap(find.byKey(const Key('category-add-confirm')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('category-add-custom')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('1'));
@@ -1538,5 +1539,52 @@ void main() {
     expect(field.focusNode?.hasFocus, isTrue);
     expect(tester.testTextInput.isVisible, isTrue);
   });
+    testWidgets('从分类库选二级时把父级名字一起带出来', (tester) async {
+      final calls = <(String, String?, CategoryType)>[];
+      await pumpSheet(
+        tester,
+        onCreate: (name, parentId, type) async {
+          calls.add((name, parentId, type));
+          return Category(
+            id: 'lib-${calls.length}',
+            name: name,
+            type: type,
+            parentId: parentId,
+            color: 0xFFF59E0B,
+            icon: 'more_horiz',
+            sortOrder: 9,
+            createdAt: DateTime(2026, 1, 1),
+          );
+        },
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // 先填金额，再动分类：反过来弹窗退场会打乱键盘位置
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+
+      // 标题栏「＋」新增一级 → 库里选「打车」（属于「出行交通」）
+      await tester.tap(find.byKey(const Key('category-add-root')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '加油');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('library-出行交通 / 加油')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('library-出行交通 / 加油')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+
+      // 先建父级「出行交通」，再建「打车」并挂到父级下
+      expect(calls.first.$1, '出行交通');
+      expect(calls.first.$2, isNull);
+      expect(calls.last.$1, '加油');
+      expect(calls.last.$2, 'lib-1');
+    });
   });
 }

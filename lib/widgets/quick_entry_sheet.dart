@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../data/category_library.dart';
 import '../data/db/app_database.dart';
 import '../data/db/enums.dart';
 import '../data/repositories/account_repository.dart';
@@ -203,6 +204,9 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   /// 待新建分类的父级：为空表示建一级分类。
   String? _newCategoryParentId;
+
+  /// 从分类库里选了二级分类、但父级还没建时，记下父级名字。
+  String? _newCategoryParentName;
 
   /// 面板只展示一级分类，并按当前收支类型过滤。
   List<Category> get _visibleCategories => [
@@ -822,17 +826,23 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   /// 面板内新增分类：先只记下名字与父级，真正落库在保存时（取消不留空分类）。
   Future<void> _promptNewCategory(String? parentId) async {
-    final name = await showDialog<String>(
+    final pick = await showDialog<_CategoryPick>(
       context: context,
-      builder: (_) => _NewCategoryDialog(
-        title: parentId == null ? '新增一级分类' : '新增二级分类',
+      builder: (_) => _NewCategorySheet(
+        title: parentId == null ? '新增分类' : '新增二级分类',
+        type: _isIncome ? CategoryType.income : CategoryType.expense,
+        existingNames: {
+          for (final c in widget.categories) c.name,
+        },
       ),
     );
-    final trimmed = name?.trim() ?? '';
-    if (trimmed.isEmpty || !mounted) return;
+    final name = pick?.name.trim() ?? '';
+    if (name.isEmpty || !mounted) return;
     setState(() {
-      _newCategoryName = trimmed;
+      _newCategoryName = name;
       _newCategoryParentId = parentId;
+      _newCategoryParentName =
+          parentId == null ? pick?.parentName : null;
       _categoryId = null;
       if (parentId != null) _expandedRootId = parentId;
     });
@@ -848,11 +858,16 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       if (create != null) {
         HapticFeedback.lightImpact();
         setState(() => _saving = true);
-        final created = await create(
-          newCategoryName,
-          _newCategoryParentId,
-          _isIncome ? CategoryType.income : CategoryType.expense,
-        );
+        final type = _isIncome ? CategoryType.income : CategoryType.expense;
+        // 库里选的二级分类，父级可能还不存在：先建父级，再建它。
+        var parentId = _newCategoryParentId;
+        final parentName = _newCategoryParentName;
+        if (parentId == null && parentName != null && parentName.isNotEmpty) {
+          final parent = await create(parentName, null, type);
+          if (!mounted) return;
+          parentId = parent?.id;
+        }
+        final created = await create(newCategoryName, parentId, type);
         if (!mounted) return;
         if (created == null) {
           setState(() {
@@ -2389,23 +2404,42 @@ class _AddCell extends StatelessWidget {
     );
   }
 }
-/// 新增分类的输入弹窗。
-///
-/// 坑：`TextField(autofocus: true)` 在「弹窗套在模态底部面板上」时经常不拉起
-/// 输入法——焦点被面板的 FocusScope 拦住了。这里改成弹窗自己持有 FocusNode，
-/// 首帧之后显式 requestFocus，输入法才会真的出现。
-class _NewCategoryDialog extends StatefulWidget {
-  const _NewCategoryDialog({required this.title});
 
-  final String title;
+/// 选中的库条目：名字 + 需要一起建的父级名（一级分类没有父级）。
+class _CategoryPick {
+  const _CategoryPick(this.name, [this.parentName]);
 
-  @override
-  State<_NewCategoryDialog> createState() => _NewCategoryDialogState();
+  final String name;
+  final String? parentName;
 }
 
-class _NewCategoryDialogState extends State<_NewCategoryDialog> {
+/// 新增分类：一个带搜索的分类库选择器。
+///
+/// 相比"只填一个名字"，库能让人少打字、也能顺手建出二级分类；搜不到时仍然
+/// 可以直接用输入的名字新建。
+///
+/// 坑：`TextField(autofocus: true)` 在「弹窗套在模态底部面板上」时经常不拉起
+/// 输入法——焦点被面板的 FocusScope 拦住了。这里自己持 FocusNode，首帧后显式
+/// requestFocus，输入法才会出现。
+class _NewCategorySheet extends StatefulWidget {
+  const _NewCategorySheet({
+    required this.title,
+    required this.type,
+    required this.existingNames,
+  });
+
+  final String title;
+  final CategoryType type;
+  final Set<String> existingNames;
+
+  @override
+  State<_NewCategorySheet> createState() => _NewCategorySheetState();
+}
+
+class _NewCategorySheetState extends State<_NewCategorySheet> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  String _query = '';
 
   @override
   void initState() {
@@ -2423,30 +2457,129 @@ class _NewCategoryDialogState extends State<_NewCategoryDialog> {
     super.dispose();
   }
 
-  void _submit() => Navigator.of(context).pop(_controller.text);
+  List<LibraryEntry> get _entries =>
+      searchCategoryLibrary(_query, type: widget.type);
+
+  /// 输入的名字在库里没有完全同名时，允许「用这个名字新建」。
+  bool get _canCreateCustom {
+    final q = _query.trim();
+    if (q.isEmpty) return false;
+    if (widget.existingNames.contains(q)) return false;
+    return !_entries.any((e) => e.category.name == q);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
     return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       title: Text(widget.title),
-      content: TextField(
-        key: const Key('category-add-field'),
-        controller: _controller,
-        focusNode: _focusNode,
-        autofocus: true,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(hintText: '分类名'),
-        onSubmitted: (_) => _submit(),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              key: const Key('category-add-field'),
+              controller: _controller,
+              focusNode: _focusNode,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                hintText: '搜索或输入名字',
+                prefixIcon: Icon(Icons.search_rounded, size: 20),
+                isDense: true,
+              ),
+              onChanged: (value) => setState(() => _query = value),
+              onSubmitted: (_) {
+                if (_canCreateCustom) {
+                  Navigator.of(context).pop(_CategoryPick(_query.trim()));
+                }
+              },
+            ),
+            if (_canCreateCustom)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('category-add-custom'),
+                  onPressed: () => Navigator.of(context)
+                      .pop(_CategoryPick(_query.trim())),
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: Text('新建「${_query.trim()}」'),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: _entries.isEmpty
+                  ? Center(
+                      child: Text(
+                        '没有匹配的分类',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _entries.length,
+                      itemBuilder: (context, index) {
+                        final entry = _entries[index];
+                        final exists =
+                            widget.existingNames.contains(entry.category.name);
+                        return ListTile(
+                          key: Key('library-${entry.displayPath}'),
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          leading: Icon(
+                            categoryIconFor(entry.category.iconKey),
+                            size: 20,
+                            color: palette.textSecondary,
+                          ),
+                          title: Row(
+                            children: [
+                              Text(entry.category.name),
+                              if (entry.parent != null) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  entry.parent!.name,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: palette.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: exists
+                              ? Text(
+                                  '已有',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: palette.textSecondary,
+                                  ),
+                                )
+                              : null,
+                          enabled: !exists,
+                          onTap: exists
+                              ? null
+                              : () => Navigator.of(context).pop(
+                                    _CategoryPick(
+                                      entry.category.name,
+                                      entry.parent?.name,
+                                    ),
+                                  ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('取消'),
-        ),
-        TextButton(
-          key: const Key('category-add-confirm'),
-          onPressed: _submit,
-          child: const Text('确定'),
         ),
       ],
     );
