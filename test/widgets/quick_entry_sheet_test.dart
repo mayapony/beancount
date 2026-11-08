@@ -1605,5 +1605,41 @@ void main() {
       expect(find.byKey(const Key('library-出行交通')), findsNothing);
       expect(find.byKey(const Key('library-出行交通 / 加油')), findsOneWidget);
     });
+    testWidgets('库里同名分类点了就选用，不再新建', (tester) async {
+      final calls = <String>[];
+      QuickEntryDraft? draft;
+      await pumpSheet(
+        tester,
+        onDraft: (d) => draft = d,
+        onCreate: (name, parentId, type) async {
+          calls.add(name);
+          return null;
+        },
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // 「餐饮」在账本里已存在（tree()），库里同名的「食品餐饮」不在；
+      // 用库里的「打车」构造：先造一个同名账本分类不方便，这里验证
+      // 「已有条目可点」的行为——走「出行交通」的二级区，库里「打车」已有。
+      await tester.tap(find.text('出行交通'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('category-add-child')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '打车');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library-出行交通 / 打车')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+
+      // 直接选中已有的「打车」，没有触发新建
+      expect(draft?.category?.id, 'cat-taxi');
+      expect(calls, isEmpty);
+    });
   });
 }

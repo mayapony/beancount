@@ -8,10 +8,17 @@ import '../widgets/common.dart';
 
 /// 选中的结果：名字 + 需要一起建的父级名（一级分类没有父级）。
 class CategoryPick {
-  const CategoryPick(this.name, [this.parentName]);
+  const CategoryPick(this.name, [this.parentName])
+      : existingId = null;
+
+  /// 账本里已经有同名分类：直接用它，不再新建。
+  const CategoryPick.existing(this.existingId, this.name) : parentName = null;
 
   final String name;
   final String? parentName;
+
+  /// 非空表示选中的是账本里已有的分类。
+  final String? existingId;
 }
 
 /// 新增分类：一个带搜索的分类库选择页。
@@ -24,13 +31,14 @@ class CategoryPickerPage extends StatefulWidget {
     super.key,
     required this.title,
     required this.type,
-    required this.existingNames,
+    required this.existingByName,
     this.childOnly = false,
   });
 
   final String title;
   final CategoryType type;
-  final Set<String> existingNames;
+  /// 账本里已有的分类：名字 → id。同名条目直接选用，不再新建。
+  final Map<String, String> existingByName;
 
   /// 只列二级分类（从某个一级的二级区进来时）。
   final bool childOnly;
@@ -72,7 +80,7 @@ class _CategoryPickerPageState extends State<CategoryPickerPage> {
   bool get _canCreateCustom {
     final q = _query.trim();
     if (q.isEmpty) return false;
-    if (widget.existingNames.contains(q)) return false;
+    if (widget.existingByName.containsKey(q)) return false;
     return !_entries.any((e) => e.category.name == q);
   }
 
@@ -153,8 +161,8 @@ class _CategoryPickerPageState extends State<CategoryPickerPage> {
                     itemCount: _entries.length,
                     itemBuilder: (context, index) {
                       final entry = _entries[index];
-                      final exists =
-                          widget.existingNames.contains(entry.category.name);
+                      final existingId =
+                          widget.existingByName[entry.category.name];
                       return ListTile(
                         key: Key('library-${entry.displayPath}'),
                         leading: Icon(
@@ -177,24 +185,26 @@ class _CategoryPickerPageState extends State<CategoryPickerPage> {
                             ],
                           ],
                         ),
-                        trailing: exists
+                        trailing: existingId != null
                             ? Text(
-                                '已有',
+                                '已有 · 使用',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: palette.textSecondary,
                                 ),
                               )
                             : null,
-                        enabled: !exists,
-                        onTap: exists
-                            ? null
-                            : () => _pick(
-                                  CategoryPick(
-                                    entry.category.name,
-                                    entry.parent?.name,
-                                  ),
+                        onTap: () => _pick(
+                          existingId != null
+                              ? CategoryPick.existing(
+                                  existingId,
+                                  entry.category.name,
+                                )
+                              : CategoryPick(
+                                  entry.category.name,
+                                  entry.parent?.name,
                                 ),
+                        ),
                       );
                     },
                   ),

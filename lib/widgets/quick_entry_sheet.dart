@@ -835,14 +835,25 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
           // 二级上下文里只列二级分类，否则点一级会把一级挂到当前一级下面
           childOnly: parentId != null,
           type: _isIncome ? CategoryType.income : CategoryType.expense,
-          existingNames: {
-            for (final c in widget.categories) c.name,
+          existingByName: {
+            for (final c in widget.categories) c.name: c.id,
           },
         ),
       ),
     );
     final name = pick?.name.trim() ?? '';
     if (name.isEmpty || !mounted) return;
+    // 账本里已有同名分类：直接选中它，不新建
+    final existingId = pick?.existingId;
+    if (existingId != null) {
+      setState(() {
+        _categoryId = existingId;
+        _newCategoryName = null;
+        _newCategoryParentId = null;
+        _newCategoryParentName = null;
+      });
+      return;
+    }
     setState(() {
       _newCategoryName = name;
       _newCategoryParentId = parentId;
