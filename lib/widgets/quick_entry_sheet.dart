@@ -242,9 +242,106 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       ];
 
 
-  /// 当前展开的一级的子分类；没展开或没有子分类时为空。
-  List<Category> get _expandedChildren =>
-      _expandedRootId == null ? const [] : _childrenOfRoot(_expandedRootId!);
+
+  void _selectRoot(Category root) {
+    setState(() {
+      _categoryId = root.id;
+      _newCategoryName = null;
+      _newCategoryParentId = null;
+      _expandedRootId = root.id;
+    });
+  }
+
+  void _selectChild(Category child) {
+    setState(() {
+      _categoryId = child.id;
+      _newCategoryName = null;
+      _newCategoryParentId = null;
+    });
+  }
+
+  /// 一级按 5 列分组；选中的一级下面整块插入它的二级网格，再继续后面的行。
+  Widget _buildCategoryFlow(BeanPalette palette, BeanNeutral neutral) {
+    final roots = _visibleCategories;
+    if (roots.isEmpty) {
+      return SizedBox(
+        height: 74,
+        child: Center(
+          child: Text(
+            '还没有分类',
+            style: TextStyle(fontSize: 13, color: palette.textSecondary),
+          ),
+        ),
+      );
+    }
+    const perRow = 5;
+    final rows = <Widget>[];
+    for (var start = 0; start < roots.length; start += perRow) {
+      final end = start + perRow < roots.length ? start + perRow : roots.length;
+      final rowRoots = roots.sublist(start, end);
+      rows.add(Row(
+        children: [
+          for (var i = 0; i < perRow; i++)
+            Expanded(
+              child: i < rowRoots.length
+                  ? _CategoryCell(
+                      category: rowRoots[i],
+                      selected: _highlightCategory?.id == rowRoots[i].id,
+                      onTap: () => _selectRoot(rowRoots[i]),
+                    )
+                  : const SizedBox(height: 74),
+            ),
+        ],
+      ));
+      for (final root in rowRoots) {
+        if (root.id == _expandedRootId) {
+          rows.add(_childBlock(root, palette, neutral));
+          break;
+        }
+      }
+    }
+    return Column(mainAxisSize: MainAxisSize.min, children: rows);
+  }
+
+  /// 二级网格：和一级同构（图标 + 文字），末尾放一个「新增」磁贴。
+  Widget _childBlock(Category root, BeanPalette palette, BeanNeutral neutral) {
+    final children = _childrenOfRoot(root.id);
+    const perRow = 4;
+    final total = children.length + 1; // 最后一格是「新增」
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: palette.neutral.sand.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          for (var start = 0; start < total; start += perRow)
+            Row(
+              children: [
+                for (var i = 0; i < perRow; i++)
+                  Expanded(
+                    child: start + i < total
+                        ? (start + i < children.length
+                            ? _CategoryCell(
+                                key: Key('sub-category-${children[start + i].id}'),
+                                category: children[start + i],
+                                selected: _categoryId == children[start + i].id,
+                                onTap: () => _selectChild(children[start + i]),
+                              )
+                            : _AddCell(
+                                key: const Key('category-add-child'),
+                                onTap: () => _promptNewCategory(root.id),
+                              ))
+                        : const SizedBox(height: 74),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 
   /// 网格高亮用：二级分类高亮它所属的一级父类（网格里只有一级）。
   Category? get _highlightCategory {
@@ -975,147 +1072,17 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
               ),
             )
           else
-            // ── 分类：4 列网格，首屏 3 行（12 个）；分类更多时内部滚动 ──
+            // ── 分类：一级 5 列；选中的一级下面整块插入它的二级网格 ──
             Flexible(
               fit: FlexFit.loose,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 222),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final visible = _visibleCategories;
-                    final selected = _highlightCategory;
-                    if (visible.isEmpty) {
-                      return SizedBox(
-                        height: 74,
-                        child: Center(
-                          child: Text(
-                            '还没有分类',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: palette.textSecondary,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                    final rows = (visible.length / 4).ceil();
-                    final grid = SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        children: [
-                          for (var row = 0; row < rows; row++)
-                            Row(
-                              children: [
-                                for (var col = 0; col < 4; col++)
-                                  Expanded(
-                                    child: row * 4 + col < visible.length
-                                        ? _CategoryCell(
-                                            category: visible[row * 4 + col],
-                                            selected: selected?.id ==
-                                                visible[row * 4 + col].id,
-                                            onTap: () {
-                                              HapticFeedback.selectionClick();
-                                              final picked = visible[row * 4 + col];
-                                              setState(() {
-                                                _categoryId = picked.id;
-                                                _newCategoryName = null;
-                                                _newCategoryParentId = null;
-                                                // 选中一级就展开二级区：即使还没有
-                                                // 子分类，那里也有「新增」入口。
-                                                _expandedRootId = picked.id;
-                                              });
-                                            },
-                                          )
-                                        : const SizedBox(height: 74),
-                                  ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    );
-                    // 只有分类超过 3 行（需要滚动）时才加底部淡出：
-                    // 提示"还能滑"，而不是看起来被裁掉
-                    if (rows <= 3) return grid;
-                    return ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (rect) => const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white,
-                          Colors.white,
-                          Colors.transparent
-                        ],
-                        stops: [0.0, 0.93, 1.0],
-                      ).createShader(rect),
-                      child: grid,
-                    );
-                  },
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: _buildCategoryFlow(palette, neutral),
                 ),
               ),
-            ),
-          if (!_isTransfer && _expandedRootId != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 2),
-              child: SizedBox(
-                height: 34,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _expandedChildren.length + 1,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    if (index == _expandedChildren.length) {
-                      return GestureDetector(
-                        key: const Key('category-add-child'),
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _promptNewCategory(_expandedRootId),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: palette.neutral.sand,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.add_rounded, size: 14),
-                              const SizedBox(width: 4),
-                              Text(
-                                '新增',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: palette.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    final child = _expandedChildren[index];
-                    final selected = _categoryId == child.id;
-                    return _SubCategoryChip(
-                      key: Key('sub-category-${child.id}'),
-                      label: child.name,
-                      selected: selected,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        setState(() {
-                          _categoryId = child.id;
-                          _newCategoryName = null;
-                          _newCategoryParentId = null;
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-            ),
-          if (!_isTransfer && _newCategoryName != null)
+            ),          if (!_isTransfer && _newCategoryName != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 2, 16, 0),
               child: Row(
@@ -1721,6 +1688,7 @@ class _Segmented extends StatelessWidget {
 /// 12 个分类同屏时，颜色是噪声，选中项才是信息。
 class _CategoryCell extends StatelessWidget {
   const _CategoryCell({
+    super.key,
     required this.category,
     required this.selected,
     required this.onTap,
@@ -2378,17 +2346,11 @@ class _NoteDialogState extends State<_NoteDialog> {
     );
   }
 }
-/// 二级分类的小胶囊：单行横向滚动里用，比 4 列网格省高度。
-class _SubCategoryChip extends StatelessWidget {
-  const _SubCategoryChip({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
 
-  final String label;
-  final bool selected;
+/// 网格里的「新增」磁贴：和分类格子一样大，避免破坏网格节奏。
+class _AddCell extends StatelessWidget {
+  const _AddCell({super.key, required this.onTap});
+
   final VoidCallback onTap;
 
   @override
@@ -2397,21 +2359,31 @@ class _SubCategoryChip extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? _accentFill(context) : palette.neutral.sand,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: selected
-                ? _onAccentFill(context)
-                : palette.textSecondary,
-          ),
+      child: SizedBox(
+        height: 74,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: palette.neutral.sand,
+                border: Border.all(color: palette.border),
+              ),
+              child: Icon(
+                Icons.add_rounded,
+                size: 22,
+                color: palette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '新增',
+              style: TextStyle(fontSize: 12, color: palette.textSecondary),
+            ),
+          ],
         ),
       ),
     );
