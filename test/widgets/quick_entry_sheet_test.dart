@@ -1178,7 +1178,7 @@ void main() {
                     categories: _categories(),
                     accounts: _accounts(),
                     newCategoryCandidate: '咖啡',
-                    onCreateCategory: (name) async {
+                    onCreateCategory: (name, parentId, type) async {
                       created.add(name);
                       return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
                     },
@@ -1239,7 +1239,7 @@ void main() {
                     categories: _categories(),
                     accounts: _accounts(),
                     newCategoryCandidate: '咖啡',
-                    onCreateCategory: (name) async {
+                    onCreateCategory: (name, parentId, type) async {
                       created.add(name);
                       return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
                     },
@@ -1292,7 +1292,7 @@ void main() {
                     categories: _categories(),
                     accounts: _accounts(),
                     newCategoryCandidate: '咖啡',
-                    onCreateCategory: (name) async {
+                    onCreateCategory: (name, parentId, type) async {
                       created.add(name);
                       return _cat('cat-coffee', name, CategoryType.expense, 9, 'coffee');
                     },
@@ -1372,5 +1372,154 @@ void main() {
     await tester.pumpAndSettle();
     expect(submitted?.tags.length, 2);
     expect(submitted?.tags, isNot(contains('打车')));
+  });
+  group('两级分类', () {
+    List<Category> tree() => [
+          _cat('cat-food', '餐饮', CategoryType.expense, 0, 'restaurant'),
+          _cat('cat-traffic', '出行交通', CategoryType.expense, 1, 'directions_bus'),
+          Category(
+            id: 'cat-taxi',
+            name: '打车',
+            type: CategoryType.expense,
+            parentId: 'cat-traffic',
+            color: 0xFFF59E0B,
+            icon: 'local_taxi',
+            sortOrder: 0,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+          Category(
+            id: 'cat-parking',
+            name: '停车费',
+            type: CategoryType.expense,
+            parentId: 'cat-traffic',
+            color: 0xFFF59E0B,
+            icon: 'local_parking',
+            sortOrder: 1,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+          _cat('cat-shopping', '购物', CategoryType.expense, 2, 'shopping_bag'),
+        ];
+
+    Future<void> pumpSheet(
+      WidgetTester tester, {
+      String? initialCategoryId,
+      Future<Category?> Function(String, String?, CategoryType)? onCreate,
+      void Function(QuickEntryDraft?)? onDraft,
+    }) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildBeanTheme(Brightness.light),
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: ElevatedButton(
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => QuickEntrySheet(
+                      categories: tree(),
+                      accounts: _accounts(),
+                      initialCategoryId: initialCategoryId,
+                      onCreateCategory: onCreate,
+                      onSubmit: (draft) async {
+                        onDraft?.call(draft);
+                        return null;
+                      },
+                    ),
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('选中一级后展开它的二级，空二级的一级直接选中', (tester) async {
+      await pumpSheet(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('出行交通'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sub-category-cat-taxi')), findsOneWidget);
+      expect(find.byKey(const Key('sub-category-cat-parking')), findsOneWidget);
+
+      await tester.tap(find.text('购物'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sub-category-cat-taxi')), findsNothing);
+    });
+
+    testWidgets('选二级分类后草稿落二级 id', (tester) async {
+      QuickEntryDraft? draft;
+      await pumpSheet(tester, onDraft: (d) => draft = d);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('出行交通'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('sub-category-cat-taxi')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+
+      expect(draft?.category?.id, 'cat-taxi');
+    });
+
+    testWidgets('编辑一笔二级分类的账会展开父级', (tester) async {
+      await pumpSheet(tester, initialCategoryId: 'cat-taxi');
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sub-category-cat-taxi')), findsOneWidget);
+    });
+
+    testWidgets('二级区新增分类时带上父级', (tester) async {
+      final calls = <(String, String?, CategoryType)>[];
+      await pumpSheet(
+        tester,
+        onCreate: (name, parentId, type) async {
+          calls.add((name, parentId, type));
+          return Category(
+            id: 'cat-new',
+            name: name,
+            type: type,
+            parentId: parentId,
+            color: 0xFFF59E0B,
+            icon: 'more_horiz',
+            sortOrder: 9,
+            createdAt: DateTime(2026, 1, 1),
+          );
+        },
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('出行交通'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('category-add-child')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '过路费');
+      await tester.tap(find.byKey(const Key('category-add-confirm')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('1'));
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+
+      expect(calls.single.$1, '过路费');
+      expect(calls.single.$2, 'cat-traffic');
+    });
   });
 }

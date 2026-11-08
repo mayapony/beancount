@@ -562,21 +562,25 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
           pendingImage: pendingImage,
           newCategoryCandidate: newCategoryCandidate,
           autoTagEnabled: screenshotSettings.autoTags,
-          onCreateCategory: newCategoryCandidate == null
-              ? null
-              : (name) async {
-                  final decision = await _autoCreatePolicy.checkCategory(
-                    enabled: screenshotSettings.autoCreateCategories,
-                    categoryTotal: (await _categoryRepo.allCategories()).length,
-                  );
-                  if (!decision.allowed) return null;
-                  final created = await _categoryRepo.ensure(
-                    name: name,
-                    type: CategoryType.expense,
-                  );
-                  await _autoCreatePolicy.markCategoryCreated();
-                  return created;
-                },
+          onCreateCategory: (name, parentId, type) async {
+            // 用户在面板里自己建的分类不受配额限制；只有「识别建议的名字」
+            // 才走自动新建的开关与配额。
+            final fromRecognition = name == newCategoryCandidate;
+            if (fromRecognition) {
+              final decision = await _autoCreatePolicy.checkCategory(
+                enabled: screenshotSettings.autoCreateCategories,
+                categoryTotal: (await _categoryRepo.allCategories()).length,
+              );
+              if (!decision.allowed) return null;
+            }
+            final created = await _categoryRepo.ensure(
+              name: name,
+              type: type,
+              parentId: parentId,
+            );
+            if (fromRecognition) await _autoCreatePolicy.markCategoryCreated();
+            return created;
+          },
           onSubmit: (draft) async {
             try {
               final result = await _entryWriter.submit(

@@ -143,7 +143,11 @@ class QuickEntrySheet extends StatefulWidget {
 
   /// 保存时的建分类实现（生产环境接 `CategoryRepository.ensure`）。
   /// 为空时把 [QuickEntryDraft.newCategoryName] 交给调用方处理。
-  final Future<Category?> Function(String name)? onCreateCategory;
+  final Future<Category?> Function(
+    String name,
+    String? parentId,
+    CategoryType type,
+  )? onCreateCategory;
 
   /// 提交回调：返回 null 表示保存成功，返回字符串表示失败原因（面板保持打开）。
   final Future<String?> Function(QuickEntryDraft draft) onSubmit;
@@ -194,6 +198,12 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
   /// 识别出的待新建分类（还没落库）；为空表示没有候选。
   late String? _newCategoryName = widget.newCategoryCandidate;
 
+  /// 当前展开的一级分类 id：只有它下面存在子分类时才有值。
+  String? _expandedRootId;
+
+  /// 待新建分类的父级：为空表示建一级分类。
+  String? _newCategoryParentId;
+
   /// 面板只展示一级分类，并按当前收支类型过滤。
   List<Category> get _visibleCategories => [
         for (final c in widget.categories)
@@ -222,6 +232,20 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     final visible = _visibleCategories;
     return visible.isEmpty ? null : visible.first;
   }
+
+  /// 某个一级分类的二级分类（同类型）。
+  List<Category> _childrenOfRoot(String rootId) => [
+        for (final c in widget.categories)
+          if (c.parentId == rootId &&
+              c.type == (_isIncome ? CategoryType.income : CategoryType.expense))
+            c,
+      ];
+
+  bool _hasChildren(String rootId) => _childrenOfRoot(rootId).isNotEmpty;
+
+  /// 当前展开的一级的子分类；没展开或没有子分类时为空。
+  List<Category> get _expandedChildren =>
+      _expandedRootId == null ? const [] : _childrenOfRoot(_expandedRootId!);
 
   /// 网格高亮用：二级分类高亮它所属的一级父类（网格里只有一级）。
   Category? get _highlightCategory {
@@ -390,6 +414,16 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     });
 
     if (_categoryId != null) _newCategoryName = null;
+    // 编辑一笔已经有二级分类的账时，把它所在的一级展开好
+    final initialId = _categoryId;
+    if (initialId != null) {
+      for (final c in widget.categories) {
+        if (c.id == initialId && c.parentId != null) {
+          _expandedRootId = c.parentId;
+          break;
+        }
+      }
+    }
 
     final guess = widget.initialGuess;
     if (guess != null) _fillFromGuess(guess);
@@ -690,6 +724,42 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
     });
   }
 
+  /// 面板内新增分类：先只记下名字与父级，真正落库在保存时（取消不留空分类）。
+  Future<void> _promptNewCategory(String? parentId) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(parentId == null ? '新增一级分类' : '新增二级分类'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '分类名'),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            key: const Key('category-add-confirm'),
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty || !mounted) return;
+    setState(() {
+      _newCategoryName = trimmed;
+      _newCategoryParentId = parentId;
+      _categoryId = null;
+      if (parentId != null) _expandedRootId = parentId;
+    });
+  }
+
   Future<void> _submit({bool keepOpen = false}) async {
     if (!_canSubmit || _saving) return;
 
@@ -700,7 +770,11 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
       if (create != null) {
         HapticFeedback.lightImpact();
         setState(() => _saving = true);
-        final created = await create(newCategoryName);
+        final created = await create(
+          newCategoryName,
+          _newCategoryParentId,
+          _isIncome ? CategoryType.income : CategoryType.expense,
+        );
         if (!mounted) return;
         if (created == null) {
           setState(() {
@@ -714,6 +788,7 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
         setState(() {
           _categoryId = created.id;
           _newCategoryName = null;
+          _newCategoryParentId = null;
           _saving = false;
         });
       }
@@ -869,6 +944,19 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                   ),
                   const SizedBox(width: 8),
                   IconButton(
+                    key: const Key('category-add-root'),
+                    tooltip: '新增一级分类',
+                    onPressed: () => _promptNewCategory(null),
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    style: IconButton.styleFrom(
+                      backgroundColor: null,
+                      foregroundColor: palette.textSecondary,
+                      minimumSize: const Size(36, 40),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded, size: 20),
@@ -947,10 +1035,16 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                                                 visible[row * 4 + col].id,
                                             onTap: () {
                                               HapticFeedback.selectionClick();
+                                              final picked = visible[row * 4 + col];
                                               setState(() {
-                                                _categoryId =
-                                                    visible[row * 4 + col].id;
+                                                _categoryId = picked.id;
                                                 _newCategoryName = null;
+                                                _newCategoryParentId = null;
+                                                // 有子分类的一级顺带展开；没有就直接选中
+                                                _expandedRootId =
+                                                    _hasChildren(picked.id)
+                                                        ? picked.id
+                                                        : null;
                                               });
                                             },
                                           )
@@ -977,6 +1071,66 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
                         stops: [0.0, 0.93, 1.0],
                       ).createShader(rect),
                       child: grid,
+                    );
+                  },
+                ),
+              ),
+            ),
+          if (!_isTransfer && _expandedChildren.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 2),
+              child: SizedBox(
+                height: 34,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _expandedChildren.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    if (index == _expandedChildren.length) {
+                      return GestureDetector(
+                        key: const Key('category-add-child'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _promptNewCategory(_expandedRootId),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.neutral.sand,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add_rounded, size: 14),
+                              const SizedBox(width: 4),
+                              Text(
+                                '新增',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: palette.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    final child = _expandedChildren[index];
+                    final selected = _categoryId == child.id;
+                    return _SubCategoryChip(
+                      key: Key('sub-category-${child.id}'),
+                      label: child.name,
+                      selected: selected,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() {
+                          _categoryId = child.id;
+                          _newCategoryName = null;
+                          _newCategoryParentId = null;
+                        });
+                      },
                     );
                   },
                 ),
@@ -2242,6 +2396,45 @@ class _NoteDialogState extends State<_NoteDialog> {
           child: const Text('确定'),
         ),
       ],
+    );
+  }
+}
+/// 二级分类的小胶囊：单行横向滚动里用，比 4 列网格省高度。
+class _SubCategoryChip extends StatelessWidget {
+  const _SubCategoryChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? _accentFill(context) : palette.neutral.sand,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: selected
+                ? _onAccentFill(context)
+                : palette.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 }
