@@ -725,28 +725,10 @@ class _QuickEntrySheetState extends State<QuickEntrySheet>
 
   /// 面板内新增分类：先只记下名字与父级，真正落库在保存时（取消不留空分类）。
   Future<void> _promptNewCategory(String? parentId) async {
-    final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(parentId == null ? '新增一级分类' : '新增二级分类'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '分类名'),
-          onSubmitted: (value) => Navigator.of(context).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            key: const Key('category-add-confirm'),
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (_) => _NewCategoryDialog(
+        title: parentId == null ? '新增一级分类' : '新增二级分类',
       ),
     );
     final trimmed = name?.trim() ?? '';
@@ -2432,6 +2414,69 @@ class _SubCategoryChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+/// 新增分类的输入弹窗。
+///
+/// 坑：`TextField(autofocus: true)` 在「弹窗套在模态底部面板上」时经常不拉起
+/// 输入法——焦点被面板的 FocusScope 拦住了。这里改成弹窗自己持有 FocusNode，
+/// 首帧之后显式 requestFocus，输入法才会真的出现。
+class _NewCategoryDialog extends StatefulWidget {
+  const _NewCategoryDialog({required this.title});
+
+  final String title;
+
+  @override
+  State<_NewCategoryDialog> createState() => _NewCategoryDialogState();
+}
+
+class _NewCategoryDialogState extends State<_NewCategoryDialog> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        key: const Key('category-add-field'),
+        controller: _controller,
+        focusNode: _focusNode,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(hintText: '分类名'),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          key: const Key('category-add-confirm'),
+          onPressed: _submit,
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

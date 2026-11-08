@@ -1521,5 +1521,22 @@ void main() {
       expect(calls.single.$1, '过路费');
       expect(calls.single.$2, 'cat-traffic');
     });
+
+  testWidgets('新增分类弹窗打开后输入框拿到焦点（输入法能弹出）', (tester) async {
+    await pumpSheet(tester);
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('出行交通'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('category-add-child')));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('category-add-field')),
+    );
+    expect(field.focusNode?.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+  });
   });
 }
