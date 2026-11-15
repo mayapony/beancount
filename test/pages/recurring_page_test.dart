@@ -77,6 +77,9 @@ void main() {
     await tester.tap(find.text('购物'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(1), '宽带费');
+    // 分类库落库后分类变多，「每月几号」被推到下方，先滚到可见再点
+    await tester.ensureVisible(find.text('20'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('20'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));

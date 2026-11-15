@@ -24,41 +24,48 @@ void main() {
 
   group('分类配额', () {
     test('开关关闭时不建', () async {
-      final decision = await policy.checkCategory(
-        enabled: false,
-        categoryTotal: 10,
-      );
+      final decision = await policy.checkCategory(enabled: false);
       expect(decision.allowed, isFalse);
       expect(decision.blocked, AutoCreateBlocked.disabled);
     });
 
     test('单笔最多一个新分类', () async {
-      final decision = await policy.checkCategory(
-        enabled: true,
-        categoryTotal: 10,
-        requested: 2,
-      );
+      final decision = await policy.checkCategory(enabled: true, requested: 2);
       expect(decision.blocked, AutoCreateBlocked.perEntry);
     });
 
-    test('分类总数达到上限后不建', () async {
+    test('自动创建累计到 40 个后不建', () async {
+      for (var i = 0; i < 40; i++) {
+        await policy.markCategoryCreated('cat-auto-$i');
+        clock = clock.add(const Duration(minutes: 1));
+      }
       expect(
-        (await policy.checkCategory(enabled: true, categoryTotal: 40)).blocked,
+        (await policy.checkCategory(enabled: true)).blocked,
         AutoCreateBlocked.total,
       );
-      expect(
-        (await policy.checkCategory(enabled: true, categoryTotal: 39)).allowed,
-        isTrue,
-      );
+    });
+
+    test('账本里已有 60 多个分类也不拦自动新建', () async {
+      // 分类库落库后账本有 65 个分类，但它们都不是自动创建的
+      final bookCount = (await db.select(db.categories).get()).length;
+      expect(bookCount, greaterThan(60));
+      expect((await policy.checkCategory(enabled: true)).allowed, isTrue);
+    });
+
+    test('同一个 id 重复记账不重复计数', () async {
+      await policy.markCategoryCreated('cat-auto-same');
+      await policy.markCategoryCreated('cat-auto-same');
+      final raw = await state.read(AutoCreatePolicy.kCategoryIdsKey);
+      expect(jsonDecode(raw!) as List, hasLength(1));
     });
 
     test('7 天内最多三个，滚动窗口外的旧记录不算', () async {
       for (var i = 0; i < 3; i++) {
-        await policy.markCategoryCreated();
+        await policy.markCategoryCreated('cat-auto-week-$i');
         clock = clock.add(const Duration(hours: 1));
       }
       expect(
-        (await policy.checkCategory(enabled: true, categoryTotal: 10)).blocked,
+        (await policy.checkCategory(enabled: true)).blocked,
         AutoCreateBlocked.weekly,
       );
 
@@ -67,15 +74,13 @@ void main() {
           clock.subtract(const Duration(days: 8)).toUtc().toIso8601String(),
       ];
       await state.write(AutoCreatePolicy.kCategoryLogKey, jsonEncode(old));
-      expect(
-        (await policy.checkCategory(enabled: true, categoryTotal: 10)).allowed,
-        isTrue,
-      );
+      expect((await policy.checkCategory(enabled: true)).allowed, isTrue);
     });
 
     test('检查本身不写库', () async {
-      await policy.checkCategory(enabled: true, categoryTotal: 10);
+      await policy.checkCategory(enabled: true);
       expect(await state.read(AutoCreatePolicy.kCategoryLogKey), isNull);
+      expect(await state.read(AutoCreatePolicy.kCategoryIdsKey), isNull);
     });
   });
 
@@ -116,7 +121,7 @@ void main() {
     ];
     await state.write(AutoCreatePolicy.kCategoryLogKey, jsonEncode(old));
 
-    await policy.markCategoryCreated();
+    await policy.markCategoryCreated('cat-auto-new');
 
     final raw = await state.read(AutoCreatePolicy.kCategoryLogKey);
     final list = jsonDecode(raw!) as List;

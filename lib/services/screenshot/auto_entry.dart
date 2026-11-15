@@ -9,6 +9,7 @@ import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
 import '../attachments/image_picker_service.dart';
 import '../capture/capture_account_map.dart';
+import '../capture/source_app.dart';
 import '../ocr/auto_create_policy.dart';
 import '../entry/entry_writer.dart';
 import '../ocr/entry_matching.dart';
@@ -80,10 +81,7 @@ class AutoScreenshotSaver {
       expenseCategories,
       CategoryType.expense,
     );
-    category ??= await _createRecognizedCategory(
-      guess.categoryName,
-      expenseCategories,
-    );
+    category ??= await _createRecognizedCategory(guess.categoryName);
     category ??= _categoryById(expenseCategories, selection.categoryId);
     category ??= _categoryByName(expenseCategories, '其他');
     category ??= expenseCategories.first;
@@ -115,7 +113,7 @@ class AutoScreenshotSaver {
       categoryId: category.id,
       accountId: account?.id,
       note: (guess.note ?? '').trim(),
-      tags: autoTags ? guess.tagNames : const <String>[],
+      tags: _autoTags(autoTags ? guess.tagNames : const [], sourcePackage),
       images: [PickedImage(bytes: imageBytes, fileName: fileName)],
       // 截图入账也是自动入账：标记来源，才进得了「最近自动记账」审计列表。
       source: EntrySource.auto,
@@ -136,28 +134,22 @@ class AutoScreenshotSaver {
   ///
   /// 开关关闭、配额用尽、或者模型压根没给分类名，都返回 null，由调用方退回
   /// 「上次用的 →「其他」」的老兜底。
-  Future<Category?> _createRecognizedCategory(
-    String? name,
-    List<Category> existing,
-  ) async {
+  Future<Category?> _createRecognizedCategory(String? name) async {
     final trimmed = name?.trim() ?? '';
     if (trimmed.isEmpty) return null;
     if (!autoCreateCategories) return null;
-    final decision = await _autoCreatePolicy.checkCategory(
-      enabled: true,
-      categoryTotal: existing.length + 1,
-    );
+    final policy = _autoCreatePolicy;
+    final decision = await policy.checkCategory(enabled: true);
     if (!decision.allowed) return null;
     final created = await CategoryRepository(db).ensure(
       name: trimmed,
       type: CategoryType.expense,
     );
-    await _autoCreatePolicy.markCategoryCreated();
+    await policy.markCategoryCreated(created.id);
     return created;
   }
 
-  static Category? _categoryById(List<Category> categories, String? id) {
-    if (id == null) return null;
+  static Category? _categoryById(List<Category> categories, String? id) {    if (id == null) return null;
     for (final category in categories) {
       if (category.id == id) return category;
     }
@@ -177,5 +169,27 @@ class AutoScreenshotSaver {
       if (account.id == id) return account;
     }
     return null;
+  }
+
+  /// 模型推断的标签 + 来源应用标签，按归一化名称去重。
+  ///
+  /// 来源标签不受「自动打标签」开关约束：关掉开关只是不再采用模型推断的标签，
+  /// 「这笔来自京东」仍然要能被筛选出来。
+  static List<String> _autoTags(List<String> guessed, String? sourcePackage) {
+    final tags = <String>[];
+    void add(String raw) {
+      final name = raw.trim();
+      if (name.isEmpty) return;
+      if (tags.any((tag) => normalizeName(tag) == normalizeName(name))) return;
+      tags.add(name);
+    }
+
+    for (final tag in guessed) {
+      add(tag);
+    }
+    for (final tag in sourceTagsOf(sourcePackage)) {
+      add(tag);
+    }
+    return tags;
   }
 }

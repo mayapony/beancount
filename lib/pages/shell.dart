@@ -527,7 +527,6 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
               null) {
         final decision = await _autoCreatePolicy.checkCategory(
           enabled: true,
-          categoryTotal: _categories.length,
         );
         if (decision.allowed) {
           newCategoryCandidate = guess.categoryName!.trim();
@@ -560,8 +559,8 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
           pickEnabled: !kIsWeb,
           initialCategoryId:
               initialGuess == null ? _lastSelection.categoryId : null,
-          initialIsIncome:
-              initialGuess == null ? _lastSelection.isIncome : false,
+          // 收支类型不继承：支出是绝大多数场景，上次记了收入也还是从支出开始
+          initialIsIncome: false,
           initialAccountId: _lastSelection.accountId,
           initialGuess: guess,
           pendingImage: pendingImage,
@@ -574,7 +573,6 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
             if (fromRecognition) {
               final decision = await _autoCreatePolicy.checkCategory(
                 enabled: screenshotSettings.autoCreateCategories,
-                categoryTotal: (await _categoryRepo.allCategories()).length,
               );
               if (!decision.allowed) return null;
             }
@@ -583,7 +581,9 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
               type: type,
               parentId: parentId,
             );
-            if (fromRecognition) await _autoCreatePolicy.markCategoryCreated();
+            if (fromRecognition) {
+              await _autoCreatePolicy.markCategoryCreated(created.id);
+            }
             return created;
           },
           onSubmit: (draft) async {

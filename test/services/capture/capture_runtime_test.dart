@@ -111,6 +111,37 @@ void main() {
     expect(rows.single.source, EntrySource.auto);
   });
 
+  test('入账带上来源应用标签', () async {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|¥12.50';
+    final fingerprint = surfaceFingerprintOf(dumpToTree(dump));
+    await rules.save([
+      CaptureRule(
+        id: 'a1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.accessibility,
+        surfaceFingerprint: fingerprint,
+        direction: CaptureDirection.expense,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'¥(\d+(?:\.\d{1,2})?)',
+        tier: CaptureRuleTier.grey,
+      ),
+    ]);
+
+    final r = runtime();
+    await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
+    await r.flush();
+
+    final row = (await db.select(db.transactions).get()).single;
+    final tags = await db.select(db.tags).get();
+    expect(tags.map((t) => t.name), contains('微信'));
+    final links = await db.select(db.transactionTags).get();
+    expect(
+      links.where((link) => link.transactionId == row.id),
+      hasLength(1),
+    );
+  });
+
   test('通知与页面同金额同时到达只记一笔', () async {
     const dump = 'android.widget.TextView|支付成功\n'
         'android.widget.TextView|¥12.00';

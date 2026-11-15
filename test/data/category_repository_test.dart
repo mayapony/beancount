@@ -30,26 +30,32 @@ void main() {
   });
 
   test('新增分类后立即可按名字查到，且同名只建一条', () async {
+    final before = await repo.all(CategoryType.expense);
     final first = await repo.ensure(name: '维修', type: CategoryType.expense);
     final second = await repo.ensure(name: '维修', type: CategoryType.expense);
 
     expect(second.id, first.id);
-    expect(await repo.all(CategoryType.expense), hasLength(13));
+    expect(await repo.all(CategoryType.expense), hasLength(before.length + 1));
   });
 
   test('二级分类挂在父分类下，第三级被拒绝', () async {
     final food = await repo.findByName('餐饮', CategoryType.expense);
+    final before = await repo.childrenOf(food!.id);
 
     final lunch = await repo.ensure(
-      name: '午餐',
+      name: '商务午餐',
       type: CategoryType.expense,
-      parentId: food!.id,
+      parentId: food.id,
     );
     expect(lunch.parentId, food.id);
-    expect(await repo.childrenOf(food.id), hasLength(1));
+    expect(await repo.childrenOf(food.id), hasLength(before.length + 1));
 
     await expectLater(
-      repo.ensure(name: '商务午餐', type: CategoryType.expense, parentId: lunch.id),
+      repo.ensure(
+        name: '会议室午餐',
+        type: CategoryType.expense,
+        parentId: lunch.id,
+      ),
       throwsA(isA<StateError>()),
     );
   });

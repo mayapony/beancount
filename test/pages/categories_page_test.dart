@@ -159,6 +159,9 @@ void main() {
 
     // 迁移面板出现，列出同类型其它分类
     expect(find.text('迁移到'), findsOneWidget);
+    // 分类库落库后可选分类变多，目标项可能在折叠区外，先滚到可见
+    await tester.ensureVisible(find.text('交通').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('交通').last);
     await tester.pumpAndSettle();
 

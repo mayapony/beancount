@@ -126,7 +126,7 @@ void main() {
     );
   }
 
-  test('v1 库一路升到 v6：历史数据不变、索引还在、能写转账', () async {
+  test('v1 库一路升到 v7：历史数据不变、索引还在、能写转账', () async {
     final file = File('${tmp.path}/v1.sqlite');
     final executor = NativeDatabase(
       file,
@@ -163,9 +163,9 @@ void main() {
     expect(names, contains('idx_transactions_happened_at'));
     expect(names, contains('idx_transactions_category'));
 
-    // 版本号推进到 2
+    // 版本号推进到最新
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 6);
+    expect(version.data.values.first, 7);
 
     // 迁移后能写转账：分类为空、两端账户俱在
     await db.into(db.transactions).insert(
@@ -231,7 +231,7 @@ void main() {
     expect(recurring, hasLength(1));
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.data.values.first, 6);
+    expect(version.data.values.first, 7);
     await db.close();
   });
 }

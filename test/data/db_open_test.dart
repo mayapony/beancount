@@ -13,14 +13,15 @@ void main() {
     addTearDown(db.close);
 
     // 七张表都能查询即说明 onCreate 的 createAll 生效；
-    // 分类与账户在首次建库时被种子填充（12+6 与 1 个默认账户）。
-    expect(await db.select(db.categories).get(), hasLength(18));
+    // 分类在首次建库时写入分类库全集（14 一级 + 44 二级 + 7 收入），另有 1 个默认账户。
+    expect(await db.select(db.categories).get(), hasLength(65));
     expect(await db.select(db.accounts).get(), hasLength(1));
     expect(await db.select(db.tags).get(), isEmpty);
     expect(await db.select(db.transactions).get(), isEmpty);
     expect(await db.select(db.transactionTags).get(), isEmpty);
     expect(await db.select(db.attachments).get(), isEmpty);
-    expect(await db.select(db.appState).get(), isEmpty);
+    // 建库会写一条「分类库已落库」的完成标记
+    expect(await db.select(db.appState).get(), hasLength(1));
   });
 
   test('文件库重开后数据仍在', () async {
@@ -37,7 +38,10 @@ void main() {
     final second = AppDatabase(NativeDatabase(file));
     addTearDown(second.close);
     final rows = await second.select(second.appState).get();
-    expect(rows.single.value, 'expense');
+    expect(
+      rows.firstWhere((row) => row.key == 'last_type').value,
+      'expense',
+    );
   });
 
   test('外键约束在打开时生效', () async {

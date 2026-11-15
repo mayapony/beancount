@@ -250,7 +250,7 @@ void main() {
       await accounts.ensure(name: '支付宝');
 
       await saverWith(autoCreate: false).save(
-        guess: guess(category: '软件订阅'),
+        guess: guess(category: '模型玩具'),
         imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
         fileName: 'screenshot.jpg',
         autoTags: false,
@@ -259,15 +259,18 @@ void main() {
 
       final row = (await db.select(db.transactions).get()).single;
       final category = await CategoryRepository(db).byId(row.categoryId!);
-      expect(category!.name, isNot('软件订阅'));
-      expect(await categories.findByName('软件订阅', CategoryType.expense), isNull);
+      expect(category!.name, isNot('模型玩具'));
+      expect(
+        await categories.findByName('模型玩具', CategoryType.expense),
+        isNull,
+      );
     });
 
     test('开关打开时新建并把该笔记到它名下', () async {
       await accounts.ensure(name: '支付宝');
 
       await saverWith(autoCreate: true).save(
-        guess: guess(category: '软件订阅'),
+        guess: guess(category: '模型玩具'),
         imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
         fileName: 'screenshot.jpg',
         autoTags: false,
@@ -275,7 +278,7 @@ void main() {
       );
 
       final created =
-          await categories.findByName('软件订阅', CategoryType.expense);
+          await categories.findByName('模型玩具', CategoryType.expense);
       expect(created, isNotNull);
       final row = (await db.select(db.transactions).get()).single;
       expect(row.categoryId, created!.id);
@@ -286,8 +289,11 @@ void main() {
       // 先把 7 天配额用掉 3 次
       final policy = AutoCreatePolicy(AppStateRepository(db));
       for (var i = 0; i < AutoCreatePolicy.kCategoryWeeklyLimit; i++) {
-        await categories.ensure(name: '占位$i', type: CategoryType.expense);
-        await policy.markCategoryCreated();
+        final placeholder = await categories.ensure(
+          name: '占位$i',
+          type: CategoryType.expense,
+        );
+        await policy.markCategoryCreated(placeholder.id);
       }
 
       await saverWith(autoCreate: true).save(
@@ -302,6 +308,82 @@ void main() {
         await categories.findByName('又一个新分类', CategoryType.expense),
         isNull,
       );
+    });
+  });
+
+  group('来源应用标签', () {
+    Future<List<String>> tagNamesOf(String transactionId) async {
+      final links = await db.select(db.transactionTags).get();
+      final tags = {for (final tag in await db.select(db.tags).get()) tag.id: tag.name};
+      return [
+        for (final link in links)
+          if (link.transactionId == transactionId) tags[link.tagId]!,
+      ];
+    }
+
+    test('来源为京东时关联「京东」标签', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(tags: const []),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: true,
+        now: now,
+        sourcePackage: 'com.jingdong.app.mall',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      expect(await tagNamesOf(row.id), contains('京东'));
+    });
+
+    test('来源为空时不打空标签', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(tags: const []),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: true,
+        now: now,
+      );
+
+      expect(await db.select(db.tags).get(), isEmpty);
+    });
+
+    test('关闭自动打标签后仍带来源标签，但不带模型推断的标签', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(tags: const ['外卖']),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: false,
+        now: now,
+        sourcePackage: 'com.taobao.taobao',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      final names = await tagNamesOf(row.id);
+      expect(names, contains('淘宝'));
+      expect(names, isNot(contains('外卖')));
+    });
+
+    test('模型给的标签与来源同名时只留一条', () async {
+      await accounts.ensure(name: '支付宝');
+
+      await saver.save(
+        guess: guess(tags: const ['支付宝']),
+        imageBytes: Uint8List.fromList(<int>[1, 2, 3]),
+        fileName: 'screenshot.jpg',
+        autoTags: true,
+        now: now,
+        sourcePackage: 'com.eg.android.AlipayGphone',
+      );
+
+      final row = (await db.select(db.transactions).get()).single;
+      expect(await tagNamesOf(row.id), hasLength(1));
+      expect(await db.select(db.tags).get(), hasLength(1));
     });
   });
 }

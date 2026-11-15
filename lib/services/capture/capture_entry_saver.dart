@@ -12,6 +12,7 @@ import '../entry/entry_writer.dart';
 import '../ocr/auto_create_policy.dart';
 import '../screenshot/screenshot_settings.dart';
 import 'capture_candidate.dart';
+import 'source_app.dart';
 
 /// 一次自动入账的结果：除了是否新增，还带上最终落到的分类与账户，供运行记录
 /// 直接显示「这笔记到哪了」。
@@ -70,6 +71,7 @@ class CaptureEntrySaver {
       categoryId: category.id,
       accountId: account?.id,
       note: (candidate.note ?? '').trim(),
+      tags: sourceTagsOf(candidate.packageName),
       source: EntrySource.auto,
       sourcePackage: candidate.packageName,
     );
@@ -118,16 +120,13 @@ class CaptureEntrySaver {
             .autoCreateCategories;
     if (!enabled) return null;
     final policy = AutoCreatePolicy(AppStateRepository(db));
-    final decision = await policy.checkCategory(
-      enabled: true,
-      categoryTotal: categories.length + 1,
-    );
+    final decision = await policy.checkCategory(enabled: true);
     if (!decision.allowed) return null;
     final created = await CategoryRepository(db).ensure(
       name: hit.category.name,
       type: type,
     );
-    await policy.markCategoryCreated();
+    await policy.markCategoryCreated(created.id);
     return created;
   }
 

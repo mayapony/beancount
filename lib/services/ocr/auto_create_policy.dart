@@ -18,13 +18,14 @@ class AutoCreateDecision {
 
 /// 自动新建分类 / 标签的配额闸门。
 ///
-/// 只读 `app_state` 里的创建时间戳，**不写任何账本数据**；真正落库由保存流程在
+/// 只读 `app_state` 里的创建记录，**不写任何账本数据**；真正落库由保存流程在
 /// 用户点「完成」后调用。这样识别、取消、重开面板都不会留下副作用。
 ///
 /// 规则（与 spec 对齐）：
 /// - 单笔：分类 ≤1、标签 ≤2
 /// - 滚动 7 天：分类 ≤3、标签 ≤10
-/// - 分类总数上限 40
+/// - 分类总数上限 40，只数**自动创建出来的**分类；账本里的种子与用户自建分类
+///   不计入——否则分类库一落库（60 多个），自动新建就永久失效了
 /// - 开关关闭时一律不建
 class AutoCreatePolicy {
   AutoCreatePolicy(this._state, {DateTime Function()? now})
@@ -34,6 +35,7 @@ class AutoCreatePolicy {
   final DateTime Function() _now;
 
   static const kCategoryLogKey = 'auto_create_category_log';
+  static const kCategoryIdsKey = 'auto_create_category_ids';
   static const kTagLogKey = 'auto_create_tag_log';
 
   static const kWeeklyWindow = Duration(days: 7);
@@ -46,14 +48,13 @@ class AutoCreatePolicy {
   /// 分类能否新建：`requested` 是这一笔想新建的数量。
   Future<AutoCreateDecision> checkCategory({
     required bool enabled,
-    required int categoryTotal,
     int requested = 1,
   }) async {
     if (!enabled) return const AutoCreateDecision.deny(AutoCreateBlocked.disabled);
     if (requested > kCategoryPerEntryLimit) {
       return const AutoCreateDecision.deny(AutoCreateBlocked.perEntry);
     }
-    if (categoryTotal >= kCategoryTotalLimit) {
+    if ((await _createdCategoryIds()).length >= kCategoryTotalLimit) {
       return const AutoCreateDecision.deny(AutoCreateBlocked.total);
     }
     final recent = await _recent(kCategoryLogKey);
@@ -80,10 +81,25 @@ class AutoCreatePolicy {
   }
 
   /// 记录一次分类创建（保存成功后调用）。
-  Future<void> markCategoryCreated() => _append(kCategoryLogKey);
+  ///
+  /// 时间戳进 7 天窗口，id 进总数计数；同一个 id 重复记账不会重复计数。
+  Future<void> markCategoryCreated(String categoryId) async {
+    await _append(kCategoryLogKey);
+    final ids = await _createdCategoryIds();
+    if (ids.contains(categoryId)) return;
+    ids.add(categoryId);
+    await _state.write(kCategoryIdsKey, jsonEncode(ids));
+  }
 
   /// 记录一次标签创建（保存成功后调用）。
   Future<void> markTagCreated() => _append(kTagLogKey);
+
+  /// 自动创建出来的分类 id（总数闸门只看它）。
+  Future<List<String>> _createdCategoryIds() async {
+    final raw = await _state.read(kCategoryIdsKey);
+    if (raw == null || raw.trim().isEmpty) return <String>[];
+    return _decode(raw);
+  }
 
   Future<List<DateTime>> _recent(String key) async {
     final raw = await _state.read(key);

@@ -10,20 +10,20 @@
 
 ## 2. 自动新建配额改口径
 
-- [ ] 2.1 `AutoCreatePolicy` 去掉 `categoryTotal` 入参，改读 `app_state.auto_create_category_ids`；`markCategoryCreated` 增加分类 id 参数
-- [ ] 2.2 三个调用点（`shell.dart` 面板、`capture_entry_saver.dart`、`screenshot/auto_entry.dart`）传入刚创建的分类 id
-- [ ] 2.3 单测：账本已有 60 个种子分类、自动创建计数为 0 时仍允许新建；计数到 40 后拒绝
+- [x] 2.1 `AutoCreatePolicy` 去掉 `categoryTotal` 入参，改读 `app_state.auto_create_category_ids`；`markCategoryCreated` 增加分类 id 参数
+- [x] 2.2 三个调用点（`shell.dart` 面板、`capture_entry_saver.dart`、`screenshot/auto_entry.dart`）传入刚创建的分类 id
+- [x] 2.3 单测：账本已有 60 个种子分类、自动创建计数为 0 时仍允许新建；计数到 40 后拒绝
 
 ## 3. 默认类型固定为支出
 
-- [ ] 3.1 `shell.dart` 打开面板时 `initialIsIncome` 恒为 `false`，`LastEntrySelection` 仍保存 `isIncome` 供别处使用但不再作为初始值
-- [ ] 3.2 单测：上一笔是收入时打开面板，默认选中「支出」
+- [x] 3.1 `shell.dart` 打开面板时 `initialIsIncome` 恒为 `false`，`LastEntrySelection` 仍保存 `isIncome` 供别处使用但不再作为初始值
+- [x] 3.2 单测：上一笔是收入时打开面板，默认选中「支出」
 
 ## 4. 来源应用写成标签
 
-- [ ] 4.1 `CaptureEntrySaver.save()` 与 `AutoScreenshotSaver.save()` 把 `sourceAppName(sourcePackage)` 追加进 tags（不受自动打标签开关影响）
-- [ ] 4.2 单测：来源为京东 → 交易关联「京东」标签；来源为空 → 不关联；已有同名标签 → 复用不新建
-- [ ] 4.3 单测：关闭自动打标签后自动入账仍带来源标签
+- [x] 4.1 `CaptureEntrySaver.save()` 与 `AutoScreenshotSaver.save()` 把 `sourceAppName(sourcePackage)` 追加进 tags（不受自动打标签开关影响）
+- [x] 4.2 单测：来源为京东 → 交易关联「京东」标签；来源为空 → 不关联；已有同名标签 → 复用不新建
+- [x] 4.3 单测：关闭自动打标签后自动入账仍带来源标签
 
 ## 5. 「待处理」随账户补齐清除
 

@@ -16,12 +16,14 @@ void main() {
   tearDown(() async => db.close());
 
   test('写入后能原样读回，重复写覆盖旧值', () async {
+    final before = (await db.select(db.appState).get()).length;
     await repo.write(AppStateRepository.kLastCategoryId, 'cat-food');
     expect(await repo.read(AppStateRepository.kLastCategoryId), 'cat-food');
 
     await repo.write(AppStateRepository.kLastCategoryId, 'cat-shopping');
     expect(await repo.read(AppStateRepository.kLastCategoryId), 'cat-shopping');
-    expect(await db.select(db.appState).get(), hasLength(1));
+    // 同一个 key 重复写只占一行（建库时已有分类库的完成标记，所以只比增量）
+    expect(await db.select(db.appState).get(), hasLength(before + 1));
   });
 
   test('上次选择整体存取', () async {

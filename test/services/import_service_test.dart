@@ -169,22 +169,22 @@ void main() {
 
   test('二级分类：父分类先建、子分类挂在父下', () async {
     const csv = '类型,分类,二级分类,金额,时间\n'
-        '支出,餐饮,午餐,18.00,  2026-10-17 12:30:00  \n'
-        '支出,餐饮,晚餐,22.00,  2026-10-17 19:30:00  \n';
+        '支出,餐饮,商务午餐,18.00,  2026-10-17 12:30:00  \n'
+        '支出,餐饮,商务晚餐,22.00,  2026-10-17 19:30:00  \n';
     final plan = await planImport(
       service: service,
       parsed: parseBeeCountCsv(utf8.encode(csv)),
       attachmentSizes: const {},
     );
 
-    expect(plan.newCategories.map((c) => c.display), containsAll(['餐饮 / 午餐', '餐饮 / 晚餐']));
+    expect(plan.newCategories.map((c) => c.display), containsAll(['餐饮 / 商务午餐', '餐饮 / 商务晚餐']));
 
     final report = await service.apply(plan, attachments: const {});
     expect(report.inserted, 2);
 
     final food = await categories.findByName('餐饮', CategoryType.expense);
     final lunch = await categories.findByName(
-      '午餐',
+      '商务午餐',
       CategoryType.expense,
       parentId: food!.id,
     );

@@ -1,5 +1,6 @@
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
+import 'package:bean_count/data/repositories/app_state_repository.dart';
 import 'package:bean_count/data/repositories/attachment_repository.dart';
 import 'package:bean_count/pages/shell.dart';
 import 'package:bean_count/services/ocr/receipt_vision_settings.dart';
@@ -70,5 +71,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('记一笔'), findsOneWidget);
+  });
+
+  testWidgets('上次记的是收入，打开面板仍默认支出', (tester) async {
+    await AppStateRepository(db).saveSelection(
+      const LastEntrySelection(isIncome: true),
+    );
+    await pumpShell(tester);
+
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 分类网格给的是支出分类（收入分类「工资」不该出现）
+    expect(find.text('餐饮'), findsWidgets);
+    expect(find.text('工资'), findsNothing);
   });
 }

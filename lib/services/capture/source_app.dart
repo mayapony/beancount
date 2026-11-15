@@ -27,3 +27,12 @@ String sourceAppName(String? packageName) {
   if (packageName == null || packageName.isEmpty) return '';
   return _knownApps[packageName] ?? packageName;
 }
+
+/// 自动入账要关联的「来源应用」标签。
+///
+/// 来源未知时返回空列表（宁可不打，也不要一个空的 `#`）；这条标签不受
+/// 「自动打标签」开关与配额约束——它是账本事实，不是模型推断。
+List<String> sourceTagsOf(String? packageName) {
+  final name = sourceAppName(packageName).trim();
+  return name.isEmpty ? const <String>[] : <String>[name];
+}
