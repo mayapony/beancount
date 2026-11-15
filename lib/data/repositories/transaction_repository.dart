@@ -737,6 +737,11 @@ class TransactionRepository {
           note: Value(note),
           happenedAt: Value(input.happenedAt),
           dedupeKey: Value(dedupeKey),
+          // 「待人工处理」的语义就是「账户没定下来」：用户补上账户（哪怕是在
+          // 详情页而不是审计列表里）之后，这个标记就该结束；账户仍为空时
+          // 保持原值不动，别把还在等账户的账悄悄放过去。
+          needsReview:
+              input.accountId == null ? const Value.absent() : const Value(null),
         ),
       );
 

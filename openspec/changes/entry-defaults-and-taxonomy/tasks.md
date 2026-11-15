@@ -27,14 +27,14 @@
 
 ## 5. 「待处理」随账户补齐清除
 
-- [ ] 5.1 `update()` 写入时按 `input.accountId` 决定清标记（非空 → `Value(null)`，为空 → `Value.absent()`）
-- [ ] 5.2 `onUpgrade(from < 7)` 增加一次性修复：`account_id IS NOT NULL AND needs_review = 1` 的行清标记
-- [ ] 5.3 单测：详情页改账户保存后 `needsReview` 变 null；只改金额时保持原值
-- [ ] 5.4 配件/详情页无回归：编辑不触发去重键冲突、金额与时间照旧更新
+- [x] 5.1 `update()` 写入时按 `input.accountId` 决定清标记（非空 → `Value(null)`，为空 → `Value.absent()`）
+- [x] 5.2 `onUpgrade(from < 7)` 增加一次性修复：`account_id IS NOT NULL AND needs_review = 1` 的行清标记
+- [x] 5.3 单测：详情页改账户保存后 `needsReview` 变 null；只改金额时保持原值
+- [x] 5.4 配件/详情页无回归：编辑不触发去重键冲突、金额与时间照旧更新
 
 ## 6. 门禁
 
-- [ ] 6.1 `flutter analyze` 无告警、全量测试绿（`--exclude-tags screenshots`）
-- [ ] 6.2 debug / release 两种 gradle 构建均可打包
-- [ ] 6.3 `openspec validate --all --strict` 全绿
+- [x] 6.1 `flutter analyze` 无告警、全量测试绿（`--exclude-tags screenshots`）
+- [x] 6.2 debug / release 两种 gradle 构建均可打包
+- [x] 6.3 `openspec validate --all --strict` 全绿
 - [ ] 6.4 真机：升级安装后分类树变宽且旧分类名不变；面板能点到二级分类；「最近自动记账」里 3 条历史遗留的待处理标记消失

@@ -234,4 +234,58 @@ void main() {
     expect(version.data.values.first, 7);
     await db.close();
   });
+
+  test('v6 库升到 v7：补分类库、清掉历史遗留的待处理标记', () async {
+    final file = File('${tmp.path}/v6.sqlite');
+
+    // 先按最新 schema 建一个库，再把状态改回 v6（删掉分类库产物、版本号退回 6）
+    final seeded = AppDatabase(NativeDatabase(file));
+    await seeded.select(seeded.categories).get();
+    final account = (await seeded.select(seeded.accounts).get()).single;
+    final category = (await seeded.select(seeded.categories).get())
+        .firstWhere((c) => c.name == '餐饮');
+    await seeded.into(seeded.transactions).insert(
+          TransactionsCompanion.insert(
+            id: 'tx-pending',
+            type: EntryType.expense,
+            amountCents: 6980,
+            categoryId: Value(category.id),
+            accountId: Value(account.id),
+            happenedAt: DateTime(2026, 11, 9, 23, 54),
+            dedupeKey: 'pendingkey000001',
+            source: const Value(EntrySource.auto),
+            needsReview: const Value(true),
+          ),
+        );
+    await seeded.close();
+
+    // 退回 v6 的样子：没有分类库的二级 / 新增一级 / 完成标记
+    final upgraded = AppDatabase(
+      NativeDatabase(
+        file,
+        setup: (raw) {
+          raw.execute('DELETE FROM categories WHERE parent_id IS NOT NULL');
+          raw.execute(
+            "DELETE FROM categories WHERE name IN ('通讯', '人情', '报销')",
+          );
+          raw.execute(
+            "DELETE FROM app_state WHERE key = 'category_library_seed_v1'",
+          );
+          raw.execute('PRAGMA user_version = 6');
+        },
+      ),
+    );
+    final rows = await upgraded.select(upgraded.categories).get();
+    expect(rows, hasLength(65), reason: '升级应把分类库重新补齐');
+    final pending = await (upgraded.select(upgraded.transactions)
+          ..where((t) => t.id.equals('tx-pending')))
+        .getSingle();
+    expect(pending.needsReview, isNull, reason: '账户已有，标记应被清掉');
+    expect(pending.accountId, account.id, reason: '账户与金额不变');
+
+    final version =
+        await upgraded.customSelect('PRAGMA user_version').getSingle();
+    expect(version.data.values.first, 7);
+    await upgraded.close();
+  });
 }
