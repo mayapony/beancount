@@ -2,11 +2,11 @@
 
 ## 1. 合并前台服务与常驻通知
 
-- [ ] 1.1 新增 `CaptureHostService`：一个 Service 内同时起 `captureEntry` 与 `screenshotEntry` 两个 FlutterEngine，保留 `/capture` 与 `/screenshot` 两个通道，`startForeground` 只调一次
-- [ ] 1.2 通知文案按两个开关组合生成（开/关四态），渠道统一为 `capture_service`，`onDestroy` 里分别 try/catch 清理两个引擎
-- [ ] 1.3 `CapturePlugin` / `ScreenshotPlugin` 的 `setEnabled` 改为控制同一服务的通道开关；开机恢复只启动一个服务
-- [ ] 1.4 删除 `CaptureService` / `ScreenshotService` 与清单里对应的 `<service>` 声明，确认 `AndroidManifest` 只剩一个前台服务
-- [ ] 1.5 测试：两个开关四态下的通知文案与启动/停止行为（原生侧单测或 instrumentation 至少覆盖文案拼装函数）
+- [x] 1.1 新增 `CaptureHostService`：一个 Service 内同时起 `captureEntry` 与 `screenshotEntry` 两个 FlutterEngine，保留 `/capture` 与 `/screenshot` 两个通道，`startForeground` 只调一次
+- [x] 1.2 通知文案按两个开关组合生成（开/关四态），渠道统一为 `capture_service`，`onDestroy` 里分别 try/catch 清理两个引擎
+- [x] 1.3 `CapturePlugin` / `ScreenshotPlugin` 的 `setEnabled` 改为控制同一服务的通道开关；开机恢复只启动一个服务
+- [x] 1.4 删除 `CaptureService` / `ScreenshotService` 与清单里对应的 `<service>` 声明，确认 `AndroidManifest` 只剩一个前台服务
+- [x] 1.5 测试：两个开关四态下的通知文案与启动/停止行为（原生侧单测或 instrumentation 至少覆盖文案拼装函数）
 
 ## 2. 自动入账去重跨批次
 

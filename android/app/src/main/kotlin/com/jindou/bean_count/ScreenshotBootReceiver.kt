@@ -8,11 +8,9 @@ import android.content.Intent
 class ScreenshotBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        if (ScreenshotPrefs.isEnabled(context)) {
-            ScreenshotService.start(context)
-        }
-        if (CapturePrefs.isEnabled(context)) {
-            CaptureService.start(context)
+        // 两个通道共用一个前台服务：任一开关开着就拉起来
+        if (ScreenshotPrefs.isEnabled(context) || CapturePrefs.isEnabled(context)) {
+            CaptureHostService.start(context)
         }
     }
 }

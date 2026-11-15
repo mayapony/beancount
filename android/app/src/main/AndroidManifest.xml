@@ -49,12 +49,12 @@
         </activity>
         <!-- 截屏监听：specialUse（targetSdk 35 下 dataSync 每天只有 6 小时）。 -->
         <service
-            android:name=".ScreenshotService"
+            android:name=".CaptureHostService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="监听系统截屏，为记账生成待确认的草稿" />
+                android:value="自动记账（无障碍 / 通知）与截屏监听的后台处理" />
         </service>
         <!-- 自动记账：无障碍采集 + 通知监听 + 后台 headless 引擎。 -->
         <service
@@ -77,14 +77,6 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
-        </service>
-        <service
-            android:name=".CaptureService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="无障碍/通知自动记账的后台处理" />
         </service>
         <receiver
             android:name=".ScreenshotBootReceiver"

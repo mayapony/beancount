@@ -22,7 +22,7 @@ class CapturePlugin(private val activity: Activity) : MethodChannel.MethodCallHa
 
     fun attach(engine: FlutterEngine) {
         channel =
-            MethodChannel(engine.dartExecutor.binaryMessenger, CaptureService.CHANNEL)
+            MethodChannel(engine.dartExecutor.binaryMessenger, CaptureHostService.CHANNEL_CAPTURE)
         channel?.setMethodCallHandler(this)
         handleIntent(activity.intent)
     }
@@ -32,7 +32,8 @@ class CapturePlugin(private val activity: Activity) : MethodChannel.MethodCallHa
             "setEnabled" -> {
                 val enabled = call.argument<Boolean>("enabled") ?: false
                 CapturePrefs.setEnabled(activity, enabled)
-                if (enabled) CaptureService.start(activity) else CaptureService.stop(activity)
+                // 两个开关共用一个前台服务：写好自己的开关后按「另一边是否还开着」决定启停
+                CaptureHostService.apply(activity)
                 result.success(true)
             }
 
@@ -70,8 +71,8 @@ class CapturePlugin(private val activity: Activity) : MethodChannel.MethodCallHa
 
     /** 处理「已记账」通知：App 在前台时直接让 Shell 打开列表，否则挂起待取。 */
     fun handleIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(CaptureService.EXTRA_OPEN_AUTO_ENTRIES, false) == true) {
-            intent.removeExtra(CaptureService.EXTRA_OPEN_AUTO_ENTRIES)
+        if (intent?.getBooleanExtra(CaptureHostService.EXTRA_OPEN_AUTO_ENTRIES, false) == true) {
+            intent.removeExtra(CaptureHostService.EXTRA_OPEN_AUTO_ENTRIES)
             CapturePrefs.setPendingOpenAutoEntries(activity, true)
             if (ScreenshotRuntime.isAppVisible) {
                 CapturePrefs.takePendingOpenAutoEntries(activity)

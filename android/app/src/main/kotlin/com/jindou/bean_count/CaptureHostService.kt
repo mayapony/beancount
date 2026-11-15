@@ -33,67 +33,164 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 /**
- * 常驻前台服务：监听截图 → 交给 headless FlutterEngine 识别 → 更新通知。
+ * 唯一的前台服务：自动记账（无障碍 / 通知）与截屏监听都在这里跑。
  *
- * 为什么用 headless engine：识别器、解析与配额都在 Dart 侧，重写一遍 Kotlin 版本
- * 会形成第二套规则。引擎在服务里常驻，App 被划掉后仍能识别。
+ * 为什么合并：Android 规定一个前台服务必须挂一条不可划掉的通知，两个服务就是
+ * 两条常驻通知，而它们本质是同一件事——「金豆在后台替你看着」。合并后只留一条，
+ * 文案按实际开启的通道生成。
+ *
+ * 两个 Dart 入口（[ENTRY_CAPTURE] / [ENTRY_SCREENSHOT]）各自一个 headless
+ * FlutterEngine 与自己的 MethodChannel；引擎按开关惰性创建 / 销毁，互不拖累。
  */
-class ScreenshotService : Service() {
-    private var engine: FlutterEngine? = null
-    private var channel: MethodChannel? = null
+class CaptureHostService : Service() {
+
+    // ── 截屏侧 ─────────────────────────────────────────────
+    private var screenshotEngine: FlutterEngine? = null
+    private var screenshotChannel: MethodChannel? = null
 
     /** 读取循环在 IO 线程里查 pending 状态，所以这里要跨线程可见。 */
     @Volatile
     private var watcher: ScreenshotWatcher? = null
-    private var dartReady = false
+    private var screenshotDartReady = false
     private var queuedUri: Uri? = null
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 识别中 + 排队中的任务数；通知里的「还有 N 张」用它算排队项。 */
     private val busyJobs = AtomicInteger(0)
+
+    // ── 自动记账侧 ──────────────────────────────────────────
+    private var captureEngine: FlutterEngine? = null
+    private var captureChannel: MethodChannel? = null
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        CaptureRuntime.appContext = applicationContext
+        CaptureDiag.setServiceRunning(this, true)
         createNotificationChannels()
-        createEngine()
         startForeground(ONGOING_ID, ongoingNotification())
-        watcher = ScreenshotWatcher(this) { uri -> handleScreenshot(uri) }.also { it.start() }
+        sync()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 开关可能在运行中被改（Dart 侧 setEnabled 会再 start 一次）
+        sync()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
-        watcher?.stop()
-        watcher = null
+        destroyScreenshotEngine()
+        destroyCaptureEngine()
         ioExecutor.shutdownNow()
-        engine?.destroy()
-        engine = null
-        channel = null
+        CaptureDiag.setServiceRunning(this, false)
+        CaptureRuntime.channel = null
         super.onDestroy()
     }
 
-    private fun createEngine() {
+    /**
+     * 按两个开关对齐引擎与通知：该起的起、该停的停。
+     *
+     * 两个都关时杀掉自己——否则用户关掉开关后还会看到一条常驻通知。
+     */
+    private fun sync() {
+        val capture = CapturePrefs.isEnabled(this)
+        val screenshot = ScreenshotPrefs.isEnabled(this)
+
+        if (!capture && !screenshot) {
+            Log.i(TAG, "两个通道都关着，停止前台服务")
+            stopSelf()
+            return
+        }
+
+        if (capture) ensureCaptureEngine() else destroyCaptureEngine()
+        if (screenshot) ensureScreenshotEngine() else destroyScreenshotEngine()
+        updateOngoingNotification(capture, screenshot)
+    }
+
+    // ── 引擎 ───────────────────────────────────────────────
+
+    private fun ensureCaptureEngine() {
+        if (captureEngine != null) return
         val flutterEngine = FlutterEngine(applicationContext)
         try {
             GeneratedPluginRegistrant.registerWith(flutterEngine)
         } catch (error: Exception) {
-            Log.w(TAG, "注册插件失败", error)
+            Log.w(TAG, "注册插件失败（自动记账）", error)
         }
         flutterEngine.dartExecutor.executeDartEntrypoint(
             DartExecutor.DartEntrypoint(
                 FlutterInjector.instance().flutterLoader().findAppBundlePath(),
-                "screenshotEntry",
+                ENTRY_CAPTURE,
+            ),
+        )
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_CAPTURE)
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "ready" -> {
+                    CaptureRuntime.dartReady = true
+                    result.success(null)
+                }
+                "recentSnapshot" -> {
+                    val pkg = call.argument<String>("package")
+                    val snapshot = pkg?.let { CaptureRuntime.recentSnapshot(it) }
+                    result.success(
+                        if (snapshot == null) null else mapOf(
+                            "package" to snapshot.packageName,
+                            "dump" to snapshot.dump,
+                        ),
+                    )
+                }
+                "notifyEntry" -> {
+                    val cents = (call.argument<Number>("amount_cents"))?.toLong() ?: 0L
+                    val note = call.argument<String>("note")?.trim().orEmpty()
+                    Log.i(TAG, "notifyEntry amount=$cents note=$note")
+                    showEntryNotification(cents, note)
+                    result.success(null)
+                }
+                "log" -> {
+                    Log.i(TAG, call.argument<String>("message").orEmpty())
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        CaptureRuntime.channel = channel
+        captureChannel = channel
+        captureEngine = flutterEngine
+    }
+
+    private fun destroyCaptureEngine() {
+        if (captureEngine == null) return
+        captureEngine?.destroy()
+        captureEngine = null
+        captureChannel = null
+        CaptureRuntime.channel = null
+        CaptureRuntime.dartReady = false
+    }
+
+    private fun ensureScreenshotEngine() {
+        if (screenshotEngine != null) return
+        val flutterEngine = FlutterEngine(applicationContext)
+        try {
+            GeneratedPluginRegistrant.registerWith(flutterEngine)
+        } catch (error: Exception) {
+            Log.w(TAG, "注册插件失败（截屏）", error)
+        }
+        flutterEngine.dartExecutor.executeDartEntrypoint(
+            DartExecutor.DartEntrypoint(
+                FlutterInjector.instance().flutterLoader().findAppBundlePath(),
+                ENTRY_SCREENSHOT,
             ),
         )
         val methodChannel =
-            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_SCREENSHOT)
         methodChannel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "ready" -> {
-                    dartReady = true
+                    screenshotDartReady = true
                     result.success(null)
                     queuedUri?.let { uri ->
                         queuedUri = null
@@ -128,12 +225,27 @@ class ScreenshotService : Service() {
                 else -> result.notImplemented()
             }
         }
-        engine = flutterEngine
-        channel = methodChannel
+        screenshotEngine = flutterEngine
+        screenshotChannel = methodChannel
+
+        watcher = ScreenshotWatcher(this) { uri -> handleScreenshot(uri) }.also { it.start() }
     }
 
+    private fun destroyScreenshotEngine() {
+        if (screenshotEngine == null && watcher == null) return
+        watcher?.stop()
+        watcher = null
+        screenshotEngine?.destroy()
+        screenshotEngine = null
+        screenshotChannel = null
+        screenshotDartReady = false
+        queuedUri = null
+    }
+
+    // ── 截屏识别 ───────────────────────────────────────────
+
     private fun handleScreenshot(uri: Uri) {
-        if (!dartReady) {
+        if (!screenshotDartReady) {
             queuedUri = uri
             return
         }
@@ -169,7 +281,7 @@ class ScreenshotService : Service() {
             watcher?.markHandled(uri, readSucceeded = false)
             ScreenshotPrefs.setLastFailedUri(this, uri.toString())
             mainHandler.post {
-                showResult("读取截图失败 · 点击手动记", ok = false, recoverable = true)
+                showResult("读取截图失败 · 点击手动记", recoverable = true)
             }
             return
         }
@@ -186,7 +298,7 @@ class ScreenshotService : Service() {
         // 请求并发、结果乱序和 429。
         val latch = CountDownLatch(1)
         val posted = mainHandler.post {
-            val methodChannel = channel
+            val methodChannel = screenshotChannel
             if (methodChannel == null) {
                 latch.countDown()
                 return@post
@@ -369,7 +481,7 @@ class ScreenshotService : Service() {
                             "已自动记账 ¥${money(cents)}" +
                                 if (detail.isEmpty()) "" else " · $detail"
                         }
-                        showResult("$base${remainingSuffix(pending, queued)}", ok = true)
+                        showResult("$base${remainingSuffix(pending, queued)}")
                     } else {
                         val rest = (pending - 1 + queued).coerceAtLeast(0)
                         val suffix = if (rest > 0) {
@@ -377,7 +489,7 @@ class ScreenshotService : Service() {
                         } else {
                             " · 点击记账"
                         }
-                        showResult("已识别 ¥${money(cents)}$suffix", ok = true)
+                        showResult("已识别 ¥${money(cents)}$suffix")
                     }
                 } else {
                     val reason = (map?.get("error") as? String)?.trim().orEmpty()
@@ -391,18 +503,18 @@ class ScreenshotService : Service() {
                     } else {
                         remainingSuffix(pending, queued)
                     }
-                    showResult("$text$suffix", ok = false)
+                    showResult("$text$suffix")
                 }
                 latch.countDown()
             }
 
             override fun error(code: String, message: String?, details: Any?) {
-                showResult("识别失败 · 点击手动记", ok = false)
+                showResult("识别失败 · 点击手动记")
                 latch.countDown()
             }
 
             override fun notImplemented() {
-                showResult("识别失败 · 点击手动记", ok = false)
+                showResult("识别失败 · 点击手动记")
                 latch.countDown()
             }
         }
@@ -422,14 +534,13 @@ class ScreenshotService : Service() {
         )
     }
 
-    private fun showResult(text: String, ok: Boolean, recoverable: Boolean = false) {
+    private fun showResult(text: String, recoverable: Boolean = false) {
         notify(
             RESULT_ID,
             resultNotification(
                 text,
                 ongoing = false,
                 progress = false,
-                ok = ok,
                 recoverable = recoverable,
             ),
         )
@@ -440,16 +551,18 @@ class ScreenshotService : Service() {
         manager.notify(id, notification)
     }
 
+    // ── 通知 ───────────────────────────────────────────────
+
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(
                 ONGOING_CHANNEL,
-                "截屏监听",
+                "金豆后台监听",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "保持截屏监听运行；关闭开关后消失"
+                description = "自动记账与截屏监听共用这一条；两个开关都关掉后消失"
             },
         )
         manager.createNotificationChannel(
@@ -466,13 +579,28 @@ class ScreenshotService : Service() {
                 enableVibration(false)
             },
         )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ENTRY_CHANNEL_ID,
+                "自动记账结果",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "支付后自动入账的提醒；只做视觉提示，不响铃不振动"
+                setSound(null, null)
+                enableVibration(false)
+            },
+        )
     }
 
     private fun ongoingNotification(): Notification {
+        val copy = ongoingCopy(
+            capture = CapturePrefs.isEnabled(this),
+            screenshot = ScreenshotPrefs.isEnabled(this),
+        ) ?: OngoingCopy("金豆正在后台运行", "点此管理")
         return NotificationCompat.Builder(this, ONGOING_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentTitle("正在监听截屏")
-            .setContentText("截屏后会自动识别；点此管理")
+            .setContentTitle(copy.title)
+            .setContentText(copy.text)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -480,11 +608,72 @@ class ScreenshotService : Service() {
             .build()
     }
 
+    private fun updateOngoingNotification(capture: Boolean, screenshot: Boolean) {
+        val copy = ongoingCopy(capture, screenshot) ?: return
+        notify(
+            ONGOING_ID,
+            NotificationCompat.Builder(this, ONGOING_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setContentTitle(copy.title)
+                .setContentText(copy.text)
+                .setOngoing(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(openAppIntent())
+                .build(),
+        )
+    }
+
+    private fun openAppIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // 通知就是入口：用户点它时，让前台 Shell 消费待确认队列；
+            // App 未打开时由启动/恢复流程自己消费。
+            putExtra(EXTRA_CONSUME_PENDING, true)
+        }
+        return PendingIntent.getActivity(
+            this,
+            NOTIFICATION_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /** 已记账通知：深链到「最近自动记账」列表，点开直接核对。 */
+    private fun showEntryNotification(cents: Long, note: String) {
+        val amount = String.format(Locale.CHINA, "%.2f", cents / 100.0)
+        val text = if (note.isEmpty()) "已记账 ¥$amount" else "已记账 ¥$amount · $note"
+        val notification = NotificationCompat.Builder(this, ENTRY_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle("金豆 · 自动记账")
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setContentIntent(openAutoEntriesIntent())
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(ENTRY_NOTIFICATION_ID, notification)
+    }
+
+    private fun openAutoEntriesIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_AUTO_ENTRIES, true)
+        }
+        return PendingIntent.getActivity(
+            this,
+            ENTRY_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     private fun resultNotification(
         text: String,
         ongoing: Boolean,
         progress: Boolean,
-        ok: Boolean = true,
         recoverable: Boolean = false,
     ): Notification {
         val builder = NotificationCompat.Builder(this, ALERT_CHANNEL)
@@ -494,7 +683,7 @@ class ScreenshotService : Service() {
             .setOngoing(ongoing)
             .setAutoCancel(!ongoing)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(openAppIntent(withRecovery = recoverable))
+            .setContentIntent(openScreenshotIntent(withRecovery = recoverable))
         // 识别中的进度条静音；结果弹悬浮（heads-up），更显眼。
         if (ongoing) {
             builder.setSilent(true)
@@ -506,11 +695,9 @@ class ScreenshotService : Service() {
         return builder.build()
     }
 
-    private fun openAppIntent(withRecovery: Boolean = false): PendingIntent {
+    private fun openScreenshotIntent(withRecovery: Boolean = false): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            // 通知就是入口：用户点它时，让前台 Shell 消费待确认队列；
-            // App 未打开时由启动/恢复流程自己消费。
             putExtra(EXTRA_CONSUME_PENDING, true)
             if (withRecovery) putExtra(EXTRA_RECOVER_SCREENSHOT, true)
         }
@@ -525,19 +712,33 @@ class ScreenshotService : Service() {
     private fun money(cents: Long): String =
         String.format(Locale.CHINA, "%.2f", cents / 100.0)
 
+    /** 常驻通知文案：按实际开启的通道生成；两个都关时返回 null。 */
+    data class OngoingCopy(val title: String, val text: String)
+
     companion object {
-        const val CHANNEL = "com.jindou.bean_count/screenshot"
+        const val CHANNEL_SCREENSHOT = "com.jindou.bean_count/screenshot"
+
+        /** 自动记账引擎的通道：与 `lib/services/capture/capture_channel.dart` 对齐。 */
+        const val CHANNEL_CAPTURE = "com.jindou.bean_count/capture"
+
         const val EXTRA_CONSUME_PENDING = "consume_pending"
 
         /** 点「读取截图失败」通知时，把失败的 URI 重新读出来交给 Dart。 */
         const val EXTRA_RECOVER_SCREENSHOT = "recover_screenshot"
-        private const val TAG = "ScreenshotService"
-        private const val ONGOING_CHANNEL = "screenshot_service"
+        const val EXTRA_OPEN_AUTO_ENTRIES = "open_auto_entries"
+
+        private const val TAG = "BeanCaptureHost"
+        private const val ENTRY_CAPTURE = "captureEntry"
+        private const val ENTRY_SCREENSHOT = "screenshotEntry"
+        private const val ONGOING_CHANNEL = "capture_service"
         private const val ALERT_CHANNEL = "screenshot_alert"
+        private const val ENTRY_CHANNEL_ID = "capture_entry"
         private const val ONGOING_ID = 41
         private const val RESULT_ID = 42
+        private const val ENTRY_NOTIFICATION_ID = 52
         private const val NOTIFICATION_REQUEST_CODE = 100
         private const val RECOVERY_REQUEST_CODE = 101
+        private const val ENTRY_REQUEST_CODE = 110
 
         /**
          * 等厂商发布截图的上限。
@@ -551,8 +752,25 @@ class ScreenshotService : Service() {
         private const val MAX_DIMENSION = 1920
         private const val RECOGNITION_QUALITY = 85
 
+        /**
+         * 常驻通知的文案：两个通道的四种组合。
+         *
+         * 抽成纯函数是为了能在 JVM 单测里覆盖四态——通知文案是这条 spec 里
+         * 唯一「用户直接看到」的产物，不该靠真机肉眼回归。
+         */
+        fun ongoingCopy(capture: Boolean, screenshot: Boolean): OngoingCopy? =
+            when {
+                capture && screenshot -> OngoingCopy(
+                    "金豆正在守护",
+                    "自动记账 + 截屏监听进行中 · 点此管理",
+                )
+                capture -> OngoingCopy("金豆正在守护", "自动记账进行中 · 点此管理")
+                screenshot -> OngoingCopy("金豆正在守护", "截屏监听进行中 · 点此管理")
+                else -> null
+            }
+
         fun start(context: Context) {
-            val intent = Intent(context, ScreenshotService::class.java)
+            val intent = Intent(context, CaptureHostService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -561,7 +779,20 @@ class ScreenshotService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, ScreenshotService::class.java))
+            context.stopService(Intent(context, CaptureHostService::class.java))
+        }
+
+        /**
+         * 开关变化后对齐服务：两个都关就停，否则启动/唤醒服务让它自己重算文案。
+         *
+         * 由两个 Plugin 的 `setEnabled` 调用——它们是各自开关的唯一写入口。
+         */
+        fun apply(context: Context) {
+            if (CapturePrefs.isEnabled(context) || ScreenshotPrefs.isEnabled(context)) {
+                start(context)
+            } else {
+                stop(context)
+            }
         }
     }
 }

@@ -89,3 +89,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // 原生侧纯逻辑单测（常驻通知文案四态）：`./gradlew :app:testDebugUnitTest`
+    testImplementation "junit:junit:4.13.2"
+}

@@ -33,7 +33,7 @@ class ScreenshotPlugin(private val activity: Activity) :
 
     fun attach(engine: FlutterEngine) {
         channel =
-            MethodChannel(engine.dartExecutor.binaryMessenger, ScreenshotService.CHANNEL)
+            MethodChannel(engine.dartExecutor.binaryMessenger, CaptureHostService.CHANNEL_SCREENSHOT)
         channel?.setMethodCallHandler(this)
         handleIntent(activity.intent)
     }
@@ -43,7 +43,7 @@ class ScreenshotPlugin(private val activity: Activity) :
             "setEnabled" -> {
                 val enabled = call.argument<Boolean>("enabled") ?: false
                 ScreenshotPrefs.setEnabled(activity, enabled)
-                if (enabled) ScreenshotService.start(activity) else ScreenshotService.stop(activity)
+                CaptureHostService.apply(activity)
                 result.success(true)
             }
 
@@ -76,16 +76,16 @@ class ScreenshotPlugin(private val activity: Activity) :
     /** 处理系统分享面板发来的图片：复制到 cache，交一次给 Dart。 */
     fun handleIntent(intent: Intent?) {
         // 点识别结果通知：App 已经在前台时，直接让 Shell 消费待确认队列
-        if (intent?.getBooleanExtra(ScreenshotService.EXTRA_CONSUME_PENDING, false) == true) {
-            intent.removeExtra(ScreenshotService.EXTRA_CONSUME_PENDING)
+        if (intent?.getBooleanExtra(CaptureHostService.EXTRA_CONSUME_PENDING, false) == true) {
+            intent.removeExtra(CaptureHostService.EXTRA_CONSUME_PENDING)
             if (ScreenshotRuntime.isAppVisible) {
                 channel?.invokeMethod("pendingAvailable", null)
             }
         }
         // 点「读取截图失败」通知：后台那次读不到（pending/超时），现在多半已发布，
         // 重新读一次当作「分享进来的一张图」，复用同一条识别 → 预填链路。
-        if (intent?.getBooleanExtra(ScreenshotService.EXTRA_RECOVER_SCREENSHOT, false) == true) {
-            intent.removeExtra(ScreenshotService.EXTRA_RECOVER_SCREENSHOT)
+        if (intent?.getBooleanExtra(CaptureHostService.EXTRA_RECOVER_SCREENSHOT, false) == true) {
+            intent.removeExtra(CaptureHostService.EXTRA_RECOVER_SCREENSHOT)
             val uri = ScreenshotPrefs.takeLastFailedUri(activity)
             val copied = uri?.let { copyToCache(Uri.parse(it)) }
             pendingSharedImageError = uri != null && copied == null
