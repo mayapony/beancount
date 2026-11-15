@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:bean_count/data/db/app_database.dart';
 import 'package:bean_count/data/db/connection.dart';
 import 'package:bean_count/data/db/enums.dart';
+import 'package:bean_count/data/repositories/account_repository.dart';
 import 'package:bean_count/data/repositories/category_repository.dart';
 import 'package:bean_count/data/repositories/transaction_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -222,6 +223,26 @@ void main() {
     expect(counts[food.id], 2);
     expect(counts[transport.id], 1);
     expect(counts[food.id], await repo.transactionCount(food.id));
+  });
+
+  test('转账没有分类，usageCounts 不会因 NULL 崩溃', () async {
+    final account = await AccountRepository(db).ensure(name: '招商银行');
+    final other = await AccountRepository(db).ensure(name: '微信');
+    final transactions = TransactionRepository(db);
+    await transactions.create(
+      NewTransaction(
+        type: EntryType.transfer,
+        amountCents: 50000,
+        accountId: account.id,
+        toAccountId: other.id,
+        happenedAt: DateTime(2026, 10, 17, 9),
+        note: '转账',
+      ),
+    );
+
+    final counts = await repo.usageCounts();
+    expect(counts.keys, isNot(contains(null)));
+    expect(counts.values.fold<int>(0, (sum, n) => sum + n), 0);
   });
 
   test('migrateAndDelete 迁移交易后删除源分类与子分类', () async {

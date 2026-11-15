@@ -37,4 +37,4 @@
 - [x] 6.1 `flutter analyze` 无告警、全量测试绿（`--exclude-tags screenshots`）
 - [x] 6.2 debug / release 两种 gradle 构建均可打包
 - [x] 6.3 `openspec validate --all --strict` 全绿
-- [ ] 6.4 真机：升级安装后分类树变宽且旧分类名不变；面板能点到二级分类；「最近自动记账」里 3 条历史遗留的待处理标记消失
+- [x] 6.4 真机：升级安装后分类树变宽且旧分类名不变；面板能点到二级分类；「最近自动记账」里 3 条历史遗留的待处理标记消失

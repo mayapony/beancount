@@ -261,9 +261,14 @@ class CategoryRepository {
   }
 
   /// 一次查出「分类 id → 使用笔数」，管理页不做 N+1 查询。
+  ///
+  /// `category_id` 可空（转账没有分类），所以 NULL 那一组要跳过——否则
+  /// `read<String>` 会在真机上抛 `type 'Null' is not a subtype of type 'String'`，
+  /// 整个分类管理页白屏。
   Future<Map<String, int>> usageCounts() async {
     final rows = await _db.customSelect(
-      'SELECT category_id, COUNT(*) AS n FROM transactions GROUP BY category_id',
+      'SELECT category_id, COUNT(*) AS n FROM transactions '
+      'WHERE category_id IS NOT NULL GROUP BY category_id',
     ).get();
     return {
       for (final row in rows)
