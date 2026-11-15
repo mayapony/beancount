@@ -111,6 +111,80 @@ void main() {
     expect(rows.single.source, EntrySource.auto);
   });
 
+  test('停在支付页反复抓帧，跨多次 flush 只入账一笔', () async {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|¥12.50';
+    final fingerprint = surfaceFingerprintOf(dumpToTree(dump));
+    await rules.save([
+      CaptureRule(
+        id: 'a1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.accessibility,
+        surfaceFingerprint: fingerprint,
+        direction: CaptureDirection.expense,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'¥(\d+(?:\.\d{1,2})?)',
+        tier: CaptureRuleTier.grey,
+      ),
+    ]);
+
+    var clock = now;
+    final r = CaptureRuntime(
+      db: db,
+      notifier: notifier,
+      clock: () => clock,
+    );
+    // 页面每 3 秒稳定一帧，连续 5 批——旧实现会记 5 笔
+    for (var i = 0; i < 5; i++) {
+      await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
+      await r.flush();
+      clock = clock.add(const Duration(seconds: 3));
+    }
+
+    expect(await db.select(db.transactions).get(), hasLength(1));
+    expect(notifier.entries, hasLength(1));
+  });
+
+  test('两条同额通知各记一笔，页面候选不额外成笔', () async {
+    const dump = 'android.widget.TextView|支付成功\n'
+        'android.widget.TextView|¥12.00';
+    final fingerprint = surfaceFingerprintOf(dumpToTree(dump));
+    await rules.save([
+      notificationRule(),
+      CaptureRule(
+        id: 'a1',
+        packageName: 'com.tencent.mm',
+        target: RuleTarget.accessibility,
+        surfaceFingerprint: fingerprint,
+        direction: CaptureDirection.expense,
+        amountStrategy: AmountStrategy.regex,
+        amountPattern: r'¥(\d+(?:\.\d{1,2})?)',
+        tier: CaptureRuleTier.active,
+      ),
+    ]);
+
+    var clock = now;
+    final r = CaptureRuntime(
+      db: db,
+      notifier: notifier,
+      clock: () => clock,
+    );
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '支付 ¥12.00',
+    );
+    await r.onTreeCaptured(packageName: 'com.tencent.mm', dump: dump);
+    await r.flush();
+    clock = clock.add(const Duration(seconds: 30));
+    await r.onNotificationCaptured(
+      packageName: 'com.tencent.mm',
+      text: '支付 ¥12.00',
+    );
+    await r.flush();
+
+    expect(await db.select(db.transactions).get(), hasLength(2));
+  });
+
   test('入账带上来源应用标签', () async {
     const dump = 'android.widget.TextView|支付成功\n'
         'android.widget.TextView|¥12.50';

@@ -76,6 +76,16 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
   DateTime? _lastAutoEntry;
   bool _loading = true;
 
+  /// 事件流按链路分流查看；null = 全部。
+  CaptureDiagChannel? _channel;
+
+  List<CaptureDiagEvent> get _visibleEvents => _channel == null
+      ? _events
+      : [
+          for (final event in _events)
+            if (event.channel == _channel) event,
+        ];
+
   @override
   void initState() {
     super.initState();
@@ -275,27 +285,48 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
                     ),
                   ],
                   const SizedBox(height: 18),
-                  Text(
-                    '事件流',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: palette.textSecondary,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        '事件流',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _channel == null
+                            ? '共 ${_events.length} 条'
+                            : '${_visibleEvents.length} / ${_events.length} 条',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
-                  if (_events.isEmpty)
-                    const BeanEmptyState(
+                  _ChannelFilter(
+                    selected: _channel,
+                    onChanged: (channel) => setState(() => _channel = channel),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_visibleEvents.isEmpty)
+                    BeanEmptyState(
                       icon: Icons.timeline_rounded,
-                      title: '还没有记录',
-                      subtitle: '开启自动记账后，每一次捕获与放弃都会记在这里',
+                      title: _channel == null ? '还没有记录' : '${_channel!.label}暂时没有记录',
+                      subtitle: _channel == null
+                          ? '开启自动记账后，每一次捕获与放弃都会记在这里'
+                          : '切回「全部」可以看另一条链路',
                     )
                   else
                     BeanCard(
                       padding: EdgeInsets.zero,
                       child: Column(
                         children: [
-                          for (var i = 0; i < _events.length; i++) ...[
+                          for (var i = 0; i < _visibleEvents.length; i++) ...[
                             if (i > 0)
                               Divider(
                                 height: BeanSpace.hairline,
@@ -304,7 +335,7 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
                                 color: palette.border,
                               ),
                             _EventTile(
-                              event: _events[i],
+                              event: _visibleEvents[i],
                               diag: widget.diag,
                             ),
                           ],
@@ -314,6 +345,54 @@ class _CaptureDiagnosticsPageState extends State<CaptureDiagnosticsPage> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// 事件流的来源切换：全部 / 自动记账 / 截屏识别。
+class _ChannelFilter extends StatelessWidget {
+  const _ChannelFilter({required this.selected, required this.onChanged});
+
+  final CaptureDiagChannel? selected;
+  final ValueChanged<CaptureDiagChannel?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = BeanPalette.of(context);
+    final items = <(String, CaptureDiagChannel?)>[
+      ('全部', null),
+      for (final channel in CaptureDiagChannel.values) (channel.label, channel),
+    ];
+    return Wrap(
+      spacing: 8,
+      children: [
+        for (final (label, channel) in items)
+          GestureDetector(
+            key: Key('capture-diag-channel-${channel?.wire ?? 'all'}'),
+            onTap: () => onChanged(channel),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected == channel ? BeanColors.gold : palette.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected == channel
+                      ? BeanColors.gold
+                      : palette.border,
+                ),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: selected == channel
+                      ? Colors.white
+                      : palette.textSecondary,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

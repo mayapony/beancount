@@ -66,6 +66,13 @@ class CaptureRuntime {
   final List<CaptureCandidate> _buffer = [];
   Timer? _flushTimer;
 
+  /// 最近已入账的候选（存活一个合并窗口）。
+  ///
+  /// 为什么需要它：`_enqueue` 的 flush 定时器是 3 秒，用户停在支付成功页时
+  /// 每一帧稳定下来都会自己成一批，批与批之间没有共享记忆；而写库的去重键
+  /// 是「秒 + 金额 + 备注」，跨秒就绕过去了。于是同一笔记 4 次。
+  final List<CaptureCandidate> _recentWrites = [];
+
   /// 无障碍抓屏：白名单包的一帧控件树。
   Future<void> onTreeCaptured({
     required String packageName,
@@ -219,7 +226,7 @@ class CaptureRuntime {
     if (_buffer.isEmpty) return;
     final batch = List.of(_buffer);
     _buffer.clear();
-    for (final candidate in mergeCandidates(batch)) {
+    for (final candidate in mergeCandidates(batch, recent: _recentWrites)) {
       await _write(candidate);
     }
   }
@@ -234,6 +241,7 @@ class CaptureRuntime {
     try {
       final result = await _saver.save(candidate, now: _clock());
       await _settings.markCaptured(_clock());
+      _rememberWritten(candidate);
       _log?.call('entry written inserted=${result.inserted} amount=${candidate.amountCents}');
       await diag?.record(
         kind: CaptureDiagKind.entryWritten,
@@ -269,6 +277,19 @@ class CaptureRuntime {
       );
       debugPrint('capture runtime: 入账失败: $error');
     }
+  }
+
+  /// 记一次「刚入账」，并清掉超出合并窗口的旧记忆。
+  ///
+  /// 命中去重键（`inserted == false`）也要记：那说明这笔已经在库里了，之后
+  /// 窗口内再抓到同一笔仍然不该重复写。
+  void _rememberWritten(CaptureCandidate candidate) {
+    if (candidate.happenedAt == null) return;
+    final now = _clock();
+    _recentWrites.removeWhere(
+      (entry) => now.difference(entry.happenedAt ?? now) > captureMergeWindow,
+    );
+    _recentWrites.add(candidate);
   }
 
   Future<void> _recordNoRule({

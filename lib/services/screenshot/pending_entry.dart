@@ -3,6 +3,12 @@ import 'dart:convert';
 import '../../data/repositories/app_state_repository.dart';
 import '../ocr/receipt_guess.dart';
 
+/// 待处理项的存活时长。
+///
+/// 超过这个时长的截图识别结果只在库里留痕，不再回到前台弹提示：那种「半小时前
+/// 你在别的 App 截的图没认出发票金额」的消息早已没有上下文，弹出来只是打扰。
+const kPendingScreenshotTtl = Duration(minutes: 10);
+
 /// 后台识别完成、等着用户打开面板的那一笔。
 ///
 /// 落在 `app_state` 的 `pending_screenshot_entries`（JSON 列表，最多
@@ -29,6 +35,13 @@ class PendingScreenshotEntry {
 
   /// 识别失败原因（可读文案）；成功时为空。
   final String? error;
+
+  /// 是否已超过 [kPendingScreenshotTtl]，过期的不再回到前台打扰用户。
+  bool isExpired(DateTime now) =>
+      now.difference(createdAt) > kPendingScreenshotTtl;
+
+  /// 是否需要用户当场处理（有失败原因，或有可预填的识别结果）。
+  bool get needsAttention => error != null || guess != null;
 
   Map<String, dynamic> toJson() => {
         'id': id,

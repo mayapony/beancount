@@ -37,6 +37,48 @@ void main() {
       expect(restored.count, 3);
     });
 
+    test('来源链路往返', () {
+      final event = CaptureDiagEvent(
+        seq: 1730000000000001,
+        at: DateTime(2026, 11, 7, 18, 31),
+        kind: CaptureDiagKind.llmRecognize,
+        channel: CaptureDiagChannel.screenshot,
+      );
+
+      final restored = CaptureDiagEvent.fromJson(event.toJson())!;
+      expect(restored.channel, CaptureDiagChannel.screenshot);
+    });
+
+    test('老记录没有来源字段时按类别推断', () {
+      final autoEvent = CaptureDiagEvent.fromJson({
+        'seq': 1,
+        'at': '2026-11-07T10:00:00.000Z',
+        'kind': 'tree_captured',
+      })!;
+      final shotEvent = CaptureDiagEvent.fromJson({
+        'seq': 2,
+        'at': '2026-11-07T10:00:01.000Z',
+        'kind': 'llm_recognize',
+      })!;
+
+      expect(autoEvent.channel, CaptureDiagChannel.auto);
+      expect(shotEvent.channel, CaptureDiagChannel.screenshot);
+    });
+
+    test('识别与规则学习都归截屏链路', () {
+      for (final kind in [
+        CaptureDiagKind.llmRecognize,
+        CaptureDiagKind.llmRuleGen,
+        CaptureDiagKind.learnSkipped,
+      ]) {
+        expect(CaptureDiagChannel.fromKind(kind), CaptureDiagChannel.screenshot);
+      }
+      expect(
+        CaptureDiagChannel.fromKind(CaptureDiagKind.notifCaptured),
+        CaptureDiagChannel.auto,
+      );
+    });
+
     test('缺省字段不写进 JSON 也能读回', () {
       final restored = CaptureDiagEvent.fromJson({
         'seq': 1,

@@ -49,7 +49,10 @@ enum CaptureDiagKind {
   windowMissing('window_missing', '读不到窗口'),
 
   /// 页面一直在变，等不到稳定帧（原生侧记录）。
-  frameUnstable('frame_unstable', '页面未稳定');
+  frameUnstable('frame_unstable', '页面未稳定'),
+
+  /// 待处理的截图识别结果超过时效，前台不再提示（前台消费时记录）。
+  pendingExpired('pending_expired', '待处理已过期');
 
   const CaptureDiagKind(this.wire, this.label);
 
@@ -69,6 +72,42 @@ enum CaptureDiagKind {
   }
 }
 
+/// 运行记录属于哪条链路。
+///
+/// 两条链路各自有独立引擎、独立存储埋点，事件混在一个时间线里时看不出某条记录
+/// 是「自动记账」还是「截屏识别」。老记录没有这个字段，按 [fromKind] 推断。
+enum CaptureDiagChannel {
+  auto('auto', '自动记账'),
+  screenshot('screenshot', '截屏识别');
+
+  const CaptureDiagChannel(this.wire, this.label);
+
+  /// 落盘用的稳定标识。
+  final String wire;
+
+  /// 界面上的一句话说明。
+  final String label;
+
+  static CaptureDiagChannel? fromWire(Object? raw) {
+    final name = raw?.toString();
+    if (name == null) return null;
+    for (final value in values) {
+      if (value.wire == name) return value;
+    }
+    return null;
+  }
+
+  /// 没有显式来源时按类别推断：识别与规则学习只发生在截屏链路。
+  static CaptureDiagChannel fromKind(CaptureDiagKind kind) => switch (kind) {
+        CaptureDiagKind.llmRecognize ||
+        CaptureDiagKind.llmRuleGen ||
+        CaptureDiagKind.learnSkipped ||
+        CaptureDiagKind.pendingExpired =>
+          CaptureDiagChannel.screenshot,
+        _ => CaptureDiagChannel.auto,
+      };
+}
+
 /// 一条运行记录。
 ///
 /// 只描述「发生了什么」，不含任何判定逻辑；[detail] 放该类别专属字段（指纹、
@@ -78,6 +117,7 @@ class CaptureDiagEvent {
     required this.seq,
     required this.at,
     required this.kind,
+    this.channel,
     this.packageName,
     this.target,
     this.ok = true,
@@ -92,6 +132,9 @@ class CaptureDiagEvent {
 
   final DateTime at;
   final CaptureDiagKind kind;
+
+  /// 这条记录来自哪条链路；解析老记录时按 [CaptureDiagKind] 推断。
+  final CaptureDiagChannel? channel;
 
   /// 触发事件的包名（截图识别链路可能为空）。
   final String? packageName;
@@ -117,6 +160,7 @@ class CaptureDiagEvent {
         seq: seq,
         at: at,
         kind: kind,
+        channel: channel,
         packageName: packageName,
         target: target,
         ok: ok,
@@ -130,6 +174,7 @@ class CaptureDiagEvent {
         'seq': seq,
         'at': at.toUtc().toIso8601String(),
         'kind': kind.wire,
+        if (channel != null) 'channel': channel!.wire,
         if (packageName != null) 'package': packageName,
         if (target != null) 'target': target,
         'ok': ok,
@@ -152,6 +197,8 @@ class CaptureDiagEvent {
       seq: seq,
       at: at.toLocal(),
       kind: kind,
+      channel: CaptureDiagChannel.fromWire(raw['channel']) ??
+          CaptureDiagChannel.fromKind(kind),
       packageName: raw['package']?.toString(),
       target: raw['target']?.toString(),
       ok: raw['ok'] is bool ? raw['ok'] as bool : true,
@@ -359,6 +406,7 @@ class CaptureDiagnostics {
 
   Future<void> record({
     required CaptureDiagKind kind,
+    CaptureDiagChannel? channel,
     String? packageName,
     String? target,
     bool ok = true,
@@ -372,6 +420,7 @@ class CaptureDiagnostics {
         seq: at.microsecondsSinceEpoch,
         at: at,
         kind: kind,
+        channel: channel ?? CaptureDiagChannel.fromKind(kind),
         packageName: packageName,
         target: target,
         ok: ok,

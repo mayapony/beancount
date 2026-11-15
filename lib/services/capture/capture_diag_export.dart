@@ -114,6 +114,7 @@ String _eventLine(CaptureDiagEvent event) {
   final parts = [
     _stamp(event.at),
     event.kind.wire,
+    if (event.channel != null) 'channel=${event.channel!.wire}',
     if (event.packageName != null) event.packageName!,
     if (event.target != null) 'target=${event.target}',
     'ok=${event.ok}',

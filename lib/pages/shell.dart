@@ -342,29 +342,67 @@ class _ShellPageState extends State<ShellPage> with WidgetsBindingObserver {
     }
   }
 
-  /// 取出后台识别结果，逐条打开面板；没有待处理项时什么也不做。
+  /// 取出后台识别结果，过期的不再打扰，剩下的合并成一条提示。
   ///
-  /// 多张连续截图会按识别完成顺序排队：关掉/保存当前这张后，
-  /// 自动接着处理下一条；剩余条目留在库里，下次回到前台继续。
+  /// 以前这里是「拿一条、弹一个 UI、再拿一条」：10 张失败的截图就是 10 条
+  /// SnackBar 依次弹 40 秒，而它们全都是几十分钟前、早就没有上下文的旧消息。
+  /// 现在只做两件事：过期的直接归档（诊断里留一行），本轮剩下的合成一条。
   Future<void> _consumePendingScreenshot() async {
     if (_consumingPending) return;
     _consumingPending = true;
     try {
+      final expired = <PendingScreenshotEntry>[];
+      final actionable = <PendingScreenshotEntry>[];
       while (mounted && _isForeground) {
         final entry = await _pendingScreenshots.take();
         if (entry == null || !mounted) break;
-        if (entry.error != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(entry.error!)),
-          );
+        if (entry.isExpired(DateTime.now())) {
+          expired.add(entry);
           continue;
         }
-        final guess = entry.guess;
-        if (guess == null) continue;
-        final image = await _readPendingImage(entry.imagePath);
-        if (!mounted) break;
-        await _openQuickEntry(initialGuess: guess, pendingImage: image);
+        if (entry.needsAttention) actionable.add(entry);
       }
+
+      if (expired.isNotEmpty) {
+        unawaited(
+          CaptureDiagnostics.forDatabase(_db, sink: defaultCaptureDiagSink())
+              .record(
+            kind: CaptureDiagKind.pendingExpired,
+            ok: false,
+            reason: 'expired',
+            detail: {'count': expired.length},
+          ),
+        );
+      }
+      if (actionable.isEmpty || !mounted) return;
+
+      // 有识别结果的才值得一键补记；纯失败的只说明一声
+      ReceiptGuess? newestGuess;
+      for (final entry in actionable.reversed) {
+        if (entry.guess != null) {
+          newestGuess = entry.guess;
+          break;
+        }
+      }
+      final count = actionable.length;
+      final text = count == 1
+          ? '有 1 张截图没能自动记账'
+          : '有 $count 张截图没能自动记账';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(text),
+            action: newestGuess == null
+                ? null
+                : SnackBarAction(
+                    label: '补记',
+                    onPressed: () => unawaited(
+                      _openQuickEntry(initialGuess: newestGuess),
+                    ),
+                  ),
+          ),
+        );
     } finally {
       _consumingPending = false;
     }

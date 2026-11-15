@@ -168,6 +168,58 @@ void main() {
     expect(find.textContaining('dump'), findsOneWidget);
   });
 
+  testWidgets('事件流按来源分流：只看截屏识别时不混入抓帧记录', (tester) async {
+    await diag.store.record(CaptureDiagEvent(
+      seq: 1,
+      at: DateTime(2026, 11, 7, 18, 30),
+      kind: CaptureDiagKind.treeCaptured,
+      packageName: 'com.tencent.mm',
+    ));
+    await diag.store.record(CaptureDiagEvent(
+      seq: 2,
+      at: DateTime(2026, 11, 7, 18, 31),
+      kind: CaptureDiagKind.llmRecognize,
+      ok: false,
+      reason: 'no_amount',
+    ));
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    // 默认「全部」：两条都在
+    expect(find.textContaining('抓到页面'), findsOneWidget);
+    expect(find.textContaining('识别返回'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('capture-diag-channel-screenshot')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('识别返回'), findsOneWidget);
+    expect(find.textContaining('抓到页面'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('capture-diag-channel-all')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('抓到页面'), findsOneWidget);
+  });
+
+  testWidgets('某条链路没有记录时显示自己的空状态', (tester) async {
+    await diag.store.record(CaptureDiagEvent(
+      seq: 1,
+      at: DateTime(2026, 11, 7, 18, 30),
+      kind: CaptureDiagKind.treeCaptured,
+      packageName: 'com.tencent.mm',
+    ));
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('capture-diag-channel-screenshot')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('截屏识别暂时没有记录'), findsOneWidget);
+    expect(find.textContaining('抓到页面'), findsNothing);
+  });
+
   testWidgets('清空记录需要二次确认，确认后清掉两源', (tester) async {
     await diag.store.record(CaptureDiagEvent(
       seq: 1,
