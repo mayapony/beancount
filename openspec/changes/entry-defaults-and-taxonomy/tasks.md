@@ -38,3 +38,8 @@
 - [x] 6.2 debug / release 两种 gradle 构建均可打包
 - [x] 6.3 `openspec validate --all --strict` 全绿
 - [x] 6.4 真机：升级安装后分类树变宽且旧分类名不变；面板能点到二级分类；「最近自动记账」里 3 条历史遗留的待处理标记消失
+
+## 7. 分类使用笔数
+
+- [x] 7.1 `usageCounts()` 排除 `category_id IS NULL` 的分组（转账没有分类），分类管理页不再因 NULL 转换崩溃
+- [x] 7.2 单测：存在转账时 `usageCounts()` 返回空映射且不抛异常
