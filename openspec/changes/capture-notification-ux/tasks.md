@@ -31,7 +31,7 @@
 
 ## 5. 门禁
 
-- [ ] 5.1 `flutter analyze` 无告警、全量测试绿（`--exclude-tags screenshots`）
-- [ ] 5.2 debug / release 两种 gradle 构建均可打包
-- [ ] 5.3 `openspec validate --all --strict` 全绿
+- [x] 5.1 `flutter analyze` 无告警、全量测试绿（`--exclude-tags screenshots`）
+- [x] 5.2 debug / release 两种 gradle 构建均可打包
+- [x] 5.3 `openspec validate --all --strict` 全绿
 - [ ] 5.4 真机回归：通知栏只有一条常驻通知、开关四态正确、截图失败不再逐条弹
