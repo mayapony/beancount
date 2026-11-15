@@ -213,6 +213,98 @@ const kCategoryLibrary = <LibraryCategory>[
   ),
 ];
 
+/// 分类库一级 → 账本一级。
+///
+/// 库里的长名（食品餐饮 / 出行交通）不适合直接当账本分类：账本里已经有用户
+/// 熟悉的短名（餐饮 / 交通），改名会让用户认不出自己的账本，五列网格也排不下。
+/// 所以库只负责供给**二级**，一级落到已有分类上；账本里没有的两类（送礼人情、
+/// 通讯网络）才新建。
+const libraryRootToLedger = <String, String>{
+  '食品餐饮': '餐饮',
+  '出行交通': '交通',
+  '购物消费': '购物',
+  '居家生活': '居家',
+  '休闲娱乐': '娱乐',
+  '健康医疗': '医疗',
+  '文化教育': '教育',
+  '送礼人情': '人情',
+  '通讯网络': '通讯',
+  '宠物': '宠物',
+  '旅行': '旅行',
+  '其他': '其他',
+};
+
+/// 账本里本来就是一级、库里却是别人的二级：不重复建。
+///
+/// 不然「数码」「运动」会既是一级、又挂在「购物」「医疗」下面，用户点两次
+/// 会得到两个语义相同的分类。
+const libraryChildrenSkipped = <String, Set<String>>{
+  '购物消费': {'数码电器'},
+  '健康医疗': {'健身运动'},
+};
+
+/// 新增一级分类的配色：不与既有 12 色重复。
+const libraryNewRootColors = <String, int>{
+  '人情': 0xFFE11D48,
+  '通讯': 0xFF0EA5E9,
+};
+
+/// 分类库落库计划：一个账本一级 + 它要补的二级。
+class LibrarySeedRoot {
+  const LibrarySeedRoot({
+    required this.name,
+    required this.iconKey,
+    required this.color,
+    required this.children,
+  });
+
+  /// 落库后的一级名（已按 [libraryRootToLedger] 映射）。
+  final String name;
+  final String iconKey;
+
+  /// 仅在这一级还没建时使用；已存在的一级保留用户自己的颜色。
+  final int color;
+
+  final List<LibrarySeedChild> children;
+}
+
+/// 一条待补的二级分类。
+class LibrarySeedChild {
+  const LibrarySeedChild(this.name, this.iconKey);
+
+  final String name;
+  final String iconKey;
+}
+
+/// 把分类库摊平成落库计划（跳过 [libraryChildrenSkipped] 里的重复项）。
+List<LibrarySeedRoot> librarySeedRoots() {
+  final roots = <LibrarySeedRoot>[];
+  for (final root in kCategoryLibrary) {
+    if (root.type != CategoryType.expense) continue;
+    final ledgerName = libraryRootToLedger[root.name];
+    if (ledgerName == null) continue;
+    final skip = libraryChildrenSkipped[root.name] ?? const <String>{};
+    roots.add(
+      LibrarySeedRoot(
+        name: ledgerName,
+        iconKey: root.iconKey,
+        color: libraryNewRootColors[ledgerName] ?? 0,
+        children: [
+          for (final child in root.children)
+            if (!skip.contains(child.name))
+              LibrarySeedChild(child.name, child.iconKey),
+        ],
+      ),
+    );
+  }
+  return roots;
+}
+
+/// 收入侧要补的分类（工资 / 奖金 / 兼职 / 理财 / 其他收入已有，库里多一个报销）。
+const libraryIncomeSeeds = <String, String>{
+  '报销': 'receipts',
+};
+
 /// 展平成「一级 + 它下面每个二级」的可搜索条目，供选择器列表使用。
 class LibraryEntry {
   const LibraryEntry({

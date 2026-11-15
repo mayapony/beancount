@@ -210,15 +210,17 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
-          // 首次建库即写入种子（12 支出分类 + 6 收入分类 + 1 默认账户）。
+          // 首次建库即写入种子（12 支出分类 + 6 收入分类 + 1 默认账户），
+          // 再按内置分类库补齐二级分类（v7 起）。
           // 幂等：固定 id + insertOrIgnore，重复执行不产生重复行。
           await seedDefaults(this);
+          await seedCategoryLibrary(this);
         },
         onUpgrade: (m, from, to) async {
           if (from < 6) {
@@ -311,7 +313,15 @@ class AppDatabase extends _$AppDatabase {
               'ON transactions (category_id)',
             );
           }
-
+          if (from < 7) {
+            // v7：分类库落库（补二级 + 通讯 / 人情两个一级），并修一次
+            // 「账户已经补上、标记却还挂着」的历史遗留待处理记录。
+            await seedCategoryLibrary(this);
+            await customStatement(
+              'UPDATE transactions SET needs_review = NULL '
+              'WHERE account_id IS NOT NULL AND needs_review = 1',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');

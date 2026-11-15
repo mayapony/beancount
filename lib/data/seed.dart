@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../theme/category_icons.dart';
 import '../theme/tokens.dart';
 import '../utils/colors.dart';
+import 'category_library.dart';
 import 'db/app_database.dart';
 import 'db/enums.dart';
 
@@ -124,3 +125,106 @@ Future<void> seedDefaults(AppDatabase db) async {
     );
   });
 }
+
+/// 分类库种子的完成标记：只在首次建库与 v7 升级时各跑一次。
+///
+/// 为什么需要标记：落库按「同一父级下同名即复用」判重，用户把「打车」改名成
+/// 「出租车」之后再来一次种子，就会平白多出一个「打车」。
+const _kLibrarySeedKey = 'category_library_seed_v1';
+
+/// 把内置分类库落进账本：一级沿用已有分类，二级挂到它下面。
+///
+/// 空库首启（[seedDefaults] 之后）与老账本升级都会调用；已有分类的 id、名称、
+/// 颜色、图标与排序一动不动，只补缺的那部分。
+Future<void> seedCategoryLibrary(AppDatabase db) async {
+  final seeded = await (db.select(db.appState)
+        ..where((t) => t.key.equals(_kLibrarySeedKey)))
+      .getSingleOrNull();
+  if (seeded != null) return;
+
+  final existing = await db.select(db.categories).get();
+  final byKey = <String, Category>{
+    for (final row in existing)
+      _categoryKey(row.name, row.type, row.parentId): row,
+  };
+  final nextOrders = <String, int>{};
+
+  int takeOrder(CategoryType type, String? parentId) {
+    final key = '${type.name}|${parentId ?? ''}';
+    final order = nextOrders.putIfAbsent(key, () {
+      var max = -1;
+      for (final row in existing) {
+        if (row.type == type && row.parentId == parentId && row.sortOrder > max) {
+          max = row.sortOrder;
+        }
+      }
+      return max + 1;
+    });
+    nextOrders[key] = order + 1;
+    return order;
+  }
+
+  Future<Category> ensureSeeded({
+    required String name,
+    required CategoryType type,
+    required String iconKey,
+    required int color,
+    String? parentId,
+  }) async {
+    final key = _categoryKey(name, type, parentId);
+    final hit = byKey[key];
+    if (hit != null) return hit;
+    final category = Category(
+      id: 'cat-lib-${parentId == null ? '' : '$parentId-'}$name',
+      name: name,
+      type: type,
+      parentId: parentId,
+      color: color,
+      icon: iconKey,
+      sortOrder: takeOrder(type, parentId),
+      createdAt: DateTime.now(),
+    );
+    await db.into(db.categories).insert(category);
+    byKey[key] = category;
+    existing.add(category);
+    return category;
+  }
+
+  await db.transaction(() async {
+    var paletteIndex = 0;
+    for (final plan in librarySeedRoots()) {
+      final root = await ensureSeeded(
+        name: plan.name,
+        type: CategoryType.expense,
+        iconKey: plan.iconKey,
+        color: plan.color != 0
+            ? plan.color
+            : argbOf(BeanColors.categories[paletteIndex++ % BeanColors.categories.length]),
+      );
+      for (final child in plan.children) {
+        await ensureSeeded(
+          name: child.name,
+          type: CategoryType.expense,
+          iconKey: child.iconKey,
+          // 二级沿用父级色：网格里同一簇颜色一致，扫一眼就知道属于谁
+          color: root.color,          parentId: root.id,
+        );
+      }
+    }
+    for (final entry in libraryIncomeSeeds.entries) {
+      await ensureSeeded(
+        name: entry.key,
+        type: CategoryType.income,
+        iconKey: entry.value,
+        color: argbOf(BeanColors.incomeCategories.first),
+      );
+    }
+    await db.into(db.appState).insertOnConflictUpdate(
+          AppStateCompanion.insert(key: _kLibrarySeedKey, value: '1'),
+        );
+  });
+}
+
+String _categoryKey(String name, CategoryType type, String? parentId) =>
+    '${type.name}|${parentId ?? ''}|${name.trim()}';
+

@@ -2,11 +2,11 @@
 
 ## 1. 分类库作为唯一供给来源
 
-- [ ] 1.1 `lib/data/category_library.dart` 增加 `libraryRootToLedger` 映射与 `librarySeedCategories()`（一级 + 二级摊平、带颜色图标），标注「数码电器 / 健身运动」不建
-- [ ] 1.2 `lib/data/seed.dart` 的 `seedDefaults` 改为调用 `seedCategoryLibrary`，空库首启即写入 14 个一级 + 44 个二级 + 7 个收入分类
-- [ ] 1.3 `app_database.dart` schemaVersion 6 → 7，`onUpgrade(from < 7)` 调用同一个函数做增量补齐（幂等）
-- [ ] 1.4 单测：空库首启分类数量与「餐饮」下二级数量正确；重复执行 `seedCategoryLibrary` 不产生重复行
-- [ ] 1.5 单测：模拟老账本（只有 12 个一级）升级，已有分类 id/名称/颜色不变，新增二级挂在正确父级
+- [x] 1.1 `lib/data/category_library.dart` 增加 `libraryRootToLedger` 映射与 `librarySeedRoots()`（一级 + 二级摊平、带图标与配色），标注「数码电器 / 健身运动」不建
+- [x] 1.2 `lib/data/seed.dart` 的 `seedDefaults` 改为调用 `seedCategoryLibrary`，空库首启即写入 14 个一级 + 44 个二级 + 7 个收入分类
+- [x] 1.3 `app_database.dart` schemaVersion 6 → 7，`onUpgrade(from < 7)` 调用同一个函数做增量补齐（幂等）
+- [x] 1.4 单测：空库首启分类数量与「餐饮」下二级数量正确；重复执行 `seedCategoryLibrary` 不产生重复行
+- [x] 1.5 单测：模拟老账本（只有 12 个一级）升级，已有分类 id/名称/颜色不变，新增二级挂在正确父级
 
 ## 2. 自动新建配额改口径
 
